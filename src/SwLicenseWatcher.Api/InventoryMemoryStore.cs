@@ -1,17 +1,17 @@
-using System.Collections.Concurrent;
+using System.Threading;
 using SwLicenseWatcher.Core;
 
 namespace SwLicenseWatcher.Api;
 
 public sealed class InventoryMemoryStore
 {
-    private readonly ConcurrentQueue<InventoryIngestionRequest> _snapshots = new();
-    private readonly ConcurrentQueue<AgentHeartbeat> _heartbeats = new();
+    private int _snapshotCount;
+    private int _heartbeatCount;
 
-    public int SnapshotCount => _snapshots.Count;
-    public int HeartbeatCount => _heartbeats.Count;
+    public int SnapshotCount => Volatile.Read(ref _snapshotCount);
+    public int HeartbeatCount => Volatile.Read(ref _heartbeatCount);
 
-    public void RecordSnapshot(InventoryIngestionRequest snapshot) => _snapshots.Enqueue(snapshot);
+    public void RecordSnapshot(InventoryIngestionRequest snapshot) => Interlocked.Increment(ref _snapshotCount);
 
-    public void RecordHeartbeat(AgentHeartbeat heartbeat) => _heartbeats.Enqueue(heartbeat);
+    public void RecordHeartbeat(AgentHeartbeat heartbeat) => Interlocked.Increment(ref _heartbeatCount);
 }

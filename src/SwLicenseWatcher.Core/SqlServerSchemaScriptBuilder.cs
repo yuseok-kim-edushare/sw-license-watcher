@@ -7,12 +7,13 @@ public sealed class SqlServerSchemaScriptBuilder
     public string Build(SqlServerStorageOptions options)
     {
         var schema = Escape(options.SchemaName);
+        var schemaLiteral = EscapeSqlLiteral(options.SchemaName);
         var pc = options.PcTable;
         var installedSoftware = options.InstalledSoftwareTable;
         var policy = options.SoftwarePolicyTable;
 
         var sql = new StringBuilder();
-        sql.AppendLine($"IF SCHEMA_ID(N'{options.SchemaName}') IS NULL EXEC('CREATE SCHEMA {Escape(options.SchemaName)}');");
+        sql.AppendLine($"IF SCHEMA_ID(N'{schemaLiteral}') IS NULL EXEC(N'CREATE SCHEMA [{schema}]');");
         sql.AppendLine("GO");
         sql.AppendLine();
         sql.AppendLine($"CREATE TABLE [{schema}].[{Escape(pc.TableName)}] (");
@@ -57,4 +58,6 @@ public sealed class SqlServerSchemaScriptBuilder
     }
 
     private static string Escape(string identifier) => identifier.Replace("]", "]]", StringComparison.Ordinal);
+
+    private static string EscapeSqlLiteral(string value) => value.Replace("'", "''", StringComparison.Ordinal);
 }
