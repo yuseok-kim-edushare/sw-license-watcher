@@ -106,3 +106,7 @@ Worker/Watchdog는 진단용으로 1회 실행 모드도 지원합니다.
 dotnet run --project src/SwLicenseWatcher.Agent.Worker -- --Agent:RunOnceForDiagnostics=true
 dotnet run --project src/SwLicenseWatcher.Agent.Watchdog -- --Watchdog:RunOnceForDiagnostics=true
 ```
+
+## 라이선스
+
+이 프로젝트는 [MIT License](LICENSE)로 배포됩니다. 사용된 서드파티 구성 요소의 라이선스 정보는 [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md)를 참고하세요.
