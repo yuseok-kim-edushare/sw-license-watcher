@@ -15,7 +15,6 @@ public sealed class AgentApiClient
         _httpClient = httpClient;
         _logger = logger;
         _options = options.Value;
-        _httpClient.BaseAddress = new Uri(_options.ServerBaseUrl, UriKind.Absolute);
     }
 
     public Task PublishSnapshotAsync(InventoryIngestionRequest snapshot, CancellationToken cancellationToken) =>

@@ -8,12 +8,13 @@ public sealed class SqlServerSchemaScriptBuilder
     {
         var schema = Escape(options.SchemaName);
         var schemaLiteral = EscapeSqlLiteral(options.SchemaName);
+        var schemaCommandIdentifier = EscapeSqlLiteral(schema);
         var pc = options.PcTable;
         var installedSoftware = options.InstalledSoftwareTable;
         var policy = options.SoftwarePolicyTable;
 
         var sql = new StringBuilder();
-        sql.AppendLine($"IF SCHEMA_ID(N'{schemaLiteral}') IS NULL EXEC(N'CREATE SCHEMA [{schema}]');");
+        sql.AppendLine($"IF SCHEMA_ID(N'{schemaLiteral}') IS NULL EXEC(N'CREATE SCHEMA [{schemaCommandIdentifier}]');");
         sql.AppendLine();
         sql.AppendLine($"CREATE TABLE [{schema}].[{Escape(pc.TableName)}] (");
         sql.AppendLine($"    [{Escape(pc.PrimaryKeyColumn)}] BIGINT IDENTITY(1,1) NOT NULL PRIMARY KEY,");

@@ -15,7 +15,6 @@ public sealed class UpdateManifestClient
         _httpClient = httpClient;
         _logger = logger;
         _options = options.Value;
-        _httpClient.BaseAddress = new Uri(_options.ServerBaseUrl, UriKind.Absolute);
     }
 
     public async Task<UpdateManifest?> TryGetManifestAsync(CancellationToken cancellationToken)
