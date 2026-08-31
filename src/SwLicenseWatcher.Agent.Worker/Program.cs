@@ -6,6 +6,12 @@ var builder = Host.CreateApplicationBuilder(args);
 builder.Services.AddWindowsService(options => options.ServiceName = "SwLicenseWatcher Agent Worker");
 builder.Services.AddOptions<WorkerAgentOptions>()
     .Bind(builder.Configuration.GetSection("Agent"))
+    .Validate(
+        options => !string.IsNullOrWhiteSpace(options.DeviceCode),
+        "Agent:DeviceCode is required.")
+    .Validate(
+        options => Uri.TryCreate(options.ServerBaseUrl, UriKind.Absolute, out _),
+        "Agent:ServerBaseUrl must be an absolute URI.")
     .ValidateOnStart();
 builder.Services.AddOptions<LocalStateStoreOptions>()
     .Bind(builder.Configuration.GetSection("LocalState"))

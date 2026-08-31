@@ -16,6 +16,11 @@ public sealed class Worker(
         do
         {
             var manifest = await manifestClient.TryGetManifestAsync(stoppingToken);
+            if (stoppingToken.IsCancellationRequested)
+            {
+                return;
+            }
+
             if (manifest is null)
             {
                 logger.LogWarning("No update manifest could be retrieved for {WorkerServiceName}.", watchdogOptions.WorkerServiceName);
@@ -42,7 +47,14 @@ public sealed class Worker(
                 return;
             }
 
-            await Task.Delay(JitterDelayCalculator.NextDelay(watchdogOptions.CheckInterval, watchdogOptions.MaxJitter), stoppingToken);
+            try
+            {
+                await Task.Delay(JitterDelayCalculator.NextDelay(watchdogOptions.CheckInterval, watchdogOptions.MaxJitter), stoppingToken);
+            }
+            catch (TaskCanceledException) when (stoppingToken.IsCancellationRequested)
+            {
+                return;
+            }
         }
         while (!stoppingToken.IsCancellationRequested);
     }

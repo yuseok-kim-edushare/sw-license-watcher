@@ -30,6 +30,9 @@ public sealed class AgentApiClient
             using var response = await _httpClient.PostAsJsonAsync(path, payload, cancellationToken);
             response.EnsureSuccessStatusCode();
         }
+        catch (TaskCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+        }
         catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException)
         {
             _logger.LogWarning(ex, "Failed to POST {Path} to {BaseAddress}.", path, _httpClient.BaseAddress);

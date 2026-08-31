@@ -35,16 +35,17 @@ public sealed class RegistrySoftwareInventoryCollector : ISoftwareInventoryColle
         foreach (var probe in machineRegistryProbes)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            ReadEntries(probe.Hive, probe.View, probe.SubKeyPath, probe.Scope, software, dedupe);
+            ReadEntries(probe.Hive, probe.View, probe.SubKeyPath, probe.Scope, software, dedupe, cancellationToken);
         }
 
-        ReadCurrentUserEntries(software, dedupe);
+        cancellationToken.ThrowIfCancellationRequested();
+        ReadCurrentUserEntries(software, dedupe, cancellationToken);
 
         return software;
     }
 
     [SupportedOSPlatform("windows")]
-    private static void ReadCurrentUserEntries(List<InstalledSoftwareEntry> software, HashSet<string> dedupe)
+    private static void ReadCurrentUserEntries(List<InstalledSoftwareEntry> software, HashSet<string> dedupe, CancellationToken cancellationToken)
     {
         using var currentUserKey = Registry.CurrentUser.OpenSubKey(@"Software\Microsoft\Windows\CurrentVersion\Uninstall");
         if (currentUserKey is null)
@@ -52,7 +53,7 @@ public sealed class RegistrySoftwareInventoryCollector : ISoftwareInventoryColle
             return;
         }
 
-        AppendEntries(currentUserKey, "User", software, dedupe);
+        AppendEntries(currentUserKey, "User", software, dedupe, cancellationToken);
     }
 
     [SupportedOSPlatform("windows")]
@@ -62,7 +63,8 @@ public sealed class RegistrySoftwareInventoryCollector : ISoftwareInventoryColle
         string subKeyPath,
         string scope,
         List<InstalledSoftwareEntry> software,
-        HashSet<string> dedupe)
+        HashSet<string> dedupe,
+        CancellationToken cancellationToken)
     {
         using var baseKey = RegistryKey.OpenBaseKey(hive, view);
         using var uninstallKey = baseKey.OpenSubKey(subKeyPath);
@@ -71,7 +73,7 @@ public sealed class RegistrySoftwareInventoryCollector : ISoftwareInventoryColle
             return;
         }
 
-        AppendEntries(uninstallKey, scope, software, dedupe);
+        AppendEntries(uninstallKey, scope, software, dedupe, cancellationToken);
     }
 
     [SupportedOSPlatform("windows")]
@@ -79,10 +81,12 @@ public sealed class RegistrySoftwareInventoryCollector : ISoftwareInventoryColle
         RegistryKey uninstallKey,
         string scope,
         List<InstalledSoftwareEntry> software,
-        HashSet<string> dedupe)
+        HashSet<string> dedupe,
+        CancellationToken cancellationToken)
     {
         foreach (var productKeyName in uninstallKey.GetSubKeyNames())
         {
+            cancellationToken.ThrowIfCancellationRequested();
             using var productKey = uninstallKey.OpenSubKey(productKeyName);
             if (productKey is null)
             {

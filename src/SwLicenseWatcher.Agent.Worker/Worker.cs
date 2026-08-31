@@ -44,7 +44,14 @@ public sealed class Worker(
                 return;
             }
 
-            await Task.Delay(JitterDelayCalculator.NextDelay(agentOptions.PollInterval, agentOptions.MaxJitter), stoppingToken);
+            try
+            {
+                await Task.Delay(JitterDelayCalculator.NextDelay(agentOptions.PollInterval, agentOptions.MaxJitter), stoppingToken);
+            }
+            catch (TaskCanceledException) when (stoppingToken.IsCancellationRequested)
+            {
+                return;
+            }
         }
         while (!stoppingToken.IsCancellationRequested);
     }

@@ -23,6 +23,10 @@ public sealed class UpdateManifestClient
         {
             return await _httpClient.GetFromJsonAsync<UpdateManifest>(_options.ManifestPath, cancellationToken);
         }
+        catch (TaskCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            return null;
+        }
         catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or NotSupportedException)
         {
             _logger.LogWarning(ex, "Failed to fetch update manifest from {ManifestPath}.", _options.ManifestPath);

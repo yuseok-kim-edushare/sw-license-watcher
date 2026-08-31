@@ -5,9 +5,14 @@ using SwLicenseWatcher.Core;
 var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddOptions<SqlServerStorageOptions>()
     .Bind(builder.Configuration.GetSection("Storage:SqlServer"))
+    .ValidateDataAnnotations()
     .ValidateOnStart();
 builder.Services.AddOptions<UpdateManifestOptions>()
     .Bind(builder.Configuration.GetSection("Updates:Worker"))
+    .ValidateDataAnnotations()
+    .Validate(
+        options => Uri.TryCreate(options.PackageUrl, UriKind.Absolute, out _),
+        "Updates:Worker:PackageUrl must be an absolute URI.")
     .ValidateOnStart();
 builder.Services.AddSingleton<SqlServerSchemaScriptBuilder>();
 builder.Services.AddSingleton<InventoryMemoryStore>();

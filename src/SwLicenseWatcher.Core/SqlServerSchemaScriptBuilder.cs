@@ -1,3 +1,4 @@
+using System.Security.Cryptography;
 using System.Text;
 
 namespace SwLicenseWatcher.Core;
@@ -25,7 +26,7 @@ public sealed class SqlServerSchemaScriptBuilder
         sql.AppendLine($"    [{Escape(pc.AgentVersionColumn)}] NVARCHAR(32) NOT NULL,");
         sql.AppendLine($"    [{Escape(pc.LastHeartbeatUtcColumn)}] DATETIMEOFFSET NULL,");
         sql.AppendLine($"    [{Escape(pc.LastInventoryUtcColumn)}] DATETIMEOFFSET NULL,");
-        sql.AppendLine($"    CONSTRAINT [UX_{Escape(pc.TableName)}_{Escape(pc.DeviceCodeColumn)}] UNIQUE ([{Escape(pc.DeviceCodeColumn)}])");
+        sql.AppendLine($"    CONSTRAINT [{Escape(BuildIdentifier("UX", pc.TableName, pc.DeviceCodeColumn))}] UNIQUE ([{Escape(pc.DeviceCodeColumn)}])");
         sql.AppendLine(");");
         sql.AppendLine();
         sql.AppendLine($"CREATE TABLE [{schema}].[{Escape(installedSoftware.TableName)}] (");
@@ -38,7 +39,7 @@ public sealed class SqlServerSchemaScriptBuilder
         sql.AppendLine($"    [{Escape(installedSoftware.DiscoveryScopeColumn)}] NVARCHAR(32) NOT NULL,");
         sql.AppendLine($"    [{Escape(installedSoftware.DiscoverySourceColumn)}] NVARCHAR(64) NOT NULL,");
         sql.AppendLine($"    [{Escape(installedSoftware.CollectedAtUtcColumn)}] DATETIMEOFFSET NOT NULL,");
-        sql.AppendLine($"    CONSTRAINT [FK_{Escape(installedSoftware.TableName)}_{Escape(pc.TableName)}] FOREIGN KEY ([{Escape(installedSoftware.PcForeignKeyColumn)}]) REFERENCES [{schema}].[{Escape(pc.TableName)}]([{Escape(pc.PrimaryKeyColumn)}])");
+        sql.AppendLine($"    CONSTRAINT [{Escape(BuildIdentifier("FK", installedSoftware.TableName, pc.TableName))}] FOREIGN KEY ([{Escape(installedSoftware.PcForeignKeyColumn)}]) REFERENCES [{schema}].[{Escape(pc.TableName)}]([{Escape(pc.PrimaryKeyColumn)}])");
         sql.AppendLine(");");
         sql.AppendLine();
         sql.AppendLine($"CREATE TABLE [{schema}].[{Escape(policy.TableName)}] (");
@@ -48,13 +49,25 @@ public sealed class SqlServerSchemaScriptBuilder
         sql.AppendLine($"    [{Escape(policy.PublisherColumn)}] NVARCHAR(256) NULL,");
         sql.AppendLine($"    [{Escape(policy.VersionPatternColumn)}] NVARCHAR(64) NULL,");
         sql.AppendLine($"    [{Escape(policy.NotesColumn)}] NVARCHAR(1024) NULL,");
-        sql.AppendLine($"    [{Escape(policy.EnabledColumn)}] BIT NOT NULL CONSTRAINT [DF_{Escape(policy.TableName)}_{Escape(policy.EnabledColumn)}] DEFAULT(1),");
+        sql.AppendLine($"    [{Escape(policy.EnabledColumn)}] BIT NOT NULL CONSTRAINT [{Escape(BuildIdentifier("DF", policy.TableName, policy.EnabledColumn))}] DEFAULT(1),");
         sql.AppendLine($"    [{Escape(policy.UpdatedAtUtcColumn)}] DATETIMEOFFSET NOT NULL");
         sql.AppendLine(");");
         sql.AppendLine();
-        sql.AppendLine($"CREATE INDEX [IX_{Escape(installedSoftware.TableName)}_{Escape(installedSoftware.PcForeignKeyColumn)}] ON [{schema}].[{Escape(installedSoftware.TableName)}]([{Escape(installedSoftware.PcForeignKeyColumn)}]);");
-        sql.AppendLine($"CREATE INDEX [IX_{Escape(policy.TableName)}_{Escape(policy.ClassificationColumn)}] ON [{schema}].[{Escape(policy.TableName)}]([{Escape(policy.ClassificationColumn)}]);");
+        sql.AppendLine($"CREATE INDEX [{Escape(BuildIdentifier("IX", installedSoftware.TableName, installedSoftware.PcForeignKeyColumn))}] ON [{schema}].[{Escape(installedSoftware.TableName)}]([{Escape(installedSoftware.PcForeignKeyColumn)}]);");
+        sql.AppendLine($"CREATE INDEX [{Escape(BuildIdentifier("IX", policy.TableName, policy.ClassificationColumn))}] ON [{schema}].[{Escape(policy.TableName)}]([{Escape(policy.ClassificationColumn)}]);");
         return sql.ToString();
+    }
+
+    private static string BuildIdentifier(string prefix, params string[] parts)
+    {
+        var identifier = string.Join('_', [prefix, .. parts]);
+        if (identifier.Length <= 128)
+        {
+            return identifier;
+        }
+
+        var hash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(identifier)))[..16];
+        return $"{identifier[..(128 - hash.Length - 1)]}_{hash}";
     }
 
     private static string Escape(string identifier) => identifier.Replace("]", "]]", StringComparison.Ordinal);

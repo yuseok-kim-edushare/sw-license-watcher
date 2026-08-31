@@ -67,6 +67,7 @@ public sealed class UpdateManifestOptions
 
     public string Version { get; set; } = "1.0.0";
 
+    [Required]
     public string PackageUrl { get; set; } = "https://updates.example.local/sw-license-watcher/worker-1.0.0.zip";
 
     public string Sha256 { get; set; } = "REPLACE_WITH_RELEASE_SHA256";
@@ -81,8 +82,9 @@ public sealed class UpdateManifestOptions
 
 public sealed class SqlServerStorageOptions
 {
-    public string ConnectionString { get; set; } = "Server=sqlserver.contoso.local;Database=SwLicenseWatcher;Trusted_Connection=True;TrustServerCertificate=True;";
+    public string ConnectionString { get; set; } = string.Empty;
 
+    [Required]
     public string SchemaName { get; set; } = "inventory";
 
     public PcTableOptions PcTable { get; set; } = new();
