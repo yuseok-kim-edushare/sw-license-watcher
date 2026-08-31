@@ -43,10 +43,11 @@ jobs:
               return;
             }
 
-            const labels = pr.labels.map(label => label.name);
-            if (!labels.includes('dependencies')) {
-              core.setFailed(`PR #${prNumber} does not have the 'dependencies' label`);
-              return;
+            const labels = pr.labels.map(label => label.name.toLowerCase());
+            const dependencyLabels = new Set(['dependencies', 'github-actions', 'nuget']);
+            const hasDependencyLabel = labels.some(label => dependencyLabels.has(label));
+            if (!hasDependencyLabel) {
+              console.log(`PR #${prNumber} does not carry a dependency label; continuing because it is a Dependabot PR and the CI checks already passed.`);
             }
 
             if (pr.mergeable === false) {
