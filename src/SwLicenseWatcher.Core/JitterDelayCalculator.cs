@@ -11,8 +11,8 @@ public static class JitterDelayCalculator
             return baseInterval;
         }
 
-        var upperBoundInSeconds = Math.Max(1, (int)Math.Ceiling(maxJitter.TotalSeconds));
-        var jitter = TimeSpan.FromSeconds(RandomNumberGenerator.GetInt32(0, upperBoundInSeconds));
+        var upperBoundInMilliseconds = Math.Max(1, (int)Math.Ceiling(maxJitter.TotalMilliseconds));
+        var jitter = TimeSpan.FromMilliseconds(RandomNumberGenerator.GetInt32(0, upperBoundInMilliseconds + 1));
         return baseInterval + jitter;
     }
 }

@@ -34,7 +34,7 @@ app.MapGet("/api/design", (
         },
         SqlServer = new
         {
-            sqlOptions.Value.ConnectionString,
+            HasConnectionStringConfigured = !string.IsNullOrWhiteSpace(sqlOptions.Value.ConnectionString),
             sqlOptions.Value.SchemaName,
             SchemaScript = schemaBuilder.Build(sqlOptions.Value)
         },
