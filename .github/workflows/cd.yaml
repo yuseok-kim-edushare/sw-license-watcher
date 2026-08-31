@@ -1,0 +1,160 @@
+name: Continuous Deployment
+
+on:
+  workflow_run:
+    workflows: ["CI tests"]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  deploy:
+    if: github.event.workflow_run.conclusion == 'success' || github.event_name == 'workflow_dispatch'
+    runs-on: windows-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+        with:
+          fetch-tags: true
+          fetch-depth: 0
+          ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.ref_name }}
+
+      - name: Get USERPROFILE and set CACHE_PATH
+        shell: pwsh
+        run: |
+          $userProfile = [System.Environment]::GetEnvironmentVariable("USERPROFILE")
+          $cachePath = Join-Path $userProfile ".nuget\packages"
+          echo "CACHE_PATH=$cachePath" >> $env:GITHUB_ENV
+
+      - name: Cache NuGet packages
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.nuget/packages
+            ${{ env.CACHE_PATH }}
+          key: ${{ runner.os }}-nuget-${{ hashFiles('**/*.csproj', '**/*.slnx', '**/Directory.Packages.props') }}
+          restore-keys: |
+            ${{ runner.os }}-nuget-
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+
+      - name: Restore dependencies
+        run: dotnet restore SwLicenseWatcher.slnx
+
+      - name: Publish Agent Watchdog (win-x64)
+        run: dotnet publish src/SwLicenseWatcher.Agent.Watchdog/SwLicenseWatcher.Agent.Watchdog.csproj -r win-x64 -c Release --self-contained false -o ./publish/agent-watchdog/win-x64
+
+      - name: Publish Agent Worker (win-x64)
+        run: dotnet publish src/SwLicenseWatcher.Agent.Worker/SwLicenseWatcher.Agent.Worker.csproj -r win-x64 -c Release --self-contained false -o ./publish/agent-worker/win-x64
+
+      - name: Publish Api (win-x64)
+        run: dotnet publish src/SwLicenseWatcher.Api/SwLicenseWatcher.Api.csproj -r win-x64 -c Release --self-contained false -o ./publish/api/win-x64
+
+      - name: Prepare release files
+        shell: pwsh
+        run: |
+          $projectRoot = "${{ github.workspace }}"
+          $releaseRoot = Join-Path $projectRoot "release-files"
+
+          if (Test-Path $releaseRoot) {
+            Remove-Item -Path $releaseRoot -Recurse -Force
+          }
+          New-Item -Path $releaseRoot -ItemType Directory -Force | Out-Null
+
+          $stagingName = "SwLicenseWatcher-staging"
+          $stagingDir = Join-Path $releaseRoot $stagingName
+          New-Item -Path $stagingDir -ItemType Directory -Force | Out-Null
+
+          foreach ($component in @("agent-watchdog", "agent-worker", "api")) {
+            $src = Join-Path $projectRoot "publish\$component\win-x64"
+            $dest = Join-Path $stagingDir "$component\win-x64"
+            if (!(Test-Path $src)) {
+              Write-Error "Publish output not found at: $src"
+              exit 1
+            }
+            New-Item -Path $dest -ItemType Directory -Force | Out-Null
+            Copy-Item -Path "$src\*" -Destination $dest -Recurse -Force
+          }
+
+          Write-Host "Release staging contents:"
+          Get-ChildItem -Path $stagingDir -Recurse -File | ForEach-Object {
+            Write-Host $_.FullName.Replace($stagingDir, "")
+          }
+
+          echo "STAGING_DIR=$stagingDir" >> $env:GITHUB_ENV
+          echo "RELEASE_ROOT=$releaseRoot" >> $env:GITHUB_ENV
+
+      - name: Get latest release version and generate release notes
+        shell: pwsh
+        run: |
+          $latestRelease = git tag --list --sort=-version:refname | Where-Object { $_ -match '^\d+\.\d+\.\d+$' } | Select-Object -First 1
+
+          if ($latestRelease) {
+            Write-Output "Latest release version: $latestRelease"
+            echo "latest_release=$latestRelease" >> $env:GITHUB_ENV
+
+            $version = [Version]$latestRelease
+            $newVersionString = '{0}.{1}.{2}' -f $version.Major, $version.Minor, ($version.Build + 1)
+
+            # Allow commit messages like "Update Version To 0.1.2" to override the patch bump.
+            $latestCommitMessages = (git log "$latestRelease..HEAD" --pretty=%B 2>$null)
+            foreach ($line in $latestCommitMessages) {
+              if ($line -match "Update Version To (\d+\.\d+\.\d+)") {
+                $newVersionString = $Matches[1]
+              }
+            }
+
+            $releaseNotes = "## Changes since $latestRelease`n"
+            $releaseNotes += (git log "$latestRelease..HEAD" --oneline) -join "`n"
+            $releaseNotes += "`n`n### Files changed`n`n"
+            $releaseNotes += (git diff "$latestRelease..HEAD" --compact-summary) -join "`n"
+          } else {
+            Write-Output "No previous release found. Creating initial release 0.0.1"
+            $newVersionString = "0.0.1"
+
+            $releaseNotes = "## Initial Release v0.0.1`n"
+            $releaseNotes += (git log --oneline -20) -join "`n"
+            $releaseNotes += "`n`n### Package contents`n`n"
+            $releaseNotes += "- agent-watchdog/win-x64/ - self-update Windows Service`n"
+            $releaseNotes += "- agent-worker/win-x64/ - inventory collection Windows Service`n"
+            $releaseNotes += "- api/win-x64/ - ASP.NET Core API server`n"
+          }
+
+          echo "new_release=$newVersionString" >> $env:GITHUB_ENV
+
+          $zipName = "SwLicenseWatcher-$newVersionString.zip"
+          $zipPath = Join-Path $env:RELEASE_ROOT $zipName
+          $stagingParent = Split-Path $env:STAGING_DIR -Parent
+          $renamedStaging = Join-Path $stagingParent "SwLicenseWatcher-$newVersionString"
+          Rename-Item -Path $env:STAGING_DIR -NewName (Split-Path $renamedStaging -Leaf)
+
+          if (Test-Path $zipPath) {
+            Remove-Item -Path $zipPath -Force
+          }
+          Compress-Archive -Path $renamedStaging -DestinationPath $zipPath -Force
+
+          echo "zip_path=$zipPath" >> $env:GITHUB_ENV
+          echo "zip_name=$zipName" >> $env:GITHUB_ENV
+
+          $releaseNotes | Out-File -FilePath (Join-Path $env:RELEASE_ROOT "releaseNotes.txt") -Encoding utf8
+          $releaseNotesContent = Get-Content -Path (Join-Path $env:RELEASE_ROOT "releaseNotes.txt") -Raw
+          echo "release_notes<<EOF" >> $env:GITHUB_ENV
+          echo "$releaseNotesContent" >> $env:GITHUB_ENV
+          echo "EOF" >> $env:GITHUB_ENV
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ${{ env.zip_path }}
+          tag_name: ${{ env.new_release }}
+          name: Release ${{ env.new_release }}
+          body: ${{ env.release_notes }}
+          draft: false
+          prerelease: false
+          fail_on_unmatched_files: true

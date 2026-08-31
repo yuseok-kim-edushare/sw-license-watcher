@@ -29,6 +29,23 @@
 - `/src/SwLicenseWatcher.Agent.Worker`: inventory 수집 Windows Service
 - `/src/SwLicenseWatcher.Agent.Watchdog`: self-update Windows Service
 - `/src/SwLicenseWatcher.Api`: ASP.NET Core API
+- `.github/workflows/ci.yaml`: CI (빌드/테스트, Dependabot auto-merge 트리거)
+- `.github/workflows/auto-merge.yaml`: Dependabot PR 자동 머지
+- `.github/workflows/cd.yaml`: CD (CI 성공 후 publish 산출물 ZIP GitHub Release)
+
+## CI/CD
+
+- **CI (`ci.yaml`)**: `main` 대상 push/PR에서 `windows-latest`로 솔루션 Restore/Build를 검증합니다. `tests/` 아래 테스트 프로젝트가 있으면 자동으로 실행합니다. Dependabot PR이 CI를 통과하면 auto-merge 워크플로우를 트리거합니다.
+- **CD (`cd.yaml`)**: `main`에서 CI가 성공하면 `Agent.Watchdog`, `Agent.Worker`, `Api`를 win-x64로 publish하고 `SwLicenseWatcher-{version}.zip`으로 GitHub Release를 생성합니다. 버전은 최신 태그의 patch 자동 증가이며, 커밋 메시지에 `Update Version To x.y.z`를 포함해 재정의할 수 있습니다.
+
+Release ZIP 구조:
+
+```
+SwLicenseWatcher-{version}/
+  agent-watchdog/win-x64/   self-update Windows Service
+  agent-worker/win-x64/     inventory 수집 Windows Service
+  api/win-x64/              ASP.NET Core API 서버
+```
 
 ## 커스터마이징 포인트
 
