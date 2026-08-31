@@ -14,7 +14,6 @@ public sealed class SqlServerSchemaScriptBuilder
 
         var sql = new StringBuilder();
         sql.AppendLine($"IF SCHEMA_ID(N'{schemaLiteral}') IS NULL EXEC(N'CREATE SCHEMA [{schema}]');");
-        sql.AppendLine("GO");
         sql.AppendLine();
         sql.AppendLine($"CREATE TABLE [{schema}].[{Escape(pc.TableName)}] (");
         sql.AppendLine($"    [{Escape(pc.PrimaryKeyColumn)}] BIGINT IDENTITY(1,1) NOT NULL PRIMARY KEY,");
