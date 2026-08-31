@@ -52,8 +52,8 @@
 ## 수동 실행 예시
 
 ```bash
-dotnet build /home/runner/work/sw-license-watcher/sw-license-watcher/SwLicenseWatcher.slnx
-dotnet run --project /home/runner/work/sw-license-watcher/sw-license-watcher/src/SwLicenseWatcher.Api
+dotnet build SwLicenseWatcher.slnx
+dotnet run --project src/SwLicenseWatcher.Api
 ```
 
 API 실행 후:
@@ -64,6 +64,6 @@ API 실행 후:
 Worker/Watchdog는 진단용으로 1회 실행 모드도 지원합니다.
 
 ```bash
-dotnet run --project /home/runner/work/sw-license-watcher/sw-license-watcher/src/SwLicenseWatcher.Agent.Worker -- --Agent:RunOnceForDiagnostics=true
-dotnet run --project /home/runner/work/sw-license-watcher/sw-license-watcher/src/SwLicenseWatcher.Agent.Watchdog -- --Watchdog:RunOnceForDiagnostics=true
+dotnet run --project src/SwLicenseWatcher.Agent.Worker -- --Agent:RunOnceForDiagnostics=true
+dotnet run --project src/SwLicenseWatcher.Agent.Watchdog -- --Watchdog:RunOnceForDiagnostics=true
 ```

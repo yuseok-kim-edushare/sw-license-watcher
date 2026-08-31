@@ -10,14 +10,12 @@ public sealed class AgentApiClient
     private readonly ILogger<AgentApiClient> _logger;
     private readonly WorkerAgentOptions _options;
 
-    public AgentApiClient(ILogger<AgentApiClient> logger, IOptions<WorkerAgentOptions> options)
+    public AgentApiClient(HttpClient httpClient, ILogger<AgentApiClient> logger, IOptions<WorkerAgentOptions> options)
     {
+        _httpClient = httpClient;
         _logger = logger;
         _options = options.Value;
-        _httpClient = new HttpClient
-        {
-            BaseAddress = new Uri(_options.ServerBaseUrl, UriKind.Absolute)
-        };
+        _httpClient.BaseAddress = new Uri(_options.ServerBaseUrl, UriKind.Absolute);
     }
 
     public Task PublishSnapshotAsync(InventoryIngestionRequest snapshot, CancellationToken cancellationToken) =>

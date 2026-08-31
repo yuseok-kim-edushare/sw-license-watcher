@@ -6,7 +6,7 @@ builder.Services.AddWindowsService(options => options.ServiceName = "SwLicenseWa
 builder.Services.AddOptions<WatchdogOptions>()
     .Bind(builder.Configuration.GetSection("Watchdog"))
     .ValidateOnStart();
-builder.Services.AddSingleton<UpdateManifestClient>();
+builder.Services.AddHttpClient<UpdateManifestClient>();
 builder.Services.AddHostedService<Worker>();
 
 await builder.Build().RunAsync();

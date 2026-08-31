@@ -13,7 +13,7 @@ builder.Services.AddOptions<LocalStateStoreOptions>()
 builder.Services.AddSingleton(sp => sp.GetRequiredService<IOptions<LocalStateStoreOptions>>().Value);
 builder.Services.AddSingleton<ILocalStateProtector, DpapiLocalStateProtector>();
 builder.Services.AddSingleton<ISoftwareInventoryCollector, RegistrySoftwareInventoryCollector>();
-builder.Services.AddSingleton<AgentApiClient>();
+builder.Services.AddHttpClient<AgentApiClient>();
 builder.Services.AddHostedService<Worker>();
 
 await builder.Build().RunAsync();
