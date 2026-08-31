@@ -10,8 +10,9 @@ builder.Services.AddOptions<WatchdogOptions>()
         options => !string.IsNullOrWhiteSpace(options.DeviceCode),
         "Watchdog:DeviceCode is required.")
     .Validate(
-        options => Uri.TryCreate(options.ServerBaseUrl, UriKind.Absolute, out _),
-        "Watchdog:ServerBaseUrl must be an absolute URI.")
+        options => Uri.TryCreate(options.ServerBaseUrl, UriKind.Absolute, out var uri)
+            && (uri.Scheme == Uri.UriSchemeHttp || uri.Scheme == Uri.UriSchemeHttps),
+        "Watchdog:ServerBaseUrl must be an absolute http(s) URI. Set it in appsettings.json (or via the Watchdog__ServerBaseUrl environment variable / --Watchdog:ServerBaseUrl argument) to point the watchdog at a remote server.")
     .ValidateOnStart();
 builder.Services.AddHttpClient<UpdateManifestClient>((sp, client) =>
 {

@@ -1,4 +1,5 @@
 using System.Net.Http.Json;
+using System.Text.Json.Serialization.Metadata;
 using Microsoft.Extensions.Options;
 using SwLicenseWatcher.Core;
 
@@ -18,16 +19,16 @@ public sealed class AgentApiClient
     }
 
     public Task PublishSnapshotAsync(InventoryIngestionRequest snapshot, CancellationToken cancellationToken) =>
-        PostAsync(_options.SnapshotPath, snapshot, cancellationToken);
+        PostAsync(_options.SnapshotPath, snapshot, InventoryJsonSerializerContext.Default.InventoryIngestionRequest, cancellationToken);
 
     public Task PublishHeartbeatAsync(AgentHeartbeat heartbeat, CancellationToken cancellationToken) =>
-        PostAsync(_options.HeartbeatPath, heartbeat, cancellationToken);
+        PostAsync(_options.HeartbeatPath, heartbeat, InventoryJsonSerializerContext.Default.AgentHeartbeat, cancellationToken);
 
-    private async Task PostAsync<TPayload>(string path, TPayload payload, CancellationToken cancellationToken)
+    private async Task PostAsync<TPayload>(string path, TPayload payload, JsonTypeInfo<TPayload> typeInfo, CancellationToken cancellationToken)
     {
         try
         {
-            using var response = await _httpClient.PostAsJsonAsync(path, payload, cancellationToken);
+            using var response = await _httpClient.PostAsJsonAsync(path, payload, typeInfo, cancellationToken);
             response.EnsureSuccessStatusCode();
         }
         catch (TaskCanceledException) when (cancellationToken.IsCancellationRequested)
