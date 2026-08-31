@@ -47,14 +47,14 @@ jobs:
       - name: Restore dependencies
         run: dotnet restore SwLicenseWatcher.slnx
 
-      - name: Publish Agent Watchdog (win-x64)
-        run: dotnet publish src/SwLicenseWatcher.Agent.Watchdog/SwLicenseWatcher.Agent.Watchdog.csproj -r win-x64 -c Release --self-contained false -o ./publish/agent-watchdog/win-x64
+      - name: Publish Agent Watchdog (win-x64, Native AOT)
+        run: dotnet publish src/SwLicenseWatcher.Agent.Watchdog/SwLicenseWatcher.Agent.Watchdog.csproj -r win-x64 -c Release -o ./publish/agent-watchdog/win-x64
 
-      - name: Publish Agent Worker (win-x64)
-        run: dotnet publish src/SwLicenseWatcher.Agent.Worker/SwLicenseWatcher.Agent.Worker.csproj -r win-x64 -c Release --self-contained false -o ./publish/agent-worker/win-x64
+      - name: Publish Agent Worker (win-x64, Native AOT)
+        run: dotnet publish src/SwLicenseWatcher.Agent.Worker/SwLicenseWatcher.Agent.Worker.csproj -r win-x64 -c Release -o ./publish/agent-worker/win-x64
 
-      - name: Publish Api (win-x64)
-        run: dotnet publish src/SwLicenseWatcher.Api/SwLicenseWatcher.Api.csproj -r win-x64 -c Release --self-contained false -o ./publish/api/win-x64
+      - name: Publish Api (win-x64, Native AOT)
+        run: dotnet publish src/SwLicenseWatcher.Api/SwLicenseWatcher.Api.csproj -r win-x64 -c Release -o ./publish/api/win-x64
 
       - name: Prepare release files
         shell: pwsh

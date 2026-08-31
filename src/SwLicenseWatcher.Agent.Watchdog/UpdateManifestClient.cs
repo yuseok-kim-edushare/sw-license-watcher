@@ -21,7 +21,7 @@ public sealed class UpdateManifestClient
     {
         try
         {
-            return await _httpClient.GetFromJsonAsync<UpdateManifest>(_options.ManifestPath, cancellationToken);
+            return await _httpClient.GetFromJsonAsync(_options.ManifestPath, InventoryJsonSerializerContext.Default.UpdateManifest, cancellationToken);
         }
         catch (TaskCanceledException) when (cancellationToken.IsCancellationRequested)
         {

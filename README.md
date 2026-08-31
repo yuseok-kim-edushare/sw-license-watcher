@@ -22,6 +22,9 @@
 - **자체 패치 안정성**
   - 랜덤 Jitter 기반 업데이트 주기
   - Heartbeat 복구 실패 시 자동 Rollback 설계
+- **Native AOT 컴파일**
+  - Worker/Watchdog/Api 모두 `PublishAot=true`로 네이티브 바이너리 publish
+  - Source-generated 구성 바인딩(`EnableConfigurationBindingGenerator`)과 System.Text.Json source generator를 사용해 리플렉션 없이 동작
 
 ## 프로젝트 구조
 
@@ -36,7 +39,7 @@
 ## CI/CD
 
 - **CI (`ci.yaml`)**: `main` 대상 push/PR에서 `windows-latest`로 솔루션 Restore/Build를 검증합니다. `tests/` 아래 테스트 프로젝트가 있으면 자동으로 실행합니다. Dependabot PR이 CI를 통과하면 auto-merge 워크플로우를 트리거합니다.
-- **CD (`cd.yaml`)**: `main`에서 CI가 성공하면 `Agent.Watchdog`, `Agent.Worker`, `Api`를 win-x64로 publish하고 `SwLicenseWatcher-{version}.zip`으로 GitHub Release를 생성합니다. 버전은 최신 태그의 patch 자동 증가이며, 커밋 메시지에 `Update Version To x.y.z`를 포함해 재정의할 수 있습니다.
+- **CD (`cd.yaml`)**: `main`에서 CI가 성공하면 `Agent.Watchdog`, `Agent.Worker`, `Api`를 win-x64 **Native AOT**로 publish하고 `SwLicenseWatcher-{version}.zip`으로 GitHub Release를 생성합니다. 버전은 최신 태그의 patch 자동 증가이며, 커밋 메시지에 `Update Version To x.y.z`를 포함해 재정의할 수 있습니다.
 
 Release ZIP 구조:
 
@@ -65,6 +68,25 @@ SwLicenseWatcher-{version}/
 - PC 테이블: `company_pc`
 - 설치 SW 테이블: `company_pc_installed_sw`
 - 정책 테이블: `company_sw_policy`
+
+## 클라이언트 원격 서버 설정
+
+Worker/Watchdog 클라이언트가 접속할 서버 주소는 설정 파일로 지정합니다. Native AOT 빌드에서도 source-generated 구성 바인딩으로 동일하게 동작합니다.
+
+- Worker: `src/SwLicenseWatcher.Agent.Worker/appsettings.json`의 `Agent:ServerBaseUrl`
+- Watchdog: `src/SwLicenseWatcher.Agent.Watchdog/appsettings.json`의 `Watchdog:ServerBaseUrl`
+
+원격 서버 예:
+
+```json
+{
+  "Agent": {
+    "ServerBaseUrl": "https://license-watcher.contoso.com"
+  }
+}
+```
+
+환경 변수(`Agent__ServerBaseUrl`, `Watchdog__ServerBaseUrl`) 또는 커맨드라인 인자(`--Agent:ServerBaseUrl=...`)로도 재정의할 수 있습니다. 값이 절대 http/https URI가 아니면 서비스가 시작 시점에 검증 오류로 실패합니다.
 
 ## 수동 실행 예시
 
