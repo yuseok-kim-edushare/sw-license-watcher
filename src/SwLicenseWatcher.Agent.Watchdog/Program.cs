@@ -3,7 +3,7 @@ using SwLicenseWatcher.Agent.Watchdog;
 using SwLicenseWatcher.Core;
 
 var builder = Host.CreateApplicationBuilder(args);
-builder.Services.AddWindowsService(options => options.ServiceName = "SwLicenseWatcher Agent Watchdog");
+builder.Services.AddWindowsService(options => options.ServiceName = "SwLicenseWatcher.Agent.Watchdog");
 builder.Services.AddOptions<WatchdogOptions>()
     .Bind(builder.Configuration.GetSection("Watchdog"))
     .Validate(

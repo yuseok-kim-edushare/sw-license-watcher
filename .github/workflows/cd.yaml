@@ -56,6 +56,9 @@ jobs:
       - name: Publish Api (win-x64, Native AOT)
         run: dotnet publish src/SwLicenseWatcher.Api/SwLicenseWatcher.Api.csproj -r win-x64 -c Release -o ./publish/api/win-x64
 
+      - name: Publish Api (win-x64, IIS in-process)
+        run: dotnet publish src/SwLicenseWatcher.Api/SwLicenseWatcher.Api.csproj -r win-x64 -c Release --self-contained false -p:PublishAot=false -p:PublishTrimmed=false -p:UseAppHost=false -o ./publish/api/iis/win-x64
+
       - name: Prepare release files
         shell: pwsh
         run: |
@@ -71,9 +74,14 @@ jobs:
           $stagingDir = Join-Path $releaseRoot $stagingName
           New-Item -Path $stagingDir -ItemType Directory -Force | Out-Null
 
-          foreach ($component in @("agent-watchdog", "agent-worker", "api")) {
-            $src = Join-Path $projectRoot "publish\$component\win-x64"
-            $dest = Join-Path $stagingDir "$component\win-x64"
+          foreach ($copy in @(
+            @{ Src = "publish\agent-watchdog\win-x64"; Dest = "agent-watchdog\win-x64" },
+            @{ Src = "publish\agent-worker\win-x64"; Dest = "agent-worker\win-x64" },
+            @{ Src = "publish\api\win-x64"; Dest = "api\win-x64" },
+            @{ Src = "publish\api\iis\win-x64"; Dest = "api\iis\win-x64" }
+          )) {
+            $src = Join-Path $projectRoot $copy.Src
+            $dest = Join-Path $stagingDir $copy.Dest
             if (!(Test-Path $src)) {
               Write-Error "Publish output not found at: $src"
               exit 1
@@ -123,7 +131,8 @@ jobs:
             $releaseNotes += "`n`n### Package contents`n`n"
             $releaseNotes += "- agent-watchdog/win-x64/ - self-update Windows Service`n"
             $releaseNotes += "- agent-worker/win-x64/ - inventory collection Windows Service`n"
-            $releaseNotes += "- api/win-x64/ - ASP.NET Core API server`n"
+            $releaseNotes += "- api/win-x64/ - ASP.NET Core API Native AOT (Kestrel)`n"
+            $releaseNotes += "- api/iis/win-x64/ - ASP.NET Core API for IIS in-process hosting`n"
           }
 
           echo "new_release=$newVersionString" >> $env:GITHUB_ENV

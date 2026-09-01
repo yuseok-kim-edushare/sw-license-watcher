@@ -30,7 +30,8 @@
   - ZIP 경로 이탈 방지, 서비스 중지/교체/시작, 헬스체크 실패 시 자동 롤백
   - 헬스체크는 Worker가 직접 기록하는 로컬 health 신호 파일(설치 버전 + 기록 시각)을 롤백 제한 시간 내에서 확인
 - **Native AOT 컴파일**
-  - Worker/Watchdog/Api 모두 `PublishAot=true`로 네이티브 바이너리 publish
+  - Worker/Watchdog와 API 단독 호스트는 `PublishAot=true`로 네이티브 바이너리 publish
+  - API는 IIS in-process용으로 `PublishAot=false` 산출물도 함께 배포합니다
   - Source-generated 구성 바인딩(`EnableConfigurationBindingGenerator`)과 System.Text.Json source generator를 사용해 리플렉션 없이 동작
 
 ## 프로젝트 구조
@@ -39,6 +40,9 @@
 - `/src/SwLicenseWatcher.Agent.Worker`: inventory 수집 Windows Service
 - `/src/SwLicenseWatcher.Agent.Watchdog`: self-update Windows Service
 - `/src/SwLicenseWatcher.Api`: ASP.NET Core API
+- `/deploy/examples`: 서버 API·PC 에이전트용 `appsettings.json` 템플릿
+- `/deploy/scripts`: PC에 Worker·Watchdog Windows Service 설치/제거 스크립트
+- `/docs/company-deployment.md`: 서버 설정 예시와 회사 PC 클라이언트 배포 절차
 - `.github/workflows/ci.yaml`: CI (빌드/테스트, Dependabot auto-merge 트리거)
 - `.github/workflows/auto-merge.yaml`: Dependabot PR 자동 머지
 - `.github/workflows/cd.yaml`: CD (CI 성공 후 publish 산출물 ZIP GitHub Release)
@@ -46,7 +50,7 @@
 ## CI/CD
 
 - **CI (`ci.yaml`)**: `main` 대상 push/PR에서 `windows-latest`로 솔루션 Restore/Build를 검증합니다. `tests/` 아래 테스트 프로젝트가 있으면 자동으로 실행합니다. Dependabot PR이 CI를 통과하면 auto-merge 워크플로우를 트리거합니다.
-- **CD (`cd.yaml`)**: `main`에서 CI가 성공하면 `Agent.Watchdog`, `Agent.Worker`, `Api`를 win-x64 **Native AOT**로 publish하고 `SwLicenseWatcher-{version}.zip`으로 GitHub Release를 생성합니다. 버전은 최신 태그의 patch 자동 증가이며, 커밋 메시지에 `Update Version To x.y.z`를 포함해 재정의할 수 있습니다.
+- **CD (`cd.yaml`)**: `main`에서 CI가 성공하면 `Agent.Watchdog`, `Agent.Worker`를 win-x64 **Native AOT**로, API는 **Native AOT(Kestrel)** 와 **IIS in-process** 두 가지로 publish하고 `SwLicenseWatcher-{version}.zip`으로 GitHub Release를 생성합니다. 버전은 최신 태그의 patch 자동 증가이며, 커밋 메시지에 `Update Version To x.y.z`를 포함해 재정의할 수 있습니다.
 
 Release ZIP 구조:
 
@@ -54,7 +58,8 @@ Release ZIP 구조:
 SwLicenseWatcher-{version}/
   agent-watchdog/win-x64/   self-update Windows Service
   agent-worker/win-x64/     inventory 수집 Windows Service
-  api/win-x64/              ASP.NET Core API 서버
+  api/win-x64/              API Native AOT (Kestrel 단독)
+  api/iis/win-x64/          API IIS in-process (web.config 포함)
 ```
 
 ## 커스터마이징 포인트
@@ -75,6 +80,10 @@ SwLicenseWatcher-{version}/
 - PC 테이블: `company_pc`
 - 설치 SW 테이블: `company_pc_installed_sw`
 - 정책 테이블: `company_sw_policy`
+
+## 회사 배포
+
+서버 API는 [deploy/examples/appsettings.api.company.json](deploy/examples/appsettings.api.company.json)(Kestrel) 또는 [deploy/examples/appsettings.api.iis.company.json](deploy/examples/appsettings.api.iis.company.json)(IIS)으로 맞추고, 회사 PC에는 Worker·Watchdog만 설치합니다. 절차는 [docs/company-deployment.md](docs/company-deployment.md)를 참고하세요.
 
 ## 클라이언트 원격 서버 설정
 

@@ -4,7 +4,11 @@ using SwLicenseWatcher.Core;
 using System.Security.Cryptography;
 using System.Text;
 
+#if NATIVE_AOT
 var builder = WebApplication.CreateSlimBuilder(args);
+#else
+var builder = WebApplication.CreateBuilder(args);
+#endif
 builder.Services.ConfigureHttpJsonOptions(options =>
 {
     options.SerializerOptions.TypeInfoResolverChain.Insert(0, ApiJsonSerializerContext.Default);
