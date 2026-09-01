@@ -21,9 +21,9 @@ public sealed class Worker(
 
         do
         {
-            await WriteHealthReportAsync(agentOptions, stoppingToken);
             var queueDrained = await snapshotQueue.FlushAsync(apiClient, stoppingToken);
             var snapshot = await CollectSnapshotAsync(agentOptions, stoppingToken);
+            await WriteHealthReportAsync(agentOptions, stoppingToken);
             logger.LogInformation(
                 "Collected {SoftwareCount} software entries via uninstall registry keys. Win32_Product/WMI is intentionally not used.",
                 snapshot.InstalledSoftware.Count);

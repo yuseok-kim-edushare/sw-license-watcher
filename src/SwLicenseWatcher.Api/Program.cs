@@ -108,6 +108,11 @@ app.MapPost("/api/inventory/snapshots", async (
     SqlServerInventoryRepository repository,
     CancellationToken cancellationToken) =>
 {
+    if (!InventorySnapshotValidator.TryValidate(request, out var validationError))
+    {
+        return Results.BadRequest(validationError);
+    }
+
     await repository.SaveSnapshotAsync(request, cancellationToken);
     store.RecordSnapshot(request);
     return Results.Accepted($"/api/inventory/snapshots/{request.Pc.DeviceCode}", new SnapshotAcceptedResponse(

@@ -35,9 +35,9 @@ public sealed class SqlServerInventoryRepository(SqlServerStorageOptions options
                 """;
             await ExecuteAsync(connection, transaction, sql,
             [
-                new("@pcId", pcId), new("@name", entry.Name), new("@version", DbValue(entry.Version)),
-                new("@publisher", DbValue(entry.Publisher)), new("@location", DbValue(entry.InstallLocation)),
-                new("@scope", entry.DiscoveryScope), new("@source", entry.DiscoverySource),
+                new("@pcId", pcId), new("@name", Truncate(entry.Name, 256)), new("@version", DbValue(Truncate(entry.Version, 64))),
+                new("@publisher", DbValue(Truncate(entry.Publisher, 256))), new("@location", DbValue(Truncate(entry.InstallLocation, 512))),
+                new("@scope", Truncate(entry.DiscoveryScope, 256)), new("@source", Truncate(entry.DiscoverySource, 64)),
                 new("@collectedAt", snapshot.CollectedAtUtc)
             ], cancellationToken);
         }
@@ -125,6 +125,9 @@ public sealed class SqlServerInventoryRepository(SqlServerStorageOptions options
     }
 
     private static object DbValue(object? value) => value ?? DBNull.Value;
+
+    private static string? Truncate(string? value, int maxLength) =>
+        value is null || value.Length <= maxLength ? value : value[..maxLength];
 
     private static string Name(params string[] parts) =>
         string.Join('.', parts.Select(part => $"[{part.Replace("]", "]]", StringComparison.Ordinal)}]"));

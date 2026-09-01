@@ -86,36 +86,13 @@ public sealed class LocalSnapshotQueue(
 
     private static InventoryIngestionRequest ReadValidatedSnapshot(string json)
     {
-        var snapshot = JsonSerializer.Deserialize(json, InventoryJsonSerializerContext.Default.InventoryIngestionRequest)
-            ?? throw new JsonException("Queued snapshot was empty.");
-        if (snapshot.Pc is null ||
-            string.IsNullOrWhiteSpace(snapshot.Pc.DeviceCode) ||
-            string.IsNullOrWhiteSpace(snapshot.Pc.HostName) ||
-            snapshot.Pc.DomainName is null ||
-            snapshot.Pc.OperatingSystem is null ||
-            string.IsNullOrWhiteSpace(snapshot.Pc.AgentVersion) ||
-            snapshot.CollectedAtUtc == default)
+        var snapshot = JsonSerializer.Deserialize(json, InventoryJsonSerializerContext.Default.InventoryIngestionRequest);
+        if (!InventorySnapshotValidator.TryValidate(snapshot, out var error))
         {
-            throw new JsonException("Queued snapshot is missing required identity fields.");
+            throw new JsonException(error);
         }
 
-        if (snapshot.InstalledSoftware is null)
-        {
-            throw new JsonException("Queued snapshot is missing the installed software collection.");
-        }
-
-        foreach (var entry in snapshot.InstalledSoftware)
-        {
-            if (entry is null ||
-                string.IsNullOrWhiteSpace(entry.Name) ||
-                string.IsNullOrWhiteSpace(entry.DiscoveryScope) ||
-                string.IsNullOrWhiteSpace(entry.DiscoverySource))
-            {
-                throw new JsonException("Queued snapshot contains an invalid installed software entry.");
-            }
-        }
-
-        return snapshot;
+        return snapshot!;
     }
 
     private void EvictSnapshotsBeyondQuota(string newestPath)

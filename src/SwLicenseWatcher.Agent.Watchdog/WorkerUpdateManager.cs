@@ -208,8 +208,8 @@ public sealed class WorkerUpdateManager(
             {
                 CopyDirectory(_options.WorkerInstallDirectory, backup);
             }
-            TryDeleteDirectory(_options.WorkerInstallDirectory);
             installReplaced = true;
+            TryDeleteDirectory(_options.WorkerInstallDirectory);
             CopyDirectory(source, _options.WorkerInstallDirectory);
             await File.WriteAllTextAsync(Path.Combine(_options.WorkerInstallDirectory, ".version"), version, cancellationToken);
             await SetServiceStateAsync(service, start: true, cancellationToken);

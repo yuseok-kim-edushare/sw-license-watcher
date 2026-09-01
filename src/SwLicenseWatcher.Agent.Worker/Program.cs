@@ -17,6 +17,10 @@ builder.Services.AddOptions<WorkerAgentOptions>()
     .ValidateOnStart();
 builder.Services.AddOptions<LocalStateStoreOptions>()
     .Bind(builder.Configuration.GetSection("LocalState"))
+    .Validate(options => !string.IsNullOrWhiteSpace(options.QueueDirectory),
+        "LocalState:QueueDirectory is required.")
+    .Validate(options => options.MaxQueuedSnapshots > 0, "LocalState:MaxQueuedSnapshots must be positive.")
+    .Validate(options => options.MaxQueueBytes > 0, "LocalState:MaxQueueBytes must be positive.")
     .ValidateOnStart();
 builder.Services.AddSingleton(sp => sp.GetRequiredService<IOptions<LocalStateStoreOptions>>().Value);
 builder.Services.AddSingleton<ILocalStateProtector, DpapiLocalStateProtector>();
