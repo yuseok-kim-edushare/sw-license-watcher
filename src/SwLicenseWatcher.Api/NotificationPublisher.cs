@@ -49,6 +49,24 @@ public sealed class NotificationPublisher
         }
     }
 
+    public void EnqueueBlacklistViolationsIfNeeded(InventoryIngestionRequest snapshot, SnapshotSaveResult saveResult)
+    {
+        try
+        {
+            var options = _options.Value;
+            if (!saveResult.Applied || saveResult.NewViolations.Count == 0 || !options.Events.BlacklistViolation || !options.HasEnabledChannel)
+            {
+                return;
+            }
+
+            Enqueue(ForBlacklistViolations(snapshot.Pc, saveResult.NewViolations));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to enqueue blacklist-violation notification for {DeviceCode}.", snapshot.Pc.DeviceCode);
+        }
+    }
+
     public void EnqueueStaleHeartbeatsIfNeeded(
         IReadOnlyList<StalePcHeartbeat> stalePcs,
         TimeSpan threshold)
@@ -140,6 +158,55 @@ public sealed class NotificationPublisher
         }
 
         return new NotificationMessage(subject, body.ToString().TrimEnd());
+    }
+
+    internal static NotificationMessage ForBlacklistViolations(PcIdentity pc, IReadOnlyList<NewBlacklistViolation> violations)
+    {
+        var subject = $"블랙리스트 정책 위반 감지 — {pc.HostName} ({pc.DeviceCode})";
+        var body = new StringBuilder();
+        body.Append("PC ").Append(pc.HostName).Append(" (").Append(pc.DeviceCode)
+            .AppendLine(")에서 블랙리스트 정책에 해당하는 소프트웨어가 새로 감지되었습니다.");
+        body.AppendLine();
+        var listed = 0;
+        foreach (var violation in violations)
+        {
+            if (listed >= MaxListedSoftware)
+            {
+                break;
+            }
+
+            body.Append("- ").Append(violation.Software.Name);
+            if (!string.IsNullOrWhiteSpace(violation.Software.Version))
+            {
+                body.Append(' ').Append(violation.Software.Version);
+            }
+
+            body.Append(" — 정책: ").Append(FormatPolicyPattern(violation.Policy)).AppendLine();
+            listed++;
+        }
+
+        if (violations.Count > MaxListedSoftware)
+        {
+            body.Append("- … 외 ").Append(violations.Count - MaxListedSoftware).AppendLine("개");
+        }
+
+        return new NotificationMessage(subject, body.ToString().TrimEnd());
+    }
+
+    internal static string FormatPolicyPattern(SoftwarePolicyEntry policy)
+    {
+        var builder = new StringBuilder(policy.ProductName);
+        if (!string.IsNullOrWhiteSpace(policy.Publisher))
+        {
+            builder.Append(" / ").Append(policy.Publisher);
+        }
+
+        if (!string.IsNullOrWhiteSpace(policy.VersionPattern))
+        {
+            builder.Append(" / ").Append(policy.VersionPattern);
+        }
+
+        return builder.ToString();
     }
 
     private static NotificationMessage ForStaleHeartbeats(IReadOnlyList<StalePcHeartbeat> stalePcs, TimeSpan threshold)

@@ -64,7 +64,7 @@ public sealed class WorkerUpdateManager(
         }
     }
 
-    private static void ValidateManifest(UpdateManifest manifest)
+    internal static void ValidateManifest(UpdateManifest manifest)
     {
         if (!Uri.TryCreate(manifest.PackageUrl, UriKind.Absolute, out var packageUri) ||
             packageUri.Scheme != Uri.UriSchemeHttps)
@@ -106,7 +106,7 @@ public sealed class WorkerUpdateManager(
         }
     }
 
-    private static async Task VerifyHashAsync(string path, string expected, CancellationToken cancellationToken)
+    internal static async Task VerifyHashAsync(string path, string expected, CancellationToken cancellationToken)
     {
         await using var stream = File.OpenRead(path);
         var actual = Convert.ToHexString(await SHA256.HashDataAsync(stream, cancellationToken));
@@ -118,7 +118,7 @@ public sealed class WorkerUpdateManager(
         }
     }
 
-    private async Task ExtractSafelyAsync(string archivePath, string destination, CancellationToken cancellationToken)
+    internal async Task ExtractSafelyAsync(string archivePath, string destination, CancellationToken cancellationToken)
     {
         var destinationRoot = Path.GetFullPath(destination) + Path.DirectorySeparatorChar;
         using var archive = ZipFile.OpenRead(archivePath);
@@ -174,7 +174,7 @@ public sealed class WorkerUpdateManager(
         }
     }
 
-    private static string ResolveWorkerPayload(string extractedPath)
+    internal static string ResolveWorkerPayload(string extractedPath)
     {
         var executables = Directory.EnumerateFiles(
                 extractedPath,
@@ -296,7 +296,7 @@ public sealed class WorkerUpdateManager(
         throw new System.TimeoutException("Worker health was not restored before the rollback deadline.");
     }
 
-    private bool IsWorkerHealthy(string expectedVersion, DateTimeOffset startedAtUtc)
+    internal bool IsWorkerHealthy(string expectedVersion, DateTimeOffset startedAtUtc)
     {
         try
         {
@@ -336,7 +336,7 @@ public sealed class WorkerUpdateManager(
             }
         }, cancellationToken);
 
-    private static void CopyDirectory(string source, string destination)
+    internal static void CopyDirectory(string source, string destination)
     {
         Directory.CreateDirectory(destination);
         foreach (var directory in Directory.EnumerateDirectories(source, "*", SearchOption.AllDirectories))
@@ -349,7 +349,7 @@ public sealed class WorkerUpdateManager(
         }
     }
 
-    private static void TryDeleteDirectory(string path)
+    internal static void TryDeleteDirectory(string path)
     {
         if (Directory.Exists(path))
         {

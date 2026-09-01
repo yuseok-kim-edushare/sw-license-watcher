@@ -18,4 +18,8 @@
   <ItemGroup>
     <ProjectReference Include="..\SwLicenseWatcher.Core\SwLicenseWatcher.Core.csproj" />
   </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="SwLicenseWatcher.Agent.Watchdog.Tests" />
+  </ItemGroup>
 </Project>

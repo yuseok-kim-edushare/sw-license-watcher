@@ -63,6 +63,7 @@ public sealed record DeviceDetail(
 public sealed record SoftwareAggregate(
     string Name,
     string? Version,
+    string Classification,
     int DeviceCount);
 
 public sealed record SoftwareAggregateListResponse(
@@ -80,7 +81,8 @@ public sealed record SoftwareDevice(
     DateTimeOffset? LastHeartbeatUtc,
     DateTimeOffset? LastInventoryUtc,
     string? Version,
-    string? Publisher);
+    string? Publisher,
+    string Classification);
 
 public sealed record SoftwareDeviceListResponse(
     string Name,
@@ -88,3 +90,15 @@ public sealed record SoftwareDeviceListResponse(
     int Take,
     int TotalCount,
     IReadOnlyList<SoftwareDevice> Items);
+
+public sealed record PolicyListResponse(
+    int Skip,
+    int Take,
+    int TotalCount,
+    IReadOnlyList<SoftwarePolicyEntry> Items);
+
+public sealed record ViolationListResponse(
+    int Skip,
+    int Take,
+    int TotalCount,
+    IReadOnlyList<SoftwareViolationEntry> Items);

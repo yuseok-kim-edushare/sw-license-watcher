@@ -23,39 +23,42 @@ public sealed class SqlServerInventoryRepository(SqlServerStorageOptions options
         if (await IsStaleSnapshotAsync(connection, transaction, snapshot, cancellationToken))
         {
             await transaction.RollbackAsync(cancellationToken);
-            return new SnapshotSaveResult(false, []);
+            return new SnapshotSaveResult(false, [], []);
         }
 
         var pcId = await UpsertPcAsync(connection, transaction, snapshot.Pc, snapshot.CollectedAtUtc, null, cancellationToken);
-        var previous = await ReadInstalledSoftwareAsync(connection, transaction, pcId, cancellationToken);
+        var previous = await ReadInstalledSoftwareAsync(connection, transaction, pcId, classification: null, cancellationToken);
         var software = options.InstalledSoftwareTable;
         await ExecuteAsync(connection, transaction,
             $"DELETE FROM {Name(options.SchemaName, software.TableName)} WHERE {Name(software.PcForeignKeyColumn)} = @pcId",
             [new("@pcId", pcId)], cancellationToken);
 
-        foreach (var entry in snapshot.InstalledSoftware)
+        var policies = await ListEnabledPoliciesAsync(connection, transaction, cancellationToken);
+        var matches = SoftwarePolicyMatcher.MatchAll(snapshot.InstalledSoftware, policies);
+        foreach (var match in matches)
         {
+            var entry = match.Software;
             var sql = $"""
                 INSERT INTO {Name(options.SchemaName, software.TableName)}
                 ({Name(software.PcForeignKeyColumn)}, {Name(software.DisplayNameColumn)}, {Name(software.DisplayVersionColumn)},
                  {Name(software.PublisherColumn)}, {Name(software.InstallLocationColumn)}, {Name(software.DiscoveryScopeColumn)},
-                 {Name(software.DiscoverySourceColumn)}, {Name(software.CollectedAtUtcColumn)})
-                VALUES (@pcId, @name, @version, @publisher, @location, @scope, @source, @collectedAt)
+                 {Name(software.DiscoverySourceColumn)}, {Name(software.ClassificationColumn)}, {Name(software.CollectedAtUtcColumn)})
+                VALUES (@pcId, @name, @version, @publisher, @location, @scope, @source, @classification, @collectedAt)
                 """;
             await ExecuteAsync(connection, transaction, sql,
             [
                 new("@pcId", pcId), new("@name", Truncate(entry.Name, 256)), new("@version", DbValue(Truncate(entry.Version, 64))),
                 new("@publisher", DbValue(Truncate(entry.Publisher, 256))), new("@location", DbValue(Truncate(entry.InstallLocation, 512))),
                 new("@scope", Truncate(entry.DiscoveryScope, 256)), new("@source", Truncate(entry.DiscoverySource, 64)),
+                new("@classification", Truncate(match.StoredClassification, 32)!),
                 new("@collectedAt", snapshot.CollectedAtUtc)
             ], cancellationToken);
         }
 
-        var policies = await ListEnabledPoliciesAsync(connection, transaction, cancellationToken);
-        await SyncViolationsAsync(connection, transaction, pcId, snapshot, policies, cancellationToken);
+        var newViolations = await SyncViolationsAsync(connection, transaction, pcId, snapshot, matches, cancellationToken);
 
         await transaction.CommitAsync(cancellationToken);
-        return new SnapshotSaveResult(true, previous);
+        return new SnapshotSaveResult(true, previous, newViolations);
     }
 
     public async Task SaveHeartbeatAsync(AgentHeartbeat heartbeat, CancellationToken cancellationToken)
@@ -73,13 +76,7 @@ public sealed class SqlServerInventoryRepository(SqlServerStorageOptions options
         await using var connection = new SqlConnection(options.ConnectionString);
         await connection.OpenAsync(cancellationToken);
         var table = options.PcTable;
-        var sql = $"""
-            SELECT {Name(table.DeviceCodeColumn)}, {Name(table.HostNameColumn)}, {Name(table.LastHeartbeatUtcColumn)}
-            FROM {Name(options.SchemaName, table.TableName)}
-            WHERE {Name(table.LastHeartbeatUtcColumn)} IS NOT NULL
-              AND {Name(table.LastHeartbeatUtcColumn)} < @cutoff
-            ORDER BY {Name(table.LastHeartbeatUtcColumn)}, {Name(table.DeviceCodeColumn)};
-            """;
+        var sql = BuildGetStaleHeartbeatsSql();
         await using var command = new SqlCommand(sql, connection);
         command.Parameters.Add(new SqlParameter("@cutoff", cutoff));
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
@@ -152,7 +149,10 @@ public sealed class SqlServerInventoryRepository(SqlServerStorageOptions options
         return (totalCount, items);
     }
 
-    public async Task<DeviceDetail?> GetDeviceAsync(string deviceCode, CancellationToken cancellationToken)
+    public async Task<DeviceDetail?> GetDeviceAsync(
+        string deviceCode,
+        string? classification,
+        CancellationToken cancellationToken)
     {
         await using var connection = new SqlConnection(options.ConnectionString);
         await connection.OpenAsync(cancellationToken);
@@ -184,7 +184,7 @@ public sealed class SqlServerInventoryRepository(SqlServerStorageOptions options
             []);
         await reader.CloseAsync();
 
-        var installed = await ReadInstalledSoftwareAsync(connection, transaction: null, pcId, cancellationToken);
+        var installed = await ReadInstalledSoftwareAsync(connection, transaction: null, pcId, classification, cancellationToken);
         return detail with { InstalledSoftware = installed };
     }
 
@@ -192,6 +192,7 @@ public sealed class SqlServerInventoryRepository(SqlServerStorageOptions options
         int skip,
         int take,
         string? search,
+        string? classification,
         CancellationToken cancellationToken)
     {
         await using var connection = new SqlConnection(options.ConnectionString);
@@ -201,15 +202,18 @@ public sealed class SqlServerInventoryRepository(SqlServerStorageOptions options
             SELECT
                 COUNT(*) OVER() AS total_count,
                 {Name(software.DisplayNameColumn)}, {Name(software.DisplayVersionColumn)},
+                {Name(software.ClassificationColumn)},
                 COUNT(DISTINCT {Name(software.PcForeignKeyColumn)}) AS device_count
             FROM {Name(options.SchemaName, software.TableName)}
             WHERE (@search IS NULL OR {Name(software.DisplayNameColumn)} LIKE @search)
-            GROUP BY {Name(software.DisplayNameColumn)}, {Name(software.DisplayVersionColumn)}
-            ORDER BY {Name(software.DisplayNameColumn)}, {Name(software.DisplayVersionColumn)}
+              AND (@classification IS NULL OR {Name(software.ClassificationColumn)} = @classification)
+            GROUP BY {Name(software.DisplayNameColumn)}, {Name(software.DisplayVersionColumn)}, {Name(software.ClassificationColumn)}
+            ORDER BY {Name(software.DisplayNameColumn)}, {Name(software.DisplayVersionColumn)}, {Name(software.ClassificationColumn)}
             OFFSET @skip ROWS FETCH NEXT @take ROWS ONLY;
             """;
         await using var command = new SqlCommand(sql, connection);
         command.Parameters.Add(new SqlParameter("@search", DbValue(ToContainsPattern(search))));
+        command.Parameters.Add(new SqlParameter("@classification", DbValue(classification)));
         command.Parameters.Add(new SqlParameter("@skip", skip));
         command.Parameters.Add(new SqlParameter("@take", take));
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
@@ -225,6 +229,7 @@ public sealed class SqlServerInventoryRepository(SqlServerStorageOptions options
             items.Add(new SoftwareAggregate(
                 reader.GetString(reader.GetOrdinal(software.DisplayNameColumn)),
                 ReadNullableString(reader, software.DisplayVersionColumn),
+                ReadClassification(reader, software.ClassificationColumn),
                 reader.GetInt32(reader.GetOrdinal("device_count"))));
         }
 
@@ -235,6 +240,7 @@ public sealed class SqlServerInventoryRepository(SqlServerStorageOptions options
         string name,
         int skip,
         int take,
+        string? classification,
         CancellationToken cancellationToken)
     {
         await using var connection = new SqlConnection(options.ConnectionString);
@@ -247,16 +253,19 @@ public sealed class SqlServerInventoryRepository(SqlServerStorageOptions options
                 p.{Name(pc.DeviceCodeColumn)}, p.{Name(pc.HostNameColumn)}, p.{Name(pc.DomainNameColumn)},
                 p.{Name(pc.OperatingSystemColumn)}, p.{Name(pc.AgentVersionColumn)},
                 p.{Name(pc.LastHeartbeatUtcColumn)}, p.{Name(pc.LastInventoryUtcColumn)},
-                s.{Name(software.DisplayVersionColumn)}, s.{Name(software.PublisherColumn)}
+                s.{Name(software.DisplayVersionColumn)}, s.{Name(software.PublisherColumn)},
+                s.{Name(software.ClassificationColumn)}
             FROM {Name(options.SchemaName, software.TableName)} AS s
             INNER JOIN {Name(options.SchemaName, pc.TableName)} AS p
                 ON p.{Name(pc.PrimaryKeyColumn)} = s.{Name(software.PcForeignKeyColumn)}
             WHERE s.{Name(software.DisplayNameColumn)} = @name
+              AND (@classification IS NULL OR s.{Name(software.ClassificationColumn)} = @classification)
             ORDER BY p.{Name(pc.HostNameColumn)}, p.{Name(pc.DeviceCodeColumn)}
             OFFSET @skip ROWS FETCH NEXT @take ROWS ONLY;
             """;
         await using var command = new SqlCommand(sql, connection);
         command.Parameters.Add(new SqlParameter("@name", name));
+        command.Parameters.Add(new SqlParameter("@classification", DbValue(classification)));
         command.Parameters.Add(new SqlParameter("@skip", skip));
         command.Parameters.Add(new SqlParameter("@take", take));
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
@@ -278,17 +287,47 @@ public sealed class SqlServerInventoryRepository(SqlServerStorageOptions options
                 ReadNullableDateTimeOffset(reader, pc.LastHeartbeatUtcColumn),
                 ReadNullableDateTimeOffset(reader, pc.LastInventoryUtcColumn),
                 ReadNullableString(reader, software.DisplayVersionColumn),
-                ReadNullableString(reader, software.PublisherColumn)));
+                ReadNullableString(reader, software.PublisherColumn),
+                ReadClassification(reader, software.ClassificationColumn)));
         }
 
         return (totalCount, items);
     }
 
-    public async Task<List<SoftwarePolicyEntry>> ListPoliciesAsync(CancellationToken cancellationToken)
+    public async Task<(int TotalCount, List<SoftwarePolicyEntry> Items)> ListPoliciesAsync(
+        int skip,
+        int take,
+        string? search,
+        string? classification,
+        CancellationToken cancellationToken)
     {
         await using var connection = new SqlConnection(options.ConnectionString);
         await connection.OpenAsync(cancellationToken);
-        return await ListPoliciesAsync(connection, transaction: null, enabledOnly: false, cancellationToken);
+        await using var command = new SqlCommand(BuildListPoliciesSql(), connection);
+        command.Parameters.Add(new SqlParameter("@search", DbValue(ToContainsPattern(search))));
+        command.Parameters.Add(new SqlParameter("@classification", DbValue(classification)));
+        command.Parameters.Add(new SqlParameter("@skip", skip));
+        command.Parameters.Add(new SqlParameter("@take", take));
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        var items = new List<SoftwarePolicyEntry>();
+        var totalCount = 0;
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            var policy = ReadPolicy(reader);
+            if (policy is null)
+            {
+                continue;
+            }
+
+            if (items.Count == 0)
+            {
+                totalCount = reader.GetInt32(reader.GetOrdinal("total_count"));
+            }
+
+            items.Add(policy);
+        }
+
+        return (totalCount, items);
     }
 
     public async Task<SoftwarePolicyEntry?> GetPolicyAsync(long id, CancellationToken cancellationToken)
@@ -391,36 +430,23 @@ public sealed class SqlServerInventoryRepository(SqlServerStorageOptions options
         return await command.ExecuteNonQueryAsync(cancellationToken) > 0;
     }
 
-    public async Task<List<SoftwareViolationEntry>> ListViolationsAsync(CancellationToken cancellationToken)
+    public async Task<(int TotalCount, List<SoftwareViolationEntry> Items)> ListViolationsAsync(
+        int skip,
+        int take,
+        string? search,
+        DateTimeOffset? since,
+        CancellationToken cancellationToken)
     {
         await using var connection = new SqlConnection(options.ConnectionString);
         await connection.OpenAsync(cancellationToken);
-        var violation = options.SoftwareViolationTable;
-        var pc = options.PcTable;
-        var policy = options.SoftwarePolicyTable;
-        var sql = $"""
-            SELECT
-                v.{Name(violation.PrimaryKeyColumn)} AS id,
-                p.{Name(pc.DeviceCodeColumn)} AS deviceCode,
-                p.{Name(pc.HostNameColumn)} AS hostName,
-                v.{Name(violation.DisplayNameColumn)} AS softwareName,
-                v.{Name(violation.DisplayVersionColumn)} AS softwareVersion,
-                v.{Name(violation.PublisherColumn)} AS publisher,
-                v.{Name(violation.PolicyForeignKeyColumn)} AS policyId,
-                pol.{Name(policy.ProductNameColumn)} AS policyProductName,
-                pol.{Name(policy.ClassificationColumn)} AS classification,
-                v.{Name(violation.DetectedAtUtcColumn)} AS detectedAtUtc,
-                v.{Name(violation.LastSeenAtUtcColumn)} AS lastSeenAtUtc
-            FROM {Name(options.SchemaName, violation.TableName)} AS v
-            INNER JOIN {Name(options.SchemaName, pc.TableName)} AS p
-                ON p.{Name(pc.PrimaryKeyColumn)} = v.{Name(violation.PcForeignKeyColumn)}
-            INNER JOIN {Name(options.SchemaName, policy.TableName)} AS pol
-                ON pol.{Name(policy.PrimaryKeyColumn)} = v.{Name(violation.PolicyForeignKeyColumn)}
-            ORDER BY v.{Name(violation.LastSeenAtUtcColumn)} DESC, v.{Name(violation.PrimaryKeyColumn)} DESC;
-            """;
-        await using var command = new SqlCommand(sql, connection);
+        await using var command = new SqlCommand(BuildListViolationsSql(), connection);
+        command.Parameters.Add(new SqlParameter("@search", DbValue(ToContainsPattern(search))));
+        command.Parameters.Add(new SqlParameter("@since", DbValue(since)));
+        command.Parameters.Add(new SqlParameter("@skip", skip));
+        command.Parameters.Add(new SqlParameter("@take", take));
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
-        var violations = new List<SoftwareViolationEntry>();
+        var items = new List<SoftwareViolationEntry>();
+        var totalCount = 0;
         while (await reader.ReadAsync(cancellationToken))
         {
             if (!SoftwarePolicyClassificationNames.TryParse(reader.GetString(reader.GetOrdinal("classification")), out var classification))
@@ -428,7 +454,12 @@ public sealed class SqlServerInventoryRepository(SqlServerStorageOptions options
                 continue;
             }
 
-            violations.Add(new SoftwareViolationEntry(
+            if (items.Count == 0)
+            {
+                totalCount = reader.GetInt32(reader.GetOrdinal("total_count"));
+            }
+
+            items.Add(new SoftwareViolationEntry(
                 reader.GetInt64(reader.GetOrdinal("id")),
                 reader.GetString(reader.GetOrdinal("deviceCode")),
                 reader.GetString(reader.GetOrdinal("hostName")),
@@ -442,41 +473,101 @@ public sealed class SqlServerInventoryRepository(SqlServerStorageOptions options
                 reader.GetFieldValue<DateTimeOffset>(reader.GetOrdinal("lastSeenAtUtc"))));
         }
 
-        return violations;
+        return (totalCount, items);
     }
 
-    private async Task SyncViolationsAsync(
+    private async Task<IReadOnlyList<NewBlacklistViolation>> SyncViolationsAsync(
         SqlConnection connection,
         SqlTransaction transaction,
         long pcId,
         InventoryIngestionRequest snapshot,
-        IReadOnlyList<SoftwarePolicyEntry> policies,
+        IReadOnlyList<SoftwarePolicyMatch> matches,
         CancellationToken cancellationToken)
     {
-        var current = new Dictionary<string, (InstalledSoftwareEntry Software, SoftwarePolicyEntry Policy)>(StringComparer.OrdinalIgnoreCase);
-        foreach (var entry in snapshot.InstalledSoftware)
+        var current = CollectCurrentViolations(matches);
+        var existingNames = await ReadViolationSoftwareNamesAsync(connection, transaction, pcId, cancellationToken);
+        var newlyDetected = FindNewlyDetectedViolations(current, existingNames);
+
+        foreach (var violation in current.Values)
         {
-            var match = SoftwarePolicyMatcher.Match(entry, policies);
-            if (match.IsBlacklisted && match.Policy is not null)
-            {
-                current.TryAdd(entry.Name, (entry, match.Policy));
-            }
+            await UpsertViolationAsync(connection, transaction, pcId, violation.Software, violation.Policy, snapshot.CollectedAtUtc, cancellationToken);
         }
 
-        foreach (var (software, policy) in current.Values)
-        {
-            await UpsertViolationAsync(connection, transaction, pcId, software, policy, snapshot.CollectedAtUtc, cancellationToken);
-        }
-
-        var violation = options.SoftwareViolationTable;
+        var table = options.SoftwareViolationTable;
         await ExecuteAsync(connection, transaction,
             $"""
-            DELETE FROM {Name(options.SchemaName, violation.TableName)}
-            WHERE {Name(violation.PcForeignKeyColumn)} = @pcId
-              AND {Name(violation.LastSeenAtUtcColumn)} < @collectedAt;
+            DELETE FROM {Name(options.SchemaName, table.TableName)}
+            WHERE {Name(table.PcForeignKeyColumn)} = @pcId
+              AND {Name(table.LastSeenAtUtcColumn)} < @collectedAt;
             """,
             [new("@pcId", pcId), new("@collectedAt", snapshot.CollectedAtUtc)],
             cancellationToken);
+
+        return newlyDetected;
+    }
+
+    private async Task<List<string>> ReadViolationSoftwareNamesAsync(
+        SqlConnection connection,
+        SqlTransaction transaction,
+        long pcId,
+        CancellationToken cancellationToken)
+    {
+        var violation = options.SoftwareViolationTable;
+        var sql = $"""
+            SELECT {Name(violation.DisplayNameColumn)}
+            FROM {Name(options.SchemaName, violation.TableName)}
+            WHERE {Name(violation.PcForeignKeyColumn)} = @pcId;
+            """;
+        await using var command = new SqlCommand(sql, connection, transaction);
+        command.Parameters.Add(new SqlParameter("@pcId", pcId));
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        var names = new List<string>();
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            names.Add(reader.GetString(0));
+        }
+
+        return names;
+    }
+
+    internal static Dictionary<string, NewBlacklistViolation> CollectCurrentViolations(
+        IReadOnlyList<SoftwarePolicyMatch> matches)
+    {
+        var current = new Dictionary<string, NewBlacklistViolation>(StringComparer.OrdinalIgnoreCase);
+        foreach (var match in matches)
+        {
+            if (!match.IsBlacklisted || match.Policy is null)
+            {
+                continue;
+            }
+
+            var name = Truncate(match.Software.Name, 256);
+            if (string.IsNullOrEmpty(name))
+            {
+                continue;
+            }
+
+            current.TryAdd(name, new NewBlacklistViolation(match.Software, match.Policy));
+        }
+
+        return current;
+    }
+
+    internal static IReadOnlyList<NewBlacklistViolation> FindNewlyDetectedViolations(
+        IReadOnlyDictionary<string, NewBlacklistViolation> current,
+        IReadOnlyCollection<string> existingSoftwareNames)
+    {
+        var existing = new HashSet<string>(existingSoftwareNames, StringComparer.OrdinalIgnoreCase);
+        var added = new List<NewBlacklistViolation>();
+        foreach (var (name, violation) in current)
+        {
+            if (!existing.Contains(name))
+            {
+                added.Add(violation);
+            }
+        }
+
+        return added;
     }
 
     private async Task UpsertViolationAsync(
@@ -598,6 +689,70 @@ public sealed class SqlServerInventoryRepository(SqlServerStorageOptions options
         return await reader.ReadAsync(cancellationToken) ? ReadPolicy(reader) : null;
     }
 
+    internal string BuildGetStaleHeartbeatsSql()
+    {
+        var table = options.PcTable;
+        return $"""
+            SELECT {Name(table.DeviceCodeColumn)}, {Name(table.HostNameColumn)}, {Name(table.LastHeartbeatUtcColumn)}
+            FROM {Name(options.SchemaName, table.TableName)}
+            WHERE {Name(table.LastHeartbeatUtcColumn)} IS NOT NULL
+              AND {Name(table.LastHeartbeatUtcColumn)} < @cutoff
+            ORDER BY {Name(table.LastHeartbeatUtcColumn)}, {Name(table.DeviceCodeColumn)};
+            """;
+    }
+
+    internal string BuildListPoliciesSql()
+    {
+        var table = options.SoftwarePolicyTable;
+        return $"""
+            SELECT
+                COUNT(*) OVER() AS total_count,
+                {PolicySelectList()}
+            FROM {Name(options.SchemaName, table.TableName)}
+            WHERE (@search IS NULL
+                OR {Name(table.ProductNameColumn)} LIKE @search
+                OR {Name(table.VersionPatternColumn)} LIKE @search
+                OR {Name(table.PublisherColumn)} LIKE @search)
+              AND (@classification IS NULL OR {Name(table.ClassificationColumn)} = @classification)
+            ORDER BY {Name(table.ProductNameColumn)}, {Name(table.PrimaryKeyColumn)}
+            OFFSET @skip ROWS FETCH NEXT @take ROWS ONLY;
+            """;
+    }
+
+    internal string BuildListViolationsSql()
+    {
+        var violation = options.SoftwareViolationTable;
+        var pc = options.PcTable;
+        var policy = options.SoftwarePolicyTable;
+        return $"""
+            SELECT
+                COUNT(*) OVER() AS total_count,
+                v.{Name(violation.PrimaryKeyColumn)} AS id,
+                p.{Name(pc.DeviceCodeColumn)} AS deviceCode,
+                p.{Name(pc.HostNameColumn)} AS hostName,
+                v.{Name(violation.DisplayNameColumn)} AS softwareName,
+                v.{Name(violation.DisplayVersionColumn)} AS softwareVersion,
+                v.{Name(violation.PublisherColumn)} AS publisher,
+                v.{Name(violation.PolicyForeignKeyColumn)} AS policyId,
+                pol.{Name(policy.ProductNameColumn)} AS policyProductName,
+                pol.{Name(policy.ClassificationColumn)} AS classification,
+                v.{Name(violation.DetectedAtUtcColumn)} AS detectedAtUtc,
+                v.{Name(violation.LastSeenAtUtcColumn)} AS lastSeenAtUtc
+            FROM {Name(options.SchemaName, violation.TableName)} AS v
+            INNER JOIN {Name(options.SchemaName, pc.TableName)} AS p
+                ON p.{Name(pc.PrimaryKeyColumn)} = v.{Name(violation.PcForeignKeyColumn)}
+            INNER JOIN {Name(options.SchemaName, policy.TableName)} AS pol
+                ON pol.{Name(policy.PrimaryKeyColumn)} = v.{Name(violation.PolicyForeignKeyColumn)}
+            WHERE (@search IS NULL
+                OR p.{Name(pc.DeviceCodeColumn)} LIKE @search
+                OR p.{Name(pc.HostNameColumn)} LIKE @search
+                OR v.{Name(violation.DisplayNameColumn)} LIKE @search)
+              AND (@since IS NULL OR v.{Name(violation.DetectedAtUtcColumn)} >= @since)
+            ORDER BY v.{Name(violation.LastSeenAtUtcColumn)} DESC, v.{Name(violation.PrimaryKeyColumn)} DESC
+            OFFSET @skip ROWS FETCH NEXT @take ROWS ONLY;
+            """;
+    }
+
     private string PolicySelectList(string? qualifier = null)
     {
         var table = options.SoftwarePolicyTable;
@@ -643,20 +798,24 @@ public sealed class SqlServerInventoryRepository(SqlServerStorageOptions options
         SqlConnection connection,
         SqlTransaction? transaction,
         long pcId,
+        string? classification,
         CancellationToken cancellationToken)
     {
         var software = options.InstalledSoftwareTable;
         var sql = $"""
             SELECT {Name(software.DisplayNameColumn)}, {Name(software.DisplayVersionColumn)}, {Name(software.PublisherColumn)},
-                   {Name(software.InstallLocationColumn)}, {Name(software.DiscoveryScopeColumn)}, {Name(software.DiscoverySourceColumn)}
+                   {Name(software.InstallLocationColumn)}, {Name(software.DiscoveryScopeColumn)}, {Name(software.DiscoverySourceColumn)},
+                   {Name(software.ClassificationColumn)}
             FROM {Name(options.SchemaName, software.TableName)}
             WHERE {Name(software.PcForeignKeyColumn)} = @pcId
+              AND (@classification IS NULL OR {Name(software.ClassificationColumn)} = @classification)
             ORDER BY {Name(software.DisplayNameColumn)}, {Name(software.PrimaryKeyColumn)};
             """;
         await using var command = transaction is null
             ? new SqlCommand(sql, connection)
             : new SqlCommand(sql, connection, transaction);
         command.Parameters.Add(new SqlParameter("@pcId", pcId));
+        command.Parameters.Add(new SqlParameter("@classification", DbValue(classification)));
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         var entries = new List<InstalledSoftwareEntry>();
         while (await reader.ReadAsync(cancellationToken))
@@ -667,7 +826,8 @@ public sealed class SqlServerInventoryRepository(SqlServerStorageOptions options
                 ReadNullableString(reader, software.PublisherColumn),
                 ReadNullableString(reader, software.InstallLocationColumn),
                 reader.GetString(reader.GetOrdinal(software.DiscoveryScopeColumn)),
-                reader.GetString(reader.GetOrdinal(software.DiscoverySourceColumn))));
+                reader.GetString(reader.GetOrdinal(software.DiscoverySourceColumn)),
+                ReadClassification(reader, software.ClassificationColumn)));
         }
 
         return entries;
@@ -771,6 +931,14 @@ public sealed class SqlServerInventoryRepository(SqlServerStorageOptions options
             .Replace("%", "[%]", StringComparison.Ordinal)
             .Replace("_", "[_]", StringComparison.Ordinal);
         return $"%{escaped}%";
+    }
+
+    private static string ReadClassification(SqlDataReader reader, string column)
+    {
+        var stored = ReadNullableString(reader, column);
+        return SoftwarePolicyClassificationNames.TryParseInstalledSoftware(stored, out var classification)
+            ? classification
+            : SoftwarePolicyClassificationNames.Unclassified;
     }
 
     private static string? ReadNullableString(SqlDataReader reader, string column)

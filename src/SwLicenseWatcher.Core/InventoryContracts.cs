@@ -15,7 +15,9 @@ public sealed record InstalledSoftwareEntry(
     string? Publisher,
     string? InstallLocation,
     string DiscoveryScope,
-    string DiscoverySource);
+    string DiscoverySource,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    string? Classification = null);
 
 public sealed record InventoryIngestionRequest(
     PcIdentity Pc,
@@ -68,6 +70,8 @@ public sealed record SoftwarePolicyMatch(
     public bool IsBlacklisted => Policy?.Classification == SoftwarePolicyClassification.Blacklist;
 
     public SoftwarePolicyClassification? Classification => Policy?.Classification;
+
+    public string StoredClassification => SoftwarePolicyClassificationNames.ToInstalledSoftwareStorage(Classification);
 }
 
 public sealed record SoftwareViolationEntry(

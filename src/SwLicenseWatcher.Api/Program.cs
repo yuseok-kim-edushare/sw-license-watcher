@@ -204,6 +204,7 @@ app.MapPost("/api/inventory/snapshots", async (
     var saveResult = await repository.SaveSnapshotAsync(request, cancellationToken);
     store.RecordSnapshot(request);
     notifications.EnqueueNewSoftwareIfNeeded(request, saveResult);
+    notifications.EnqueueBlacklistViolationsIfNeeded(request, saveResult);
     return Results.Accepted($"/api/inventory/devices/{request.Pc.DeviceCode}", new SnapshotAcceptedResponse(
         request.Pc.DeviceCode,
         request.InstalledSoftware.Count,
@@ -226,9 +227,8 @@ app.MapPost("/api/agents/heartbeats", async (
 });
 
 app.MapInventoryQuery();
+app.MapPolicyQuery();
 
-app.MapGet("/api/policies", async (SqlServerInventoryRepository repository, CancellationToken cancellationToken) =>
-    Results.Ok(await repository.ListPoliciesAsync(cancellationToken)));
 app.MapGet("/api/policies/{id:long}", async (long id, SqlServerInventoryRepository repository, CancellationToken cancellationToken) =>
 {
     var policy = await repository.GetPolicyAsync(id, cancellationToken);
@@ -263,7 +263,5 @@ app.MapPut("/api/policies/{id:long}", async (
 });
 app.MapDelete("/api/policies/{id:long}", async (long id, SqlServerInventoryRepository repository, CancellationToken cancellationToken) =>
     await repository.DeletePolicyAsync(id, cancellationToken) ? Results.NoContent() : Results.NotFound());
-app.MapGet("/api/violations", async (SqlServerInventoryRepository repository, CancellationToken cancellationToken) =>
-    Results.Ok(await repository.ListViolationsAsync(cancellationToken)));
 
 app.Run();

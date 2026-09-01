@@ -14,18 +14,19 @@
   - `LocalState:MaxQueuedSnapshots`, `LocalState:MaxQueueBytes` 할당량 초과 시 가장 오래된 스냅샷부터 제거
 - **서버 측 API**
   - 수집 API: `/api/inventory/snapshots`, `/api/agents/heartbeats`
-  - 조회 API: `/api/inventory/devices`, `/api/inventory/software` (JSON 및 `?format=csv`)
-  - SQL Server 트랜잭션 기반 PC UPSERT 및 설치 소프트웨어 교체 저장
+  - 조회 API: `/api/inventory/devices`, `/api/inventory/software` (JSON 및 `?format=csv`, `?classification=` 필터)
+  - SQL Server 트랜잭션 기반 PC UPSERT 및 설치 소프트웨어 교체 저장(정책 매칭 분류 포함)
   - 공유 API 토큰 인증 및 원격 요청 HTTPS 강제
   - 헬스체크: `/health`(인증 제외)는 SQL Server에 `SELECT 1`로 연결을 확인하고, 실패 시 503과 일반화된 사유만 반환
   - 설계/스키마 API: `/api/design`, `/api/schema/sql`
   - 업데이트 manifest API: `/api/updates/worker/manifest`
-  - 소프트웨어 정책 CRUD: `/api/policies`
-  - 블랙리스트 위반 목록: `/api/violations`
-  - 스냅샷 수신 시 설치 SW를 정책과 매칭해 white/managed/black/unclassified로 분류하고, 블랙리스트 적발을 `company_sw_violation`에 기록
+  - 소프트웨어 정책 CRUD: `/api/policies` (목록은 페이징·검색·분류 필터·CSV)
+  - 블랙리스트 위반 목록: `/api/violations` (페이징·검색·기간 필터·CSV)
+  - 스냅샷 수신 시 설치 SW를 정책과 매칭해 white/managed/black/unclassified로 분류하고, 분류 결과를 설치 SW 테이블에 저장하며, 블랙리스트 적발을 `company_sw_violation`에 기록
 - **서버 알림 (웹훅 + SMTP)**
   - Teams/Slack incoming webhook(`{ "text": "..." }`)과 SMTP로 운영 알림 전송
   - 신규 스냅샷에서 이전에 없던 소프트웨어가 보이면 PC·이름·버전 요약 알림
+  - 스냅샷에서 해당 PC에 없던 블랙리스트 위반이 새로 적발되면 PC·소프트웨어·정책 패턴 알림(기존 위반은 재알림하지 않음)
   - heartbeat가 설정된 시간(기본 24시간) 이상 두절된 PC는 PC당 1회만 알림(복구 후 다시 두절되면 재알림)
   - 알림 전송 실패는 로그만 남기고 스냅샷/heartbeat 저장에는 영향을 주지 않음
 - **SQL Server 스키마 커스터마이징**
@@ -82,6 +83,7 @@ SwLicenseWatcher-{version}/
 - `PcTable.DeviceCodeColumn`
 - `InstalledSoftwareTable.TableName`
 - `InstalledSoftwareTable.DisplayNameColumn`
+- `InstalledSoftwareTable.ClassificationColumn`
 - `SoftwarePolicyTable.TableName`
 - `SoftwarePolicyTable.ClassificationColumn`
 - `SoftwareViolationTable.TableName`
@@ -135,6 +137,12 @@ Watchdog__ApiToken=<same-random-token>
 ALTER TABLE [inventory].[pc_installed_sw] ALTER COLUMN [discovery_scope] NVARCHAR(256) NOT NULL;
 ```
 
+설치 소프트웨어 분류(`classification`: `white` | `managed` | `black` | `unclassified`)를 저장하려면 기존 DB에 컬럼을 추가합니다. 이미 있는 행은 다음 스냅샷이 들어올 때까지 `unclassified`로 둡니다.
+
+```sql
+ALTER TABLE [inventory].[pc_installed_sw] ADD [classification] NVARCHAR(32) NOT NULL CONSTRAINT [DF_pc_installed_sw_classification] DEFAULT (N'unclassified');
+```
+
 Watchdog에는 Worker 실행 파일이 설치된 `Watchdog__WorkerInstallDirectory`와 업데이트 후 확인할 `Watchdog__WorkerHealthFilePath`도 설정합니다. 이 경로는 Worker의 `Agent__HealthFilePath`와 동일해야 하며, Worker 서비스 계정이 쓰고 Watchdog 서비스 계정이 읽을 수 있어야 합니다. 업데이트 ZIP에는 정확히 하나의 `SwLicenseWatcher.Agent.Worker.exe`가 있어야 하며 모든 EXE/DLL이 신뢰된 Authenticode 서명을 가져야 합니다.
 
 ## 서버 알림 (웹훅 / SMTP)
@@ -163,7 +171,8 @@ API 서버는 수집 결과를 바탕으로 Teams/Slack incoming webhook과 SMTP
     },
     "Events": {
       "NewSoftware": true,
-      "StaleHeartbeat": true
+      "StaleHeartbeat": true,
+      "BlacklistViolation": true
     },
     "StaleHeartbeatThreshold": "1.00:00:00",
     "StaleHeartbeatCheckInterval": "00:15:00"
@@ -182,6 +191,7 @@ API 서버는 수집 결과를 바탕으로 Teams/Slack incoming webhook과 SMTP
 | `Notifications:Smtp:From` / `Recipients` | SMTP가 켜져 있을 때 발신자와 수신자 목록(1명 이상) |
 | `Notifications:Events:NewSoftware` | 이전에 없던 소프트웨어가 스냅샷에 나타나면 알림 |
 | `Notifications:Events:StaleHeartbeat` | heartbeat 두절 PC 알림 |
+| `Notifications:Events:BlacklistViolation` | 해당 PC에 없던 블랙리스트 위반이 새로 적발되면 알림. 이미 기록된 위반은 재알림하지 않음 |
 | `Notifications:StaleHeartbeatThreshold` | 두절로 볼 경과 시간. 기본 24시간(`1.00:00:00`) |
 | `Notifications:StaleHeartbeatCheckInterval` | 백그라운드 검사 주기. 기본 15분 |
 
@@ -207,37 +217,39 @@ API 실행 후:
 - `GET /api/schema/sql`: 현재 설정 기준 SQL Server DDL
 - `GET /health`: SQL Server 연결 확인(인증 불필요). 실패 시 503
 - `GET /api/inventory/devices`: 수집된 PC 목록 (페이징·검색·stale heartbeat 필터)
-- `GET /api/inventory/software`: 소프트웨어별 설치 PC 수 집계
+- `GET /api/inventory/software`: 소프트웨어별 설치 PC 수 집계 (`?classification=`으로 분류 필터)
 
 조회 API는 수집 API와 같은 Bearer 토큰이 필요합니다. `?format=csv`를 붙이면 UTF-8 BOM이 포함된 CSV를 내려받아 Excel에서 한글을 깨지지 않게 열 수 있습니다.
 
 | 메서드 | 경로 | 설명 | 주요 쿼리 |
 | --- | --- | --- | --- |
 | GET | `/api/inventory/devices` | PC 목록 (자산코드, 호스트명, 도메인, OS, 에이전트 버전, 마지막 heartbeat/inventory 시각) | `skip`, `take`, `search`(호스트명 또는 자산코드), `staleAfterHours`, `format=csv` |
-| GET | `/api/inventory/devices/{deviceCode}` | 단일 PC 상세와 설치 소프트웨어 전체 | `format=csv` |
-| GET | `/api/inventory/software` | SW 이름/버전별 설치 PC 수 | `skip`, `take`, `search`(이름), `format=csv` |
-| GET | `/api/inventory/software/{name}/devices` | 해당 SW가 설치된 PC 목록 | `skip`, `take`, `format=csv` |
+| GET | `/api/inventory/devices/{deviceCode}` | 단일 PC 상세와 설치 소프트웨어 전체(항목별 `classification`) | `classification`, `format=csv` |
+| GET | `/api/inventory/software` | SW 이름/버전/분류별 설치 PC 수 | `skip`, `take`, `search`(이름), `classification`, `format=csv` |
+| GET | `/api/inventory/software/{name}/devices` | 해당 SW가 설치된 PC 목록 | `skip`, `take`, `classification`, `format=csv` |
 
-페이징 기본값은 JSON `take=100`, CSV `take=10000`이며 최대 10000입니다. `staleAfterHours`는 마지막 heartbeat가 없거나 지정 시간보다 오래된 PC만 남깁니다. `search`는 SQL `LIKE` 와일드카드가 이스케이프된 부분 일치입니다.
+페이징 기본값은 JSON `take=100`, CSV `take=10000`이며 최대 10000입니다. `staleAfterHours`는 마지막 heartbeat가 없거나 지정 시간보다 오래된 PC만 남깁니다. `search`는 SQL `LIKE` 와일드카드가 이스케이프된 부분 일치입니다. `classification`은 `white` | `managed` | `black` | `unclassified`이며, 설치 SW 행에 저장된 분류로 필터링합니다(예: `?classification=unclassified`).
 
 스냅샷 접수 `Location`은 `/api/inventory/devices/{deviceCode}`를 가리키며, 이전 경로인 `GET /api/inventory/snapshots/{deviceCode}`도 같은 상세 응답을 반환합니다.
 
 ## 소프트웨어 정책과 위반
 
-정책은 `company_sw_policy`(이름은 설정으로 변경 가능)에 저장합니다. 스냅샷 `POST /api/inventory/snapshots`를 받을 때 설치 SW 이름·버전을 정책과 매칭해 `white` / `managed` / `black` / `unclassified`로 분류합니다. 블랙리스트에 걸린 항목은 `company_sw_violation`에 기록하며, 같은 PC+소프트웨어 이름은 한 행만 유지합니다(최초 적발 시각은 유지하고 마지막 발견 시각만 갱신). 더 이상 설치되어 있지 않거나 블랙이 아니면 해당 PC의 위반 행을 삭제합니다.
+정책은 `company_sw_policy`(이름은 설정으로 변경 가능)에 저장합니다. 스냅샷 `POST /api/inventory/snapshots`를 받을 때 설치 SW 이름·버전을 정책과 매칭해 `white` / `managed` / `black` / `unclassified`로 분류하고, 그 결과를 설치 SW 테이블 `classification` 컬럼에 저장합니다. 블랙리스트에 걸린 항목은 `company_sw_violation`에 기록하며, 같은 PC+소프트웨어 이름은 한 행만 유지합니다(최초 적발 시각은 유지하고 마지막 발견 시각만 갱신). 더 이상 설치되어 있지 않거나 블랙이 아니면 해당 PC의 위반 행을 삭제합니다. 스냅샷 저장 후 해당 PC에 없던 위반이 새로 생기면 `Notifications:Events:BlacklistViolation`이 켜져 있을 때 webhook/SMTP 알림을 보내며, 이미 적발된 위반은 다시 알리지 않습니다.
 
 이름 패턴은 정확 일치이며, `*` / `?` 와일드카드로 prefix·부분 일치도 됩니다(`Google Chrome*`, `*Torrent*`). 선택적 `versionPattern`은 정확/와일드카드(`16.*`)이거나 비교식(`>=17.0`, `<18.0`)이고, 쉼표로 AND 조건을 연결할 수 있습니다(`>=17.0,<18.0`). 게시자(`publisher`)가 있으면 이름과 같은 방식으로 매칭합니다. 여러 정책이 동시에 맞으면 **black > managed > white** 순으로 더 강한 분류를 씁니다.
 
-정책·위반 API도 수집 API와 같은 Bearer 토큰이 필요합니다.
+정책·위반 API도 수집 API와 같은 Bearer 토큰이 필요합니다. 목록 JSON은 인벤토리 조회와 같이 `skip`, `take`, `totalCount`, `items`를 반환합니다. 쿼리 파라미터를 생략하면 JSON `take=100`, CSV `take=10000`(최대 10000)으로 동작합니다.
 
-| 메서드 | 경로 | 설명 |
-| --- | --- | --- |
-| GET | `/api/policies` | 정책 목록 |
-| GET | `/api/policies/{id}` | 정책 단건 |
-| POST | `/api/policies` | 정책 생성 (`201` + `Location`) |
-| PUT | `/api/policies/{id}` | 정책 수정 |
-| DELETE | `/api/policies/{id}` | 정책 삭제(관련 위반은 FK CASCADE로 함께 삭제) |
-| GET | `/api/violations` | 현재 블랙리스트 위반 목록 |
+| 메서드 | 경로 | 설명 | 주요 쿼리 |
+| --- | --- | --- | --- |
+| GET | `/api/policies` | 정책 목록 | `skip`, `take`, `search`(정책 이름·버전 패턴·게시자), `classification`, `format=csv` |
+| GET | `/api/policies/{id}` | 정책 단건 | |
+| POST | `/api/policies` | 정책 생성 (`201` + `Location`) | |
+| PUT | `/api/policies/{id}` | 정책 수정 | |
+| DELETE | `/api/policies/{id}` | 정책 삭제(관련 위반은 FK CASCADE로 함께 삭제) | |
+| GET | `/api/violations` | 현재 블랙리스트 위반 목록 | `skip`, `take`, `search`(디바이스 코드·호스트명·소프트웨어 이름), `since`(최초 적발 시각 ISO 8601), `format=csv` |
+
+목록 `search`는 인벤토리 조회와 같이 SQL `LIKE` 와일드카드가 이스케이프된 부분 일치입니다. 정책 목록 `classification`은 `white` | `managed` | `black`입니다.
 
 `POST` / `PUT` 본문 예:
 
@@ -258,9 +270,11 @@ API 실행 후:
 $token = $env:Security__Token
 $headers = @{ Authorization = "Bearer $token" }
 Invoke-RestMethod -Headers $headers -Uri "http://127.0.0.1:5080/api/inventory/devices?search=PC-01&staleAfterHours=24"
+Invoke-RestMethod -Headers $headers -Uri "http://127.0.0.1:5080/api/inventory/software?classification=unclassified"
 Invoke-WebRequest -Headers $headers -Uri "http://127.0.0.1:5080/api/inventory/software?format=csv" -OutFile software.csv
-Invoke-RestMethod -Headers $headers -Uri "http://127.0.0.1:5080/api/policies"
-Invoke-RestMethod -Headers $headers -Uri "http://127.0.0.1:5080/api/violations"
+Invoke-RestMethod -Headers $headers -Uri "http://127.0.0.1:5080/api/policies?search=Torrent&classification=black"
+Invoke-RestMethod -Headers $headers -Uri "http://127.0.0.1:5080/api/violations?search=PC-01&since=2026-01-01T00:00:00Z"
+Invoke-WebRequest -Headers $headers -Uri "http://127.0.0.1:5080/api/policies?format=csv" -OutFile policies.csv
 ```
 
 Worker/Watchdog는 진단용으로 1회 실행 모드도 지원합니다.

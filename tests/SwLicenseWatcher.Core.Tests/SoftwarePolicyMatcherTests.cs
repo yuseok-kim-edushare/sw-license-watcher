@@ -13,6 +13,7 @@ public class SoftwarePolicyMatcherTests
         Assert.True(match.IsUnclassified);
         Assert.False(match.IsBlacklisted);
         Assert.Null(match.Policy);
+        Assert.Equal(SoftwarePolicyClassificationNames.Unclassified, match.StoredClassification);
     }
 
     [Fact]
@@ -50,6 +51,7 @@ public class SoftwarePolicyMatcherTests
 
         Assert.True(match.IsBlacklisted);
         Assert.Equal(SoftwarePolicyClassification.Blacklist, match.Classification);
+        Assert.Equal(SoftwarePolicyClassificationNames.Black, match.StoredClassification);
     }
 
     [Fact]
@@ -73,6 +75,21 @@ public class SoftwarePolicyMatcherTests
         Assert.Equal(SoftwarePolicyClassification.Managed, SoftwarePolicyMatcher.Match(software, policies).Classification);
         Assert.True(SoftwarePolicyMatcher.Match(Software("Visual Studio", "16.11.0", "Microsoft Corporation"), policies).IsUnclassified);
         Assert.True(SoftwarePolicyMatcher.Match(Software("Visual Studio", "17.8.0", "Other"), policies).IsUnclassified);
+    }
+
+    [Fact]
+    public void MatchAll_exposes_storage_classification_for_each_entry()
+    {
+        var matches = SoftwarePolicyMatcher.MatchAll(
+            [Software("Google Chrome", "120.0"), Software("uTorrent", "3.5")],
+            [Policy("uTorrent", SoftwarePolicyClassification.Blacklist)]);
+
+        Assert.Equal(
+            [SoftwarePolicyClassificationNames.Unclassified, SoftwarePolicyClassificationNames.Black],
+            matches.Select(match => match.StoredClassification));
+        Assert.Equal(
+            [SoftwarePolicyClassificationNames.Unclassified, SoftwarePolicyClassificationNames.Black],
+            matches.Select(SoftwarePolicyClassificationNames.ToInstalledSoftwareStorage));
     }
 
     [Theory]

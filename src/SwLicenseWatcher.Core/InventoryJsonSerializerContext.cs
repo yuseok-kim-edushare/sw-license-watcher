@@ -5,6 +5,7 @@ namespace SwLicenseWatcher.Core;
 
 [JsonSourceGenerationOptions(JsonSerializerDefaults.Web, UseStringEnumConverter = true)]
 [JsonSerializable(typeof(InventoryIngestionRequest))]
+[JsonSerializable(typeof(InstalledSoftwareEntry))]
 [JsonSerializable(typeof(AgentHeartbeat))]
 [JsonSerializable(typeof(UpdateManifest))]
 [JsonSerializable(typeof(WorkerHealthReport))]

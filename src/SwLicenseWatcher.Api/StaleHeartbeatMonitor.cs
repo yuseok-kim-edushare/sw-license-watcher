@@ -37,16 +37,7 @@ public sealed class StaleHeartbeatMonitor(
         {
             var cutoff = DateTimeOffset.UtcNow - current.StaleHeartbeatThreshold;
             var stalePcs = await repository.GetStaleHeartbeatsAsync(cutoff, cancellationToken);
-            var staleCodes = new HashSet<string>(stalePcs.Select(pc => pc.DeviceCode), StringComparer.OrdinalIgnoreCase);
-            foreach (var deviceCode in _notifiedDeviceCodes.Keys)
-            {
-                if (!staleCodes.Contains(deviceCode))
-                {
-                    _notifiedDeviceCodes.TryRemove(deviceCode, out _);
-                }
-            }
-
-            var newlyStale = stalePcs.Where(pc => _notifiedDeviceCodes.TryAdd(pc.DeviceCode, 0)).ToList();
+            var newlyStale = TakeNewlyStale(stalePcs, _notifiedDeviceCodes);
             if (newlyStale.Count == 0)
             {
                 return;
@@ -65,5 +56,21 @@ public sealed class StaleHeartbeatMonitor(
         {
             logger.LogWarning(ex, "Failed to inspect stale heartbeats.");
         }
+    }
+
+    internal static List<StalePcHeartbeat> TakeNewlyStale(
+        IReadOnlyList<StalePcHeartbeat> stalePcs,
+        ConcurrentDictionary<string, byte> notifiedDeviceCodes)
+    {
+        var staleCodes = new HashSet<string>(stalePcs.Select(pc => pc.DeviceCode), StringComparer.OrdinalIgnoreCase);
+        foreach (var deviceCode in notifiedDeviceCodes.Keys)
+        {
+            if (!staleCodes.Contains(deviceCode))
+            {
+                notifiedDeviceCodes.TryRemove(deviceCode, out _);
+            }
+        }
+
+        return stalePcs.Where(pc => notifiedDeviceCodes.TryAdd(pc.DeviceCode, 0)).ToList();
     }
 }

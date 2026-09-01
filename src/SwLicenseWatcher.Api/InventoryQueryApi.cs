@@ -4,10 +4,10 @@ namespace SwLicenseWatcher.Api;
 
 internal static class InventoryQueryApi
 {
-    internal const int DefaultTake = 100;
-    internal const int CsvDefaultTake = 10_000;
-    internal const int MaxTake = 10_000;
-    internal const int MaxSearchLength = 256;
+    internal const int DefaultTake = QueryList.DefaultTake;
+    internal const int CsvDefaultTake = QueryList.CsvDefaultTake;
+    internal const int MaxTake = QueryList.MaxTake;
+    internal const int MaxSearchLength = QueryList.MaxSearchLength;
 
     public static void MapInventoryQuery(this WebApplication app)
     {
@@ -25,13 +25,13 @@ internal static class InventoryQueryApi
                 return Results.BadRequest("staleAfterHours must be a positive integer.");
             }
 
-            if (search is { Length: > MaxSearchLength })
+            if (!QueryList.TryValidateSearch(search, out var searchError))
             {
-                return Results.BadRequest($"search must be at most {MaxSearchLength} characters.");
+                return Results.BadRequest(searchError);
             }
 
-            var csv = WantsCsv(format);
-            var (normalizedSkip, normalizedTake) = NormalizePaging(skip, take, csv);
+            var csv = QueryList.WantsCsv(format);
+            var (normalizedSkip, normalizedTake) = QueryList.NormalizePaging(skip, take, csv);
             var (totalCount, items) = await repository.ListDevicesAsync(
                 normalizedSkip, normalizedTake, search, staleAfterHours, cancellationToken);
 
@@ -63,25 +63,37 @@ internal static class InventoryQueryApi
             int? skip,
             int? take,
             string? search,
+            string? classification,
             string? format,
             CancellationToken cancellationToken) =>
         {
-            if (search is { Length: > MaxSearchLength })
+            if (!QueryList.TryValidateSearch(search, out var searchError))
             {
-                return Results.BadRequest($"search must be at most {MaxSearchLength} characters.");
+                return Results.BadRequest(searchError);
             }
 
-            var csv = WantsCsv(format);
-            var (normalizedSkip, normalizedTake) = NormalizePaging(skip, take, csv);
+            if (!TryNormalizeClassification(classification, out var normalizedClassification, out var classificationError))
+            {
+                return Results.BadRequest(classificationError);
+            }
+
+            var csv = QueryList.WantsCsv(format);
+            var (normalizedSkip, normalizedTake) = QueryList.NormalizePaging(skip, take, csv);
             var (totalCount, items) = await repository.ListSoftwareAsync(
-                normalizedSkip, normalizedTake, search, cancellationToken);
+                normalizedSkip, normalizedTake, search, normalizedClassification, cancellationToken);
 
             if (csv)
             {
                 return InventoryCsv.File(
                     "software.csv",
-                    ["Name", "Version", "DeviceCount"],
-                    items.Select(entry => new[] { entry.Name, entry.Version, entry.DeviceCount.ToString(System.Globalization.CultureInfo.InvariantCulture) }));
+                    ["Name", "Version", "Classification", "DeviceCount"],
+                    items.Select(entry => new[]
+                    {
+                        entry.Name,
+                        entry.Version,
+                        entry.Classification,
+                        entry.DeviceCount.ToString(System.Globalization.CultureInfo.InvariantCulture)
+                    }));
             }
 
             return Results.Ok(new SoftwareAggregateListResponse(normalizedSkip, normalizedTake, totalCount, items));
@@ -92,6 +104,7 @@ internal static class InventoryQueryApi
             SqlServerInventoryRepository repository,
             int? skip,
             int? take,
+            string? classification,
             string? format,
             CancellationToken cancellationToken) =>
         {
@@ -105,16 +118,21 @@ internal static class InventoryQueryApi
                 return Results.BadRequest($"Software name must be at most {MaxSearchLength} characters.");
             }
 
-            var csv = WantsCsv(format);
-            var (normalizedSkip, normalizedTake) = NormalizePaging(skip, take, csv);
+            if (!TryNormalizeClassification(classification, out var normalizedClassification, out var classificationError))
+            {
+                return Results.BadRequest(classificationError);
+            }
+
+            var csv = QueryList.WantsCsv(format);
+            var (normalizedSkip, normalizedTake) = QueryList.NormalizePaging(skip, take, csv);
             var (totalCount, items) = await repository.ListSoftwareDevicesAsync(
-                name, normalizedSkip, normalizedTake, cancellationToken);
+                name, normalizedSkip, normalizedTake, normalizedClassification, cancellationToken);
 
             if (csv)
             {
                 return InventoryCsv.File(
                     $"software-{InventoryCsv.SafeFileName(name)}-devices.csv",
-                    ["Name", "DeviceCode", "HostName", "DomainName", "OperatingSystem", "AgentVersion", "LastHeartbeatUtc", "LastInventoryUtc", "Version", "Publisher"],
+                    ["Name", "DeviceCode", "HostName", "DomainName", "OperatingSystem", "AgentVersion", "LastHeartbeatUtc", "LastInventoryUtc", "Version", "Publisher", "Classification"],
                     items.Select(device => new[]
                     {
                         name,
@@ -126,7 +144,8 @@ internal static class InventoryQueryApi
                         InventoryCsv.Format(device.LastHeartbeatUtc),
                         InventoryCsv.Format(device.LastInventoryUtc),
                         device.Version,
-                        device.Publisher
+                        device.Publisher,
+                        device.Classification
                     }));
             }
 
@@ -137,6 +156,7 @@ internal static class InventoryQueryApi
     private static async Task<IResult> GetDeviceAsync(
         string deviceCode,
         SqlServerInventoryRepository repository,
+        string? classification,
         string? format,
         CancellationToken cancellationToken)
     {
@@ -145,20 +165,25 @@ internal static class InventoryQueryApi
             return Results.BadRequest("deviceCode is required.");
         }
 
-        var detail = await repository.GetDeviceAsync(deviceCode, cancellationToken);
+        if (!TryNormalizeClassification(classification, out var normalizedClassification, out var classificationError))
+        {
+            return Results.BadRequest(classificationError);
+        }
+
+        var detail = await repository.GetDeviceAsync(deviceCode, normalizedClassification, cancellationToken);
         if (detail is null)
         {
             return Results.NotFound();
         }
 
-        if (WantsCsv(format))
+        if (QueryList.WantsCsv(format))
         {
             IEnumerable<string?[]> rows = detail.InstalledSoftware.Count == 0
                 ? [DeviceSoftwareRow(detail, null)]
                 : detail.InstalledSoftware.Select(entry => DeviceSoftwareRow(detail, entry));
             return InventoryCsv.File(
                 $"device-{InventoryCsv.SafeFileName(detail.DeviceCode)}.csv",
-                ["DeviceCode", "HostName", "DomainName", "OperatingSystem", "AgentVersion", "LastHeartbeatUtc", "LastInventoryUtc", "Name", "Version", "Publisher", "InstallLocation", "DiscoveryScope", "DiscoverySource"],
+                ["DeviceCode", "HostName", "DomainName", "OperatingSystem", "AgentVersion", "LastHeartbeatUtc", "LastInventoryUtc", "Name", "Version", "Publisher", "InstallLocation", "DiscoveryScope", "DiscoverySource", "Classification"],
                 rows);
         }
 
@@ -179,17 +204,29 @@ internal static class InventoryQueryApi
         entry?.Publisher,
         entry?.InstallLocation,
         entry?.DiscoveryScope,
-        entry?.DiscoverySource
+        entry?.DiscoverySource,
+        entry?.Classification
     ];
 
-    private static bool WantsCsv(string? format) =>
-        string.Equals(format, "csv", StringComparison.OrdinalIgnoreCase);
-
-    private static (int Skip, int Take) NormalizePaging(int? skip, int? take, bool csv)
+    internal static bool TryNormalizeClassification(string? classification, out string? normalized, out string error)
     {
-        var normalizedSkip = Math.Max(skip.GetValueOrDefault(), 0);
-        var requestedTake = take ?? (csv ? CsvDefaultTake : DefaultTake);
-        var normalizedTake = Math.Clamp(requestedTake, 1, MaxTake);
-        return (normalizedSkip, normalizedTake);
+        if (string.IsNullOrWhiteSpace(classification))
+        {
+            normalized = null;
+            error = string.Empty;
+            return true;
+        }
+
+        if (!SoftwarePolicyClassificationNames.TryParseInstalledSoftware(classification, out var storage))
+        {
+            normalized = null;
+            error = "classification must be white, managed, black, or unclassified.";
+            return false;
+        }
+
+        normalized = storage;
+        error = string.Empty;
+        return true;
     }
+
 }

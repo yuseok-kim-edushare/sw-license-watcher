@@ -16,12 +16,15 @@ public class SqlServerSchemaScriptBuilderTests
         Assert.Contains("CONSTRAINT [UX_pc_entity_device_code] UNIQUE ([device_code])", sql);
         Assert.Contains("CREATE TABLE [inventory].[pc_installed_sw]", sql);
         Assert.Contains("[display_name] NVARCHAR(256) NOT NULL", sql);
+        Assert.Contains("[discovery_source] NVARCHAR(64) NOT NULL", sql);
+        Assert.Contains("[classification] NVARCHAR(32) NOT NULL", sql);
         Assert.Contains("CONSTRAINT [FK_pc_installed_sw_pc_entity] FOREIGN KEY ([pc_id]) REFERENCES [inventory].[pc_entity]([pc_id])", sql);
         Assert.Contains("CREATE TABLE [inventory].[software_policy_list]", sql);
         Assert.Contains("CONSTRAINT [DF_software_policy_list_enabled] DEFAULT(1)", sql);
         Assert.Contains("CREATE TABLE [inventory].[software_violation]", sql);
         Assert.Contains("CONSTRAINT [UX_software_violation_pc_id_display_name] UNIQUE ([pc_id], [display_name])", sql);
         Assert.Contains("CREATE INDEX [IX_pc_installed_sw_pc_id] ON [inventory].[pc_installed_sw]([pc_id]);", sql);
+        Assert.Contains("CREATE INDEX [IX_pc_installed_sw_classification] ON [inventory].[pc_installed_sw]([classification]);", sql);
         Assert.Contains("CREATE INDEX [IX_software_policy_list_classification] ON [inventory].[software_policy_list]([classification]);", sql);
         Assert.Contains("CREATE INDEX [IX_software_violation_policy_id] ON [inventory].[software_violation]([policy_id]);", sql);
     }
@@ -129,5 +132,17 @@ public class SqlIdentifierValidatorTests
     public void IsValid_rejects_identifiers_longer_than_128_characters()
     {
         Assert.False(SqlIdentifierValidator.IsValid(new string('A', 129)));
+    }
+
+    [Fact]
+    public void Validate_rejects_invalid_installed_software_classification_column()
+    {
+        var options = new SqlServerStorageOptions
+        {
+            InstalledSoftwareTable = new InstalledSoftwareTableOptions { ClassificationColumn = "class-name" }
+        };
+
+        var ex = Assert.Throws<ArgumentException>(() => SqlIdentifierValidator.Validate(options));
+        Assert.Contains("SQL identifiers must start with a letter or underscore", ex.Message);
     }
 }

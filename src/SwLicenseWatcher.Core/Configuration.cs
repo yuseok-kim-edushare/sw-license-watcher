@@ -157,6 +157,8 @@ public sealed class InstalledSoftwareTableOptions
 
     public string DiscoverySourceColumn { get; set; } = "discovery_source";
 
+    public string ClassificationColumn { get; set; } = "classification";
+
     public string CollectedAtUtcColumn { get; set; } = "collected_at_utc";
 }
 
@@ -250,4 +252,6 @@ public sealed class NotificationEventOptions
     public bool NewSoftware { get; set; } = true;
 
     public bool StaleHeartbeat { get; set; } = true;
+
+    public bool BlacklistViolation { get; set; } = true;
 }

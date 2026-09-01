@@ -18,6 +18,21 @@ public class InventoryCsvTests
         Assert.Equal("'+cmd", InventoryCsv.Escape("+cmd"));
         Assert.Equal("'-1", InventoryCsv.Escape("-1"));
         Assert.Equal("'@sum", InventoryCsv.Escape("@sum"));
+        Assert.Equal("'\tsheet", InventoryCsv.Escape("\tsheet"));
+    }
+
+    [Fact]
+    public void File_writes_utf8_bom_and_crlf_rows()
+    {
+        var result = InventoryCsv.File("policies.csv", ["Id", "Name"], [["1", "=cmd"]]);
+        var file = Assert.IsType<Microsoft.AspNetCore.Http.HttpResults.FileContentHttpResult>(result);
+        Assert.Equal("text/csv", file.ContentType);
+        Assert.Equal("policies.csv", file.FileDownloadName);
+        Assert.Equal(0xEF, file.FileContents.Span[0]);
+        Assert.Equal(0xBB, file.FileContents.Span[1]);
+        Assert.Equal(0xBF, file.FileContents.Span[2]);
+        var text = System.Text.Encoding.UTF8.GetString(file.FileContents.Span[3..]);
+        Assert.Equal("Id,Name\r\n1,'=cmd\r\n", text);
     }
 
     [Fact]

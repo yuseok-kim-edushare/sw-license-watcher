@@ -40,6 +40,7 @@ public sealed class SqlServerSchemaScriptBuilder
         sql.AppendLine($"    [{Escape(installedSoftware.InstallLocationColumn)}] NVARCHAR(512) NULL,");
         sql.AppendLine($"    [{Escape(installedSoftware.DiscoveryScopeColumn)}] NVARCHAR(256) NOT NULL,");
         sql.AppendLine($"    [{Escape(installedSoftware.DiscoverySourceColumn)}] NVARCHAR(64) NOT NULL,");
+        sql.AppendLine($"    [{Escape(installedSoftware.ClassificationColumn)}] NVARCHAR(32) NOT NULL,");
         sql.AppendLine($"    [{Escape(installedSoftware.CollectedAtUtcColumn)}] DATETIMEOFFSET NOT NULL,");
         sql.AppendLine($"    CONSTRAINT [{Escape(BuildIdentifier("FK", installedSoftware.TableName, pc.TableName))}] FOREIGN KEY ([{Escape(installedSoftware.PcForeignKeyColumn)}]) REFERENCES [{schema}].[{Escape(pc.TableName)}]([{Escape(pc.PrimaryKeyColumn)}])");
         sql.AppendLine(");");
@@ -70,6 +71,7 @@ public sealed class SqlServerSchemaScriptBuilder
         sql.AppendLine(");");
         sql.AppendLine();
         sql.AppendLine($"CREATE INDEX [{Escape(BuildIdentifier("IX", installedSoftware.TableName, installedSoftware.PcForeignKeyColumn))}] ON [{schema}].[{Escape(installedSoftware.TableName)}]([{Escape(installedSoftware.PcForeignKeyColumn)}]);");
+        sql.AppendLine($"CREATE INDEX [{Escape(BuildIdentifier("IX", installedSoftware.TableName, installedSoftware.ClassificationColumn))}] ON [{schema}].[{Escape(installedSoftware.TableName)}]([{Escape(installedSoftware.ClassificationColumn)}]);");
         sql.AppendLine($"CREATE INDEX [{Escape(BuildIdentifier("IX", policy.TableName, policy.ClassificationColumn))}] ON [{schema}].[{Escape(policy.TableName)}]([{Escape(policy.ClassificationColumn)}]);");
         sql.AppendLine($"CREATE INDEX [{Escape(BuildIdentifier("IX", violation.TableName, violation.PolicyForeignKeyColumn))}] ON [{schema}].[{Escape(violation.TableName)}]([{Escape(violation.PolicyForeignKeyColumn)}]);");
         return sql.ToString();
@@ -112,7 +114,8 @@ public static class SqlIdentifierValidator
             options.InstalledSoftwareTable.PcForeignKeyColumn, options.InstalledSoftwareTable.DisplayNameColumn,
             options.InstalledSoftwareTable.DisplayVersionColumn, options.InstalledSoftwareTable.PublisherColumn,
             options.InstalledSoftwareTable.InstallLocationColumn, options.InstalledSoftwareTable.DiscoveryScopeColumn,
-            options.InstalledSoftwareTable.DiscoverySourceColumn, options.InstalledSoftwareTable.CollectedAtUtcColumn,
+            options.InstalledSoftwareTable.DiscoverySourceColumn, options.InstalledSoftwareTable.ClassificationColumn,
+            options.InstalledSoftwareTable.CollectedAtUtcColumn,
             options.SoftwarePolicyTable.TableName, options.SoftwarePolicyTable.PrimaryKeyColumn,
             options.SoftwarePolicyTable.ClassificationColumn, options.SoftwarePolicyTable.ProductNameColumn,
             options.SoftwarePolicyTable.PublisherColumn, options.SoftwarePolicyTable.VersionPatternColumn,
