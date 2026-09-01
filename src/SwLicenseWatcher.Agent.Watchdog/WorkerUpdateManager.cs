@@ -128,17 +128,6 @@ public sealed class WorkerUpdateManager(
             throw new CryptographicException("The update package contains no signed binaries.");
         }
 
-        private static string ResolveWorkerPayload(string extractedPath)
-        {
-            var executable = Directory.EnumerateFiles(
-                    extractedPath,
-                    "SwLicenseWatcher.Agent.Worker.exe",
-                    SearchOption.AllDirectories)
-                .SingleOrDefault()
-                ?? throw new InvalidDataException("The package does not contain exactly one Worker executable.");
-            return Path.GetDirectoryName(executable)!;
-        }
-
         foreach (var binary in binaries)
         {
             if (!AuthenticodeVerifier.IsTrusted(binary))
@@ -146,6 +135,21 @@ public sealed class WorkerUpdateManager(
                 throw new CryptographicException($"Authenticode verification failed for {Path.GetFileName(binary)}.");
             }
         }
+    }
+
+    private static string ResolveWorkerPayload(string extractedPath)
+    {
+        var executables = Directory.EnumerateFiles(
+                extractedPath,
+                "SwLicenseWatcher.Agent.Worker.exe",
+                SearchOption.AllDirectories)
+            .Take(2)
+            .ToArray();
+        if (executables.Length != 1)
+        {
+            throw new InvalidDataException("The package must contain exactly one Worker executable.");
+        }
+        return Path.GetDirectoryName(executables[0])!;
     }
 
     [SupportedOSPlatform("windows")]
