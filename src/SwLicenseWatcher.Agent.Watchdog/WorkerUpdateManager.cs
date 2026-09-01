@@ -197,6 +197,10 @@ public sealed class WorkerUpdateManager(
         CancellationToken cancellationToken)
     {
         var backup = Path.Combine(_options.BackupDirectory, "worker-previous");
+        if (!File.Exists(Path.Combine(_options.WorkerInstallDirectory, "SwLicenseWatcher.Agent.Worker.exe")))
+        {
+            throw new InvalidDataException("The Worker installation does not contain the expected executable.");
+        }
         using var service = new ServiceController(_options.WorkerServiceName);
         await SetServiceStateAsync(service, start: false, cancellationToken);
         var installReplaced = false;
@@ -352,6 +356,46 @@ public sealed class WorkerUpdateManager(
             Directory.Delete(path, true);
         }
     }
+}
+
+internal static class WatchdogOptionsValidator
+{
+    public static bool HasSafeDirectories(WatchdogOptions options)
+    {
+        if (string.IsNullOrWhiteSpace(options.StagingDirectory) ||
+            string.IsNullOrWhiteSpace(options.BackupDirectory) ||
+            string.IsNullOrWhiteSpace(options.WorkerInstallDirectory))
+        {
+            return false;
+        }
+
+        try
+        {
+            var directories = new[]
+            {
+                Normalize(options.StagingDirectory),
+                Normalize(options.BackupDirectory),
+                Normalize(options.WorkerInstallDirectory)
+            };
+            return directories.All(path => !IsRoot(path)) &&
+                directories.Distinct(StringComparer.OrdinalIgnoreCase).Count() == directories.Length &&
+                directories.All(first => directories.All(second =>
+                    ReferenceEquals(first, second) || !IsSameOrChildPath(first, second)));
+        }
+        catch (Exception ex) when (ex is ArgumentException or NotSupportedException)
+        {
+            return false;
+        }
+    }
+
+    private static string Normalize(string path) => Path.TrimEndingDirectorySeparator(Path.GetFullPath(path));
+
+    private static bool IsRoot(string path) =>
+        string.Equals(path, Path.TrimEndingDirectorySeparator(Path.GetPathRoot(path)!), StringComparison.OrdinalIgnoreCase);
+
+    private static bool IsSameOrChildPath(string path, string parent) =>
+        path.StartsWith(parent + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase) ||
+        path.StartsWith(parent + Path.AltDirectorySeparatorChar, StringComparison.OrdinalIgnoreCase);
 }
 
 internal static class AuthenticodeVerifier

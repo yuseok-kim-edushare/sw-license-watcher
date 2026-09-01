@@ -87,7 +87,12 @@ public sealed class SqlServerInventoryRepository(SqlServerStorageOptions options
             SET {Name(table.HostNameColumn)} = @hostName,
                 {Name(table.DomainNameColumn)} = CASE WHEN @domainName = N'' THEN {Name(table.DomainNameColumn)} ELSE @domainName END,
                 {Name(table.OperatingSystemColumn)} = CASE WHEN @operatingSystem = N'' THEN {Name(table.OperatingSystemColumn)} ELSE @operatingSystem END,
-                {Name(table.AgentVersionColumn)} = @agentVersion,
+                {Name(table.AgentVersionColumn)} = CASE
+                    WHEN @inventoryAt IS NOT NULL
+                     AND {Name(table.LastHeartbeatUtcColumn)} > @inventoryAt
+                    THEN {Name(table.AgentVersionColumn)}
+                    ELSE @agentVersion
+                END,
                 {Name(table.LastHeartbeatUtcColumn)} = COALESCE(@heartbeatAt, {Name(table.LastHeartbeatUtcColumn)}),
                 {Name(table.LastInventoryUtcColumn)} = COALESCE(@inventoryAt, {Name(table.LastInventoryUtcColumn)})
             WHERE {Name(table.DeviceCodeColumn)} = @deviceCode

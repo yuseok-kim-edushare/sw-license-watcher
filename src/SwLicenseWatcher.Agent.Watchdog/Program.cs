@@ -16,6 +16,8 @@ builder.Services.AddOptions<WatchdogOptions>()
     .Validate(options => !string.IsNullOrWhiteSpace(options.ApiToken), "Watchdog:ApiToken is required.")
     .Validate(options => !string.IsNullOrWhiteSpace(options.WorkerHealthFilePath),
         "Watchdog:WorkerHealthFilePath is required to verify Worker health after an update.")
+    .Validate(WatchdogOptionsValidator.HasSafeDirectories,
+        "Watchdog staging, backup, and Worker install directories must be distinct, non-root, and non-overlapping.")
     .Validate(options => options.MaxPackageBytes > 0 && options.MaxExtractedBytes >= options.MaxPackageBytes,
         "Watchdog package limits must be positive and MaxExtractedBytes must be at least MaxPackageBytes.")
     .ValidateOnStart();
