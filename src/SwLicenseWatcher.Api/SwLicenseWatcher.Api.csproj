@@ -17,6 +17,10 @@
     <ProjectReference Include="..\SwLicenseWatcher.Core\SwLicenseWatcher.Core.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <InternalsVisibleTo Include="SwLicenseWatcher.Api.Tests" />
+  </ItemGroup>
+
   <ItemGroup Condition="'$(PublishAot)' == 'true'">
     <Content Update="web.config" CopyToOutputDirectory="Never" CopyToPublishDirectory="Never" />
   </ItemGroup>

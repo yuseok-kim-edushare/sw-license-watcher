@@ -14,6 +14,7 @@ public sealed class SqlServerSchemaScriptBuilder
         var pc = options.PcTable;
         var installedSoftware = options.InstalledSoftwareTable;
         var policy = options.SoftwarePolicyTable;
+        var violation = options.SoftwareViolationTable;
 
         var sql = new StringBuilder();
         sql.AppendLine($"IF SCHEMA_ID(N'{schemaLiteral}') IS NULL EXEC(N'CREATE SCHEMA [{schemaCommandIdentifier}]');");
@@ -54,8 +55,23 @@ public sealed class SqlServerSchemaScriptBuilder
         sql.AppendLine($"    [{Escape(policy.UpdatedAtUtcColumn)}] DATETIMEOFFSET NOT NULL");
         sql.AppendLine(");");
         sql.AppendLine();
+        sql.AppendLine($"CREATE TABLE [{schema}].[{Escape(violation.TableName)}] (");
+        sql.AppendLine($"    [{Escape(violation.PrimaryKeyColumn)}] BIGINT IDENTITY(1,1) NOT NULL PRIMARY KEY,");
+        sql.AppendLine($"    [{Escape(violation.PcForeignKeyColumn)}] BIGINT NOT NULL,");
+        sql.AppendLine($"    [{Escape(violation.PolicyForeignKeyColumn)}] BIGINT NOT NULL,");
+        sql.AppendLine($"    [{Escape(violation.DisplayNameColumn)}] NVARCHAR(256) NOT NULL,");
+        sql.AppendLine($"    [{Escape(violation.DisplayVersionColumn)}] NVARCHAR(64) NULL,");
+        sql.AppendLine($"    [{Escape(violation.PublisherColumn)}] NVARCHAR(256) NULL,");
+        sql.AppendLine($"    [{Escape(violation.DetectedAtUtcColumn)}] DATETIMEOFFSET NOT NULL,");
+        sql.AppendLine($"    [{Escape(violation.LastSeenAtUtcColumn)}] DATETIMEOFFSET NOT NULL,");
+        sql.AppendLine($"    CONSTRAINT [{Escape(BuildIdentifier("FK", violation.TableName, pc.TableName))}] FOREIGN KEY ([{Escape(violation.PcForeignKeyColumn)}]) REFERENCES [{schema}].[{Escape(pc.TableName)}]([{Escape(pc.PrimaryKeyColumn)}]) ON DELETE CASCADE,");
+        sql.AppendLine($"    CONSTRAINT [{Escape(BuildIdentifier("FK", violation.TableName, policy.TableName))}] FOREIGN KEY ([{Escape(violation.PolicyForeignKeyColumn)}]) REFERENCES [{schema}].[{Escape(policy.TableName)}]([{Escape(policy.PrimaryKeyColumn)}]) ON DELETE CASCADE,");
+        sql.AppendLine($"    CONSTRAINT [{Escape(BuildIdentifier("UX", violation.TableName, violation.PcForeignKeyColumn, violation.DisplayNameColumn))}] UNIQUE ([{Escape(violation.PcForeignKeyColumn)}], [{Escape(violation.DisplayNameColumn)}])");
+        sql.AppendLine(");");
+        sql.AppendLine();
         sql.AppendLine($"CREATE INDEX [{Escape(BuildIdentifier("IX", installedSoftware.TableName, installedSoftware.PcForeignKeyColumn))}] ON [{schema}].[{Escape(installedSoftware.TableName)}]([{Escape(installedSoftware.PcForeignKeyColumn)}]);");
         sql.AppendLine($"CREATE INDEX [{Escape(BuildIdentifier("IX", policy.TableName, policy.ClassificationColumn))}] ON [{schema}].[{Escape(policy.TableName)}]([{Escape(policy.ClassificationColumn)}]);");
+        sql.AppendLine($"CREATE INDEX [{Escape(BuildIdentifier("IX", violation.TableName, violation.PolicyForeignKeyColumn))}] ON [{schema}].[{Escape(violation.TableName)}]([{Escape(violation.PolicyForeignKeyColumn)}]);");
         return sql.ToString();
     }
 
@@ -73,7 +89,7 @@ public sealed class SqlServerSchemaScriptBuilder
 
     internal static string Escape(string identifier) => identifier.Replace("]", "]]", StringComparison.Ordinal);
 
-    private static string EscapeSqlLiteral(string value) => value.Replace("'", "''", StringComparison.Ordinal);
+    internal static string EscapeSqlLiteral(string value) => value.Replace("'", "''", StringComparison.Ordinal);
 }
 
 public static class SqlIdentifierValidator
@@ -101,7 +117,12 @@ public static class SqlIdentifierValidator
             options.SoftwarePolicyTable.ClassificationColumn, options.SoftwarePolicyTable.ProductNameColumn,
             options.SoftwarePolicyTable.PublisherColumn, options.SoftwarePolicyTable.VersionPatternColumn,
             options.SoftwarePolicyTable.NotesColumn, options.SoftwarePolicyTable.EnabledColumn,
-            options.SoftwarePolicyTable.UpdatedAtUtcColumn
+            options.SoftwarePolicyTable.UpdatedAtUtcColumn,
+            options.SoftwareViolationTable.TableName, options.SoftwareViolationTable.PrimaryKeyColumn,
+            options.SoftwareViolationTable.PcForeignKeyColumn, options.SoftwareViolationTable.PolicyForeignKeyColumn,
+            options.SoftwareViolationTable.DisplayNameColumn, options.SoftwareViolationTable.DisplayVersionColumn,
+            options.SoftwareViolationTable.PublisherColumn, options.SoftwareViolationTable.DetectedAtUtcColumn,
+            options.SoftwareViolationTable.LastSeenAtUtcColumn
         };
 
         if (identifiers.Any(identifier => !IsValid(identifier)))

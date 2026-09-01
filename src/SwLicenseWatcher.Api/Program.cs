@@ -1,8 +1,6 @@
 using Microsoft.Extensions.Options;
 using SwLicenseWatcher.Api;
 using SwLicenseWatcher.Core;
-using System.Security.Cryptography;
-using System.Text;
 
 #if NATIVE_AOT
 var builder = WebApplication.CreateSlimBuilder(args);
@@ -46,12 +44,78 @@ builder.Services.AddOptions<UpdateManifestOptions>()
         options => Uri.TryCreate(options.PackageUrl, UriKind.Absolute, out _),
         "Updates:Worker:PackageUrl must be an absolute URI.")
     .ValidateOnStart();
+builder.Services.AddOptions<NotificationOptions>()
+    .Bind(builder.Configuration.GetSection("Notifications"))
+    .Validate(
+        options => !options.Webhook.Enabled
+            || (Uri.TryCreate(options.Webhook.Url, UriKind.Absolute, out var webhookUri)
+                && (webhookUri.Scheme == Uri.UriSchemeHttps || webhookUri.Scheme == Uri.UriSchemeHttp)),
+        "Notifications:Webhook:Url must be an absolute HTTP or HTTPS URI when webhook notifications are enabled.")
+    .Validate(
+        options => !options.Webhook.Enabled || options.Webhook.Timeout > TimeSpan.Zero,
+        "Notifications:Webhook:Timeout must be positive when webhook notifications are enabled.")
+    .Validate(
+        options => !options.Smtp.Enabled || !string.IsNullOrWhiteSpace(options.Smtp.Host),
+        "Notifications:Smtp:Host is required when SMTP notifications are enabled.")
+    .Validate(
+        options => !options.Smtp.Enabled || options.Smtp.Port is >= 1 and <= 65535,
+        "Notifications:Smtp:Port must be between 1 and 65535 when SMTP notifications are enabled.")
+    .Validate(
+        options => !options.Smtp.Enabled || !string.IsNullOrWhiteSpace(options.Smtp.From),
+        "Notifications:Smtp:From is required when SMTP notifications are enabled.")
+    .Validate(
+        options => !options.Smtp.Enabled || options.Smtp.Recipients.Any(recipient => !string.IsNullOrWhiteSpace(recipient)),
+        "Notifications:Smtp:Recipients must contain at least one address when SMTP notifications are enabled.")
+    .Validate(
+        options => options.StaleHeartbeatThreshold > TimeSpan.Zero,
+        "Notifications:StaleHeartbeatThreshold must be positive.")
+    .Validate(
+        options => options.StaleHeartbeatCheckInterval > TimeSpan.Zero,
+        "Notifications:StaleHeartbeatCheckInterval must be positive.")
+    .ValidateOnStart();
 builder.Services.AddSingleton<SqlServerSchemaScriptBuilder>();
 builder.Services.AddSingleton<InventoryMemoryStore>();
 builder.Services.AddSingleton(sp => sp.GetRequiredService<IOptions<SqlServerStorageOptions>>().Value);
 builder.Services.AddSingleton<SqlServerInventoryRepository>();
+builder.Services.AddHttpClient(WebhookNotificationSender.HttpClientName, (sp, client) =>
+{
+    var timeout = sp.GetRequiredService<IOptions<NotificationOptions>>().Value.Webhook.Timeout;
+    client.Timeout = timeout > TimeSpan.Zero ? timeout : TimeSpan.FromSeconds(10);
+});
+builder.Services.AddSingleton<INotificationSender, WebhookNotificationSender>();
+builder.Services.AddSingleton<INotificationSender, SmtpNotificationSender>();
+builder.Services.AddSingleton<NotificationPublisher>();
+builder.Services.AddHostedService<NotificationDispatchService>();
+builder.Services.AddHostedService<StaleHeartbeatMonitor>();
 
 var app = builder.Build();
+
+app.Use(async (context, next) =>
+{
+    try
+    {
+        await next(context);
+    }
+    catch (OperationCanceledException) when (context.RequestAborted.IsCancellationRequested)
+    {
+        throw;
+    }
+    catch (Exception ex)
+    {
+        if (context.Response.HasStarted)
+        {
+            throw;
+        }
+
+        var logger = context.RequestServices.GetRequiredService<ILoggerFactory>().CreateLogger("UnhandledException");
+        logger.LogError(ex, "Unhandled exception.");
+        context.Response.StatusCode = StatusCodes.Status500InternalServerError;
+        context.Response.ContentType = "application/json";
+        await context.Response.WriteAsJsonAsync(
+            new ErrorResponse("An unexpected error occurred."),
+            ApiJsonSerializerContext.Default.ErrorResponse);
+    }
+});
 
 app.Use(async (context, next) =>
 {
@@ -72,10 +136,7 @@ app.Use(async (context, next) =>
     }
 
     var supplied = context.Request.Headers.Authorization.ToString();
-    var expected = string.Concat("Bearer ", security.Token);
-    var suppliedHash = SHA256.HashData(Encoding.UTF8.GetBytes(supplied));
-    var expectedHash = SHA256.HashData(Encoding.UTF8.GetBytes(expected));
-    if (!CryptographicOperations.FixedTimeEquals(suppliedHash, expectedHash))
+    if (!BearerTokenAuthenticator.IsAuthorized(supplied, security.Token))
     {
         context.Response.StatusCode = StatusCodes.Status401Unauthorized;
         return;
@@ -85,7 +146,29 @@ app.Use(async (context, next) =>
 });
 
 app.MapGet("/", () => Results.Redirect("/api/design"));
-app.MapGet("/health", () => Results.Ok(new HealthResponse("Healthy", DateTimeOffset.UtcNow)));
+app.MapGet("/health", async (
+    SqlServerInventoryRepository repository,
+    ILoggerFactory loggerFactory,
+    CancellationToken cancellationToken) =>
+{
+    try
+    {
+        await repository.ProbeAsync(cancellationToken);
+        return Results.Ok(new HealthResponse("Healthy", DateTimeOffset.UtcNow));
+    }
+    catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+    {
+        throw;
+    }
+    catch (Exception ex)
+    {
+        loggerFactory.CreateLogger("Health").LogError(ex, "The SQL Server health probe failed.");
+        return TypedResults.Json(
+            new HealthResponse("Unhealthy", DateTimeOffset.UtcNow, "Database is unavailable."),
+            ApiJsonSerializerContext.Default.HealthResponse,
+            statusCode: StatusCodes.Status503ServiceUnavailable);
+    }
+});
 app.MapGet("/api/schema/sql", (IOptions<SqlServerStorageOptions> options, SqlServerSchemaScriptBuilder schemaBuilder) =>
     Results.Text(schemaBuilder.Build(options.Value), "text/plain"));
 app.MapGet("/api/design", (
@@ -110,6 +193,7 @@ app.MapPost("/api/inventory/snapshots", async (
     InventoryIngestionRequest request,
     InventoryMemoryStore store,
     SqlServerInventoryRepository repository,
+    NotificationPublisher notifications,
     CancellationToken cancellationToken) =>
 {
     if (!InventorySnapshotValidator.TryValidate(request, out var validationError))
@@ -117,9 +201,10 @@ app.MapPost("/api/inventory/snapshots", async (
         return Results.BadRequest(validationError);
     }
 
-    await repository.SaveSnapshotAsync(request, cancellationToken);
+    var saveResult = await repository.SaveSnapshotAsync(request, cancellationToken);
     store.RecordSnapshot(request);
-    return Results.Accepted($"/api/inventory/snapshots/{request.Pc.DeviceCode}", new SnapshotAcceptedResponse(
+    notifications.EnqueueNewSoftwareIfNeeded(request, saveResult);
+    return Results.Accepted($"/api/inventory/devices/{request.Pc.DeviceCode}", new SnapshotAcceptedResponse(
         request.Pc.DeviceCode,
         request.InstalledSoftware.Count,
         request.CollectedAtUtc));
@@ -139,5 +224,46 @@ app.MapPost("/api/agents/heartbeats", async (
     store.RecordHeartbeat(heartbeat);
     return Results.Accepted($"/api/agents/heartbeats/{heartbeat.DeviceCode}", heartbeat);
 });
+
+app.MapInventoryQuery();
+
+app.MapGet("/api/policies", async (SqlServerInventoryRepository repository, CancellationToken cancellationToken) =>
+    Results.Ok(await repository.ListPoliciesAsync(cancellationToken)));
+app.MapGet("/api/policies/{id:long}", async (long id, SqlServerInventoryRepository repository, CancellationToken cancellationToken) =>
+{
+    var policy = await repository.GetPolicyAsync(id, cancellationToken);
+    return policy is null ? Results.NotFound() : Results.Ok(policy);
+});
+app.MapPost("/api/policies", async (
+    SoftwarePolicyWriteRequest request,
+    SqlServerInventoryRepository repository,
+    CancellationToken cancellationToken) =>
+{
+    if (!SoftwarePolicyValidator.TryValidate(request, out var validationError))
+    {
+        return Results.BadRequest(validationError);
+    }
+
+    var created = await repository.CreatePolicyAsync(request, cancellationToken);
+    return Results.Created($"/api/policies/{created.Id}", created);
+});
+app.MapPut("/api/policies/{id:long}", async (
+    long id,
+    SoftwarePolicyWriteRequest request,
+    SqlServerInventoryRepository repository,
+    CancellationToken cancellationToken) =>
+{
+    if (!SoftwarePolicyValidator.TryValidate(request, out var validationError))
+    {
+        return Results.BadRequest(validationError);
+    }
+
+    var updated = await repository.UpdatePolicyAsync(id, request, cancellationToken);
+    return updated is null ? Results.NotFound() : Results.Ok(updated);
+});
+app.MapDelete("/api/policies/{id:long}", async (long id, SqlServerInventoryRepository repository, CancellationToken cancellationToken) =>
+    await repository.DeletePolicyAsync(id, cancellationToken) ? Results.NoContent() : Results.NotFound());
+app.MapGet("/api/violations", async (SqlServerInventoryRepository repository, CancellationToken cancellationToken) =>
+    Results.Ok(await repository.ListViolationsAsync(cancellationToken)));
 
 app.Run();

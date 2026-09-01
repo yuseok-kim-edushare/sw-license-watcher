@@ -112,6 +112,8 @@ public sealed class SqlServerStorageOptions
     public InstalledSoftwareTableOptions InstalledSoftwareTable { get; set; } = new();
 
     public SoftwarePolicyTableOptions SoftwarePolicyTable { get; set; } = new();
+
+    public SoftwareViolationTableOptions SoftwareViolationTable { get; set; } = new();
 }
 
 public sealed class PcTableOptions
@@ -177,4 +179,75 @@ public sealed class SoftwarePolicyTableOptions
     public string EnabledColumn { get; set; } = "enabled";
 
     public string UpdatedAtUtcColumn { get; set; } = "updated_at_utc";
+}
+
+public sealed class SoftwareViolationTableOptions
+{
+    public string TableName { get; set; } = "software_violation";
+
+    public string PrimaryKeyColumn { get; set; } = "violation_id";
+
+    public string PcForeignKeyColumn { get; set; } = "pc_id";
+
+    public string PolicyForeignKeyColumn { get; set; } = "policy_id";
+
+    public string DisplayNameColumn { get; set; } = "display_name";
+
+    public string DisplayVersionColumn { get; set; } = "display_version";
+
+    public string PublisherColumn { get; set; } = "publisher";
+
+    public string DetectedAtUtcColumn { get; set; } = "detected_at_utc";
+
+    public string LastSeenAtUtcColumn { get; set; } = "last_seen_at_utc";
+}
+
+public sealed class NotificationOptions
+{
+    public WebhookNotificationOptions Webhook { get; set; } = new();
+
+    public SmtpNotificationOptions Smtp { get; set; } = new();
+
+    public NotificationEventOptions Events { get; set; } = new();
+
+    public TimeSpan StaleHeartbeatThreshold { get; set; } = TimeSpan.FromHours(24);
+
+    public TimeSpan StaleHeartbeatCheckInterval { get; set; } = TimeSpan.FromMinutes(15);
+
+    public bool HasEnabledChannel => Webhook.Enabled || Smtp.Enabled;
+}
+
+public sealed class WebhookNotificationOptions
+{
+    public bool Enabled { get; set; }
+
+    public string Url { get; set; } = string.Empty;
+
+    public TimeSpan Timeout { get; set; } = TimeSpan.FromSeconds(10);
+}
+
+public sealed class SmtpNotificationOptions
+{
+    public bool Enabled { get; set; }
+
+    public string Host { get; set; } = string.Empty;
+
+    public int Port { get; set; } = 587;
+
+    public bool EnableSsl { get; set; } = true;
+
+    public string UserName { get; set; } = string.Empty;
+
+    public string Password { get; set; } = string.Empty;
+
+    public string From { get; set; } = string.Empty;
+
+    public string[] Recipients { get; set; } = [];
+}
+
+public sealed class NotificationEventOptions
+{
+    public bool NewSoftware { get; set; } = true;
+
+    public bool StaleHeartbeat { get; set; } = true;
 }

@@ -14,12 +14,22 @@
   - `LocalState:MaxQueuedSnapshots`, `LocalState:MaxQueueBytes` 할당량 초과 시 가장 오래된 스냅샷부터 제거
 - **서버 측 API**
   - 수집 API: `/api/inventory/snapshots`, `/api/agents/heartbeats`
+  - 조회 API: `/api/inventory/devices`, `/api/inventory/software` (JSON 및 `?format=csv`)
   - SQL Server 트랜잭션 기반 PC UPSERT 및 설치 소프트웨어 교체 저장
   - 공유 API 토큰 인증 및 원격 요청 HTTPS 강제
+  - 헬스체크: `/health`(인증 제외)는 SQL Server에 `SELECT 1`로 연결을 확인하고, 실패 시 503과 일반화된 사유만 반환
   - 설계/스키마 API: `/api/design`, `/api/schema/sql`
   - 업데이트 manifest API: `/api/updates/worker/manifest`
+  - 소프트웨어 정책 CRUD: `/api/policies`
+  - 블랙리스트 위반 목록: `/api/violations`
+  - 스냅샷 수신 시 설치 SW를 정책과 매칭해 white/managed/black/unclassified로 분류하고, 블랙리스트 적발을 `company_sw_violation`에 기록
+- **서버 알림 (웹훅 + SMTP)**
+  - Teams/Slack incoming webhook(`{ "text": "..." }`)과 SMTP로 운영 알림 전송
+  - 신규 스냅샷에서 이전에 없던 소프트웨어가 보이면 PC·이름·버전 요약 알림
+  - heartbeat가 설정된 시간(기본 24시간) 이상 두절된 PC는 PC당 1회만 알림(복구 후 다시 두절되면 재알림)
+  - 알림 전송 실패는 로그만 남기고 스냅샷/heartbeat 저장에는 영향을 주지 않음
 - **SQL Server 스키마 커스터마이징**
-  - PC entity / PC installed software / software policy(white|managed|black) 테이블 이름과 컬럼 이름 모두 `appsettings.json`에서 변경 가능
+  - PC entity / PC installed software / software policy(white|managed|black) / software violation 테이블 이름과 컬럼 이름 모두 `appsettings.json`에서 변경 가능
 - **수집 방식 안전장치**
   - `Win32_Product` / WMI 미사용
   - `HKLM(64)`, `HKLM(32)`, `HKCU`, 로드된 `HKEY_USERS` 사용자 SID의 `Uninstall` 키 순회
@@ -74,12 +84,14 @@ SwLicenseWatcher-{version}/
 - `InstalledSoftwareTable.DisplayNameColumn`
 - `SoftwarePolicyTable.TableName`
 - `SoftwarePolicyTable.ClassificationColumn`
+- `SoftwareViolationTable.TableName`
 
 현재 기본 예시는 다음처럼 커스텀되어 있습니다.
 
 - PC 테이블: `company_pc`
 - 설치 SW 테이블: `company_pc_installed_sw`
 - 정책 테이블: `company_sw_policy`
+- 위반 테이블: `company_sw_violation`
 
 ## 회사 배포
 
@@ -125,6 +137,63 @@ ALTER TABLE [inventory].[pc_installed_sw] ALTER COLUMN [discovery_scope] NVARCHA
 
 Watchdog에는 Worker 실행 파일이 설치된 `Watchdog__WorkerInstallDirectory`와 업데이트 후 확인할 `Watchdog__WorkerHealthFilePath`도 설정합니다. 이 경로는 Worker의 `Agent__HealthFilePath`와 동일해야 하며, Worker 서비스 계정이 쓰고 Watchdog 서비스 계정이 읽을 수 있어야 합니다. 업데이트 ZIP에는 정확히 하나의 `SwLicenseWatcher.Agent.Worker.exe`가 있어야 하며 모든 EXE/DLL이 신뢰된 Authenticode 서명을 가져야 합니다.
 
+## 서버 알림 (웹훅 / SMTP)
+
+API 서버는 수집 결과를 바탕으로 Teams/Slack incoming webhook과 SMTP 메일로 알림을 보낼 수 있습니다. 두 채널은 독립적으로 켜고 끌 수 있으며, 둘 다 꺼 두면 알림을 보내지 않습니다. 자격 증명과 webhook URL은 소스에 넣지 말고 환경 변수로 주입하세요.
+
+설정 예시는 [deploy/examples/appsettings.api.json](deploy/examples/appsettings.api.json)을 참고하세요.
+
+```json
+{
+  "Notifications": {
+    "Webhook": {
+      "Enabled": true,
+      "Url": "https://outlook.office.com/webhook/REPLACE_ME",
+      "Timeout": "00:00:10"
+    },
+    "Smtp": {
+      "Enabled": true,
+      "Host": "smtp.contoso.local",
+      "Port": 587,
+      "EnableSsl": true,
+      "UserName": "sw-license-watcher",
+      "Password": "",
+      "From": "sw-license-watcher@contoso.local",
+      "Recipients": [ "it-ops@contoso.local" ]
+    },
+    "Events": {
+      "NewSoftware": true,
+      "StaleHeartbeat": true
+    },
+    "StaleHeartbeatThreshold": "1.00:00:00",
+    "StaleHeartbeatCheckInterval": "00:15:00"
+  }
+}
+```
+
+| 키 | 설명 |
+| --- | --- |
+| `Notifications:Webhook:Enabled` | Teams/Slack incoming webhook 사용 여부. 페이로드는 `{ "text": "..." }` |
+| `Notifications:Webhook:Url` | webhook이 켜져 있을 때 필수. HTTP 또는 HTTPS 절대 URI |
+| `Notifications:Webhook:Timeout` | HTTP 타임아웃. 기본 `00:00:10` |
+| `Notifications:Smtp:Enabled` | SMTP 메일 사용 여부 |
+| `Notifications:Smtp:Host` / `Port` / `EnableSsl` | SMTP가 켜져 있을 때 호스트·포트·SSL |
+| `Notifications:Smtp:UserName` / `Password` | 비워 두면 익명(또는 서버 기본 자격 증명) 릴레이 |
+| `Notifications:Smtp:From` / `Recipients` | SMTP가 켜져 있을 때 발신자와 수신자 목록(1명 이상) |
+| `Notifications:Events:NewSoftware` | 이전에 없던 소프트웨어가 스냅샷에 나타나면 알림 |
+| `Notifications:Events:StaleHeartbeat` | heartbeat 두절 PC 알림 |
+| `Notifications:StaleHeartbeatThreshold` | 두절로 볼 경과 시간. 기본 24시간(`1.00:00:00`) |
+| `Notifications:StaleHeartbeatCheckInterval` | 백그라운드 검사 주기. 기본 15분 |
+
+환경 변수 예:
+
+```text
+Notifications__Webhook__Url=<teams-or-slack-incoming-webhook>
+Notifications__Smtp__Password=<smtp-password>
+```
+
+Webhook이 켜진 상태에서 URL이 없거나, SMTP가 켜진 상태에서 Host/From/Recipients가 비어 있으면 API는 시작 시 실패합니다. 알림은 백그라운드 큐로 보내며, SMTP는 Native AOT를 위해 `System.Net.Mail.SmtpClient`를 사용합니다(MailKit 전체 패키지는 AOT 비호환).
+
 ## 수동 실행 예시
 
 ```bash
@@ -136,6 +205,63 @@ API 실행 후:
 
 - `GET /api/design`: 전체 설계 요약
 - `GET /api/schema/sql`: 현재 설정 기준 SQL Server DDL
+- `GET /health`: SQL Server 연결 확인(인증 불필요). 실패 시 503
+- `GET /api/inventory/devices`: 수집된 PC 목록 (페이징·검색·stale heartbeat 필터)
+- `GET /api/inventory/software`: 소프트웨어별 설치 PC 수 집계
+
+조회 API는 수집 API와 같은 Bearer 토큰이 필요합니다. `?format=csv`를 붙이면 UTF-8 BOM이 포함된 CSV를 내려받아 Excel에서 한글을 깨지지 않게 열 수 있습니다.
+
+| 메서드 | 경로 | 설명 | 주요 쿼리 |
+| --- | --- | --- | --- |
+| GET | `/api/inventory/devices` | PC 목록 (자산코드, 호스트명, 도메인, OS, 에이전트 버전, 마지막 heartbeat/inventory 시각) | `skip`, `take`, `search`(호스트명 또는 자산코드), `staleAfterHours`, `format=csv` |
+| GET | `/api/inventory/devices/{deviceCode}` | 단일 PC 상세와 설치 소프트웨어 전체 | `format=csv` |
+| GET | `/api/inventory/software` | SW 이름/버전별 설치 PC 수 | `skip`, `take`, `search`(이름), `format=csv` |
+| GET | `/api/inventory/software/{name}/devices` | 해당 SW가 설치된 PC 목록 | `skip`, `take`, `format=csv` |
+
+페이징 기본값은 JSON `take=100`, CSV `take=10000`이며 최대 10000입니다. `staleAfterHours`는 마지막 heartbeat가 없거나 지정 시간보다 오래된 PC만 남깁니다. `search`는 SQL `LIKE` 와일드카드가 이스케이프된 부분 일치입니다.
+
+스냅샷 접수 `Location`은 `/api/inventory/devices/{deviceCode}`를 가리키며, 이전 경로인 `GET /api/inventory/snapshots/{deviceCode}`도 같은 상세 응답을 반환합니다.
+
+## 소프트웨어 정책과 위반
+
+정책은 `company_sw_policy`(이름은 설정으로 변경 가능)에 저장합니다. 스냅샷 `POST /api/inventory/snapshots`를 받을 때 설치 SW 이름·버전을 정책과 매칭해 `white` / `managed` / `black` / `unclassified`로 분류합니다. 블랙리스트에 걸린 항목은 `company_sw_violation`에 기록하며, 같은 PC+소프트웨어 이름은 한 행만 유지합니다(최초 적발 시각은 유지하고 마지막 발견 시각만 갱신). 더 이상 설치되어 있지 않거나 블랙이 아니면 해당 PC의 위반 행을 삭제합니다.
+
+이름 패턴은 정확 일치이며, `*` / `?` 와일드카드로 prefix·부분 일치도 됩니다(`Google Chrome*`, `*Torrent*`). 선택적 `versionPattern`은 정확/와일드카드(`16.*`)이거나 비교식(`>=17.0`, `<18.0`)이고, 쉼표로 AND 조건을 연결할 수 있습니다(`>=17.0,<18.0`). 게시자(`publisher`)가 있으면 이름과 같은 방식으로 매칭합니다. 여러 정책이 동시에 맞으면 **black > managed > white** 순으로 더 강한 분류를 씁니다.
+
+정책·위반 API도 수집 API와 같은 Bearer 토큰이 필요합니다.
+
+| 메서드 | 경로 | 설명 |
+| --- | --- | --- |
+| GET | `/api/policies` | 정책 목록 |
+| GET | `/api/policies/{id}` | 정책 단건 |
+| POST | `/api/policies` | 정책 생성 (`201` + `Location`) |
+| PUT | `/api/policies/{id}` | 정책 수정 |
+| DELETE | `/api/policies/{id}` | 정책 삭제(관련 위반은 FK CASCADE로 함께 삭제) |
+| GET | `/api/violations` | 현재 블랙리스트 위반 목록 |
+
+`POST` / `PUT` 본문 예:
+
+```json
+{
+  "productName": "uTorrent*",
+  "publisher": null,
+  "versionPattern": null,
+  "classification": "black",
+  "notes": "P2P 금지",
+  "enabled": true
+}
+```
+
+`classification`은 `white` | `managed` | `black` 입니다. 기존 DB에는 `GET /api/schema/sql`에서 위반 테이블 `CREATE` 문을 적용하세요.
+
+```powershell
+$token = $env:Security__Token
+$headers = @{ Authorization = "Bearer $token" }
+Invoke-RestMethod -Headers $headers -Uri "http://127.0.0.1:5080/api/inventory/devices?search=PC-01&staleAfterHours=24"
+Invoke-WebRequest -Headers $headers -Uri "http://127.0.0.1:5080/api/inventory/software?format=csv" -OutFile software.csv
+Invoke-RestMethod -Headers $headers -Uri "http://127.0.0.1:5080/api/policies"
+Invoke-RestMethod -Headers $headers -Uri "http://127.0.0.1:5080/api/violations"
+```
 
 Worker/Watchdog는 진단용으로 1회 실행 모드도 지원합니다.
 
