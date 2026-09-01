@@ -90,8 +90,12 @@ public sealed class SqlServerInventoryRepository(SqlServerStorageOptions options
                 {Name(table.AgentVersionColumn)} = @agentVersion,
                 {Name(table.LastHeartbeatUtcColumn)} = COALESCE(@heartbeatAt, {Name(table.LastHeartbeatUtcColumn)}),
                 {Name(table.LastInventoryUtcColumn)} = COALESCE(@inventoryAt, {Name(table.LastInventoryUtcColumn)})
-            WHERE {Name(table.DeviceCodeColumn)} = @deviceCode;
-            IF @@ROWCOUNT = 0
+            WHERE {Name(table.DeviceCodeColumn)} = @deviceCode
+             AND (@heartbeatAt IS NULL OR {Name(table.LastHeartbeatUtcColumn)} IS NULL OR @heartbeatAt >= {Name(table.LastHeartbeatUtcColumn)});
+            IF @@ROWCOUNT = 0 AND NOT EXISTS (
+               SELECT 1 FROM {Name(options.SchemaName, table.TableName)}
+               WHERE {Name(table.DeviceCodeColumn)} = @deviceCode
+            )
             BEGIN
                 INSERT INTO {Name(options.SchemaName, table.TableName)}
                 ({Name(table.DeviceCodeColumn)}, {Name(table.HostNameColumn)}, {Name(table.DomainNameColumn)},

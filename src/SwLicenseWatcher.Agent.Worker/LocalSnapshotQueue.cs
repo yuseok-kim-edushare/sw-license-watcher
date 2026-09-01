@@ -22,7 +22,7 @@ public sealed class LocalSnapshotQueue(
         await File.WriteAllTextAsync(temporaryPath, protectedPayload, Encoding.UTF8, cancellationToken);
         File.Move(temporaryPath, finalPath);
         logger.LogInformation("Queued inventory snapshot for later delivery.");
-        EvictSnapshotsBeyondQuota(finalPath);
+        EvictQueueArtifactsBeyondQuota();
     }
 
     public async Task<bool> FlushAsync(AgentApiClient apiClient, CancellationToken cancellationToken)
@@ -31,6 +31,8 @@ public sealed class LocalSnapshotQueue(
         {
             return true;
         }
+
+        EvictQueueArtifactsBeyondQuota();
 
         string[] queuedPaths;
         try
@@ -95,13 +97,13 @@ public sealed class LocalSnapshotQueue(
         return snapshot!;
     }
 
-    private void EvictSnapshotsBeyondQuota(string newestPath)
+    private void EvictQueueArtifactsBeyondQuota()
     {
         List<FileInfo> queued;
         try
         {
             queued = new DirectoryInfo(_queueDirectory)
-                .EnumerateFiles("*.snapshot")
+                .EnumerateFiles()
                 .OrderBy(file => file.FullName, StringComparer.Ordinal)
                 .ToList();
         }
@@ -114,16 +116,9 @@ public sealed class LocalSnapshotQueue(
         var totalBytes = queued.Sum(file => file.Length);
         var index = 0;
         while (index < queued.Count &&
-               queued.Count > 1 &&
                (queued.Count > options.MaxQueuedSnapshots || totalBytes > options.MaxQueueBytes))
         {
             var file = queued[index];
-            if (string.Equals(file.FullName, newestPath, StringComparison.Ordinal))
-            {
-                index++;
-                continue;
-            }
-
             var length = file.Length;
             try
             {

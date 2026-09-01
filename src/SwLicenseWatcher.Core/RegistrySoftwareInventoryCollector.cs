@@ -58,7 +58,7 @@ public sealed class RegistrySoftwareInventoryCollector : ISoftwareInventoryColle
                 AppendEntries(currentUserKey, "User", software, dedupe, cancellationToken);
             }
         }
-        catch (Exception ex) when (ex is SecurityException or UnauthorizedAccessException)
+        catch (Exception ex) when (ex is SecurityException or UnauthorizedAccessException or IOException)
         {
         }
     }
@@ -73,7 +73,7 @@ public sealed class RegistrySoftwareInventoryCollector : ISoftwareInventoryColle
             foreach (var sid in users.GetSubKeyNames())
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                if (!sid.StartsWith("S-1-5-21-", StringComparison.OrdinalIgnoreCase) ||
+                if (!IsSid(sid) ||
                     sid.EndsWith("_Classes", StringComparison.OrdinalIgnoreCase) ||
                     string.Equals(sid, currentSid, StringComparison.OrdinalIgnoreCase))
                 {
@@ -88,12 +88,12 @@ public sealed class RegistrySoftwareInventoryCollector : ISoftwareInventoryColle
                         AppendEntries(uninstallKey, $"User:{sid}", software, dedupe, cancellationToken);
                     }
                 }
-                catch (Exception ex) when (ex is SecurityException or UnauthorizedAccessException)
+                catch (Exception ex) when (ex is SecurityException or UnauthorizedAccessException or IOException)
                 {
                 }
             }
         }
-        catch (Exception ex) when (ex is SecurityException or UnauthorizedAccessException)
+        catch (Exception ex) when (ex is SecurityException or UnauthorizedAccessException or IOException)
         {
         }
     }
@@ -106,9 +106,23 @@ public sealed class RegistrySoftwareInventoryCollector : ISoftwareInventoryColle
             using var identity = WindowsIdentity.GetCurrent();
             return identity.User?.Value;
         }
-        catch (Exception ex) when (ex is SecurityException or UnauthorizedAccessException)
+        catch (Exception ex) when (ex is SecurityException or UnauthorizedAccessException or IOException)
         {
             return null;
+        }
+    }
+
+    [SupportedOSPlatform("windows")]
+    private static bool IsSid(string value)
+    {
+        try
+        {
+            _ = new SecurityIdentifier(value);
+            return true;
+        }
+        catch (ArgumentException)
+        {
+            return false;
         }
     }
 
@@ -131,7 +145,7 @@ public sealed class RegistrySoftwareInventoryCollector : ISoftwareInventoryColle
                 AppendEntries(uninstallKey, scope, software, dedupe, cancellationToken);
             }
         }
-        catch (Exception ex) when (ex is SecurityException or UnauthorizedAccessException)
+        catch (Exception ex) when (ex is SecurityException or UnauthorizedAccessException or IOException)
         {
         }
     }

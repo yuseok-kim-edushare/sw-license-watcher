@@ -14,6 +14,7 @@ builder.Services.AddOptions<WorkerAgentOptions>()
             && (uri.Scheme == Uri.UriSchemeHttps || (uri.Scheme == Uri.UriSchemeHttp && uri.IsLoopback)),
         "Agent:ServerBaseUrl must use HTTPS (HTTP is allowed only for loopback diagnostics).")
     .Validate(options => !string.IsNullOrWhiteSpace(options.ApiToken), "Agent:ApiToken is required.")
+    .Validate(options => !string.IsNullOrWhiteSpace(options.HealthFilePath), "Agent:HealthFilePath is required.")
     .ValidateOnStart();
 builder.Services.AddOptions<LocalStateStoreOptions>()
     .Bind(builder.Configuration.GetSection("LocalState"))

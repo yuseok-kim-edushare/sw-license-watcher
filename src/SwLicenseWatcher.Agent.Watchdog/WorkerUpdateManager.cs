@@ -366,7 +366,7 @@ internal static class AuthenticodeVerifier
     }
 
     [DllImport("wintrust.dll", SetLastError = true)]
-    private static extern int WinVerifyTrust(IntPtr hwnd, [In] Guid actionId, [In] WinTrustData trustData);
+    private static extern int WinVerifyTrust(IntPtr hwnd, [In, MarshalAs(UnmanagedType.LPStruct)] Guid actionId, [In] WinTrustData trustData);
 
     [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
     private sealed class WinTrustFileInfo : IDisposable

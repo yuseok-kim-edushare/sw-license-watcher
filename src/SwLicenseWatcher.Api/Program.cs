@@ -126,6 +126,11 @@ app.MapPost("/api/agents/heartbeats", async (
     SqlServerInventoryRepository repository,
     CancellationToken cancellationToken) =>
 {
+    if (!InventorySnapshotValidator.TryValidate(heartbeat, out var validationError))
+    {
+        return Results.BadRequest(validationError);
+    }
+
     await repository.SaveHeartbeatAsync(heartbeat, cancellationToken);
     store.RecordHeartbeat(heartbeat);
     return Results.Accepted($"/api/agents/heartbeats/{heartbeat.DeviceCode}", heartbeat);
