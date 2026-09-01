@@ -30,10 +30,19 @@ builder.Services.AddOptions<SqlServerStorageOptions>()
         }
     }, "All SQL identifiers must use letters, digits, and underscores, start with a letter or underscore, and be at most 128 characters.")
     .ValidateOnStart();
+builder.Services.AddOptions<DatabaseOptions>()
+    .Bind(builder.Configuration.GetSection("Database"));
 builder.Services.AddOptions<ApiSecurityOptions>()
     .Bind(builder.Configuration.GetSection("Security"))
-    .Validate(options => !string.IsNullOrWhiteSpace(options.Token) && options.Token.Length >= 32,
-        "Security:Token must contain at least 32 characters.")
+    .Validate(
+        ApiSecurityOptionsValidator.HasAtLeastOneUsableToken,
+        "At least one of Security:Token, Security:AgentToken, or Security:AdminToken must contain at least 32 characters.")
+    .Validate(
+        ApiSecurityOptionsValidator.HasValidConfiguredTokenLengths,
+        "Every configured Security token (Token, AgentToken, AdminToken) must contain at least 32 characters.")
+    .Validate(
+        ApiSecurityOptionsValidator.HasDistinctRoleTokens,
+        "Security:AgentToken must differ from Security:AdminToken and from Security:Token.")
     .ValidateOnStart();
 builder.Services.AddOptions<UpdateManifestOptions>()
     .Bind(builder.Configuration.GetSection("Updates:Worker"))
@@ -74,9 +83,11 @@ builder.Services.AddOptions<NotificationOptions>()
         "Notifications:StaleHeartbeatCheckInterval must be positive.")
     .ValidateOnStart();
 builder.Services.AddSingleton<SqlServerSchemaScriptBuilder>();
+builder.Services.AddSingleton<SqlServerSchemaApplicator>();
 builder.Services.AddSingleton<InventoryMemoryStore>();
 builder.Services.AddSingleton(sp => sp.GetRequiredService<IOptions<SqlServerStorageOptions>>().Value);
 builder.Services.AddSingleton<SqlServerInventoryRepository>();
+builder.Services.AddSingleton<IStaleHeartbeatNotificationStore>(sp => sp.GetRequiredService<SqlServerInventoryRepository>());
 builder.Services.AddHttpClient(WebhookNotificationSender.HttpClientName, (sp, client) =>
 {
     var timeout = sp.GetRequiredService<IOptions<NotificationOptions>>().Value.Webhook.Timeout;
@@ -136,7 +147,7 @@ app.Use(async (context, next) =>
     }
 
     var supplied = context.Request.Headers.Authorization.ToString();
-    if (!BearerTokenAuthenticator.IsAuthorized(supplied, security.Token))
+    if (!BearerTokenAuthenticator.IsAuthorized(supplied, security, context.Request.Path))
     {
         context.Response.StatusCode = StatusCodes.Status401Unauthorized;
         return;
@@ -263,5 +274,8 @@ app.MapPut("/api/policies/{id:long}", async (
 });
 app.MapDelete("/api/policies/{id:long}", async (long id, SqlServerInventoryRepository repository, CancellationToken cancellationToken) =>
     await repository.DeletePolicyAsync(id, cancellationToken) ? Results.NoContent() : Results.NotFound());
+
+await app.Services.GetRequiredService<SqlServerSchemaApplicator>()
+    .ApplyIfEnabledAsync(CancellationToken.None);
 
 app.Run();

@@ -62,7 +62,7 @@ public sealed class AgentApiClient
             if (response.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden)
             {
                 _logger.LogWarning(
-                    "POST {Path} to {BaseAddress} returned {StatusCode}. Check Agent:ApiToken and API Security:Token; the payload will not be queued for retry.",
+                    "POST {Path} to {BaseAddress} returned {StatusCode}. Check Agent:ApiToken against API Security:AgentToken (or legacy Security:Token); the payload will not be queued for retry.",
                     path,
                     _httpClient.BaseAddress,
                     statusCode);

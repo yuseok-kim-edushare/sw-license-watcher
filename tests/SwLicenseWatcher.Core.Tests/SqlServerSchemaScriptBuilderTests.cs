@@ -23,10 +23,23 @@ public class SqlServerSchemaScriptBuilderTests
         Assert.Contains("CONSTRAINT [DF_software_policy_list_enabled] DEFAULT(1)", sql);
         Assert.Contains("CREATE TABLE [inventory].[software_violation]", sql);
         Assert.Contains("CONSTRAINT [UX_software_violation_pc_id_display_name] UNIQUE ([pc_id], [display_name])", sql);
+        Assert.Contains("CREATE TABLE [inventory].[stale_heartbeat_notification]", sql);
+        Assert.Contains("[notified_at_utc] DATETIMEOFFSET NOT NULL", sql);
+        Assert.Contains("CONSTRAINT [FK_stale_heartbeat_notification_pc_entity] FOREIGN KEY ([pc_id]) REFERENCES [inventory].[pc_entity]([pc_id]) ON DELETE CASCADE", sql);
+        Assert.Contains("CONSTRAINT [UX_stale_heartbeat_notification_pc_id] UNIQUE ([pc_id])", sql);
         Assert.Contains("CREATE INDEX [IX_pc_installed_sw_pc_id] ON [inventory].[pc_installed_sw]([pc_id]);", sql);
         Assert.Contains("CREATE INDEX [IX_pc_installed_sw_classification] ON [inventory].[pc_installed_sw]([classification]);", sql);
         Assert.Contains("CREATE INDEX [IX_software_policy_list_classification] ON [inventory].[software_policy_list]([classification]);", sql);
         Assert.Contains("CREATE INDEX [IX_software_violation_policy_id] ON [inventory].[software_violation]([policy_id]);", sql);
+        Assert.Contains("IF OBJECT_ID(N'[inventory].[pc_entity]', N'U') IS NULL", sql);
+        Assert.Contains("IF OBJECT_ID(N'[inventory].[pc_installed_sw]', N'U') IS NULL", sql);
+        Assert.Contains("IF OBJECT_ID(N'[inventory].[software_policy_list]', N'U') IS NULL", sql);
+        Assert.Contains("IF OBJECT_ID(N'[inventory].[software_violation]', N'U') IS NULL", sql);
+        Assert.Contains("IF OBJECT_ID(N'[inventory].[stale_heartbeat_notification]', N'U') IS NULL", sql);
+        Assert.Contains("IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_pc_installed_sw_pc_id' AND object_id = OBJECT_ID(N'[inventory].[pc_installed_sw]'))", sql);
+        Assert.Contains("IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_pc_installed_sw_classification' AND object_id = OBJECT_ID(N'[inventory].[pc_installed_sw]'))", sql);
+        Assert.Contains("IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_software_policy_list_classification' AND object_id = OBJECT_ID(N'[inventory].[software_policy_list]'))", sql);
+        Assert.Contains("IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_software_violation_policy_id' AND object_id = OBJECT_ID(N'[inventory].[software_violation]'))", sql);
     }
 
     [Fact]
@@ -43,6 +56,8 @@ public class SqlServerSchemaScriptBuilderTests
         Assert.Contains("[ops_inventory].[machines]", sql);
         Assert.Contains("CONSTRAINT [UX_machines_code] UNIQUE ([code])", sql);
         Assert.Contains("REFERENCES [ops_inventory].[machines]([id])", sql);
+        Assert.Contains("CREATE TABLE [ops_inventory].[stale_heartbeat_notification]", sql);
+        Assert.Contains("CONSTRAINT [FK_stale_heartbeat_notification_machines] FOREIGN KEY ([pc_id]) REFERENCES [ops_inventory].[machines]([id]) ON DELETE CASCADE", sql);
     }
 
     [Fact]
@@ -140,6 +155,18 @@ public class SqlIdentifierValidatorTests
         var options = new SqlServerStorageOptions
         {
             InstalledSoftwareTable = new InstalledSoftwareTableOptions { ClassificationColumn = "class-name" }
+        };
+
+        var ex = Assert.Throws<ArgumentException>(() => SqlIdentifierValidator.Validate(options));
+        Assert.Contains("SQL identifiers must start with a letter or underscore", ex.Message);
+    }
+
+    [Fact]
+    public void Validate_rejects_invalid_stale_heartbeat_notification_table()
+    {
+        var options = new SqlServerStorageOptions
+        {
+            StaleHeartbeatNotificationTable = new StaleHeartbeatNotificationTableOptions { TableName = "stale-heartbeat" }
         };
 
         var ex = Assert.Throws<ArgumentException>(() => SqlIdentifierValidator.Validate(options));

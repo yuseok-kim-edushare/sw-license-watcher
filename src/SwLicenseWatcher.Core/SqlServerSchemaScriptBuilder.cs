@@ -15,10 +15,12 @@ public sealed class SqlServerSchemaScriptBuilder
         var installedSoftware = options.InstalledSoftwareTable;
         var policy = options.SoftwarePolicyTable;
         var violation = options.SoftwareViolationTable;
+        var staleHeartbeat = options.StaleHeartbeatNotificationTable;
 
         var sql = new StringBuilder();
         sql.AppendLine($"IF SCHEMA_ID(N'{schemaLiteral}') IS NULL EXEC(N'CREATE SCHEMA [{schemaCommandIdentifier}]');");
         sql.AppendLine();
+        AppendTableIfMissing(sql, schema, pc.TableName);
         sql.AppendLine($"CREATE TABLE [{schema}].[{Escape(pc.TableName)}] (");
         sql.AppendLine($"    [{Escape(pc.PrimaryKeyColumn)}] BIGINT IDENTITY(1,1) NOT NULL PRIMARY KEY,");
         sql.AppendLine($"    [{Escape(pc.DeviceCodeColumn)}] NVARCHAR(128) NOT NULL,");
@@ -30,7 +32,9 @@ public sealed class SqlServerSchemaScriptBuilder
         sql.AppendLine($"    [{Escape(pc.LastInventoryUtcColumn)}] DATETIMEOFFSET NULL,");
         sql.AppendLine($"    CONSTRAINT [{Escape(BuildIdentifier("UX", pc.TableName, pc.DeviceCodeColumn))}] UNIQUE ([{Escape(pc.DeviceCodeColumn)}])");
         sql.AppendLine(");");
+        sql.AppendLine("END");
         sql.AppendLine();
+        AppendTableIfMissing(sql, schema, installedSoftware.TableName);
         sql.AppendLine($"CREATE TABLE [{schema}].[{Escape(installedSoftware.TableName)}] (");
         sql.AppendLine($"    [{Escape(installedSoftware.PrimaryKeyColumn)}] BIGINT IDENTITY(1,1) NOT NULL PRIMARY KEY,");
         sql.AppendLine($"    [{Escape(installedSoftware.PcForeignKeyColumn)}] BIGINT NOT NULL,");
@@ -44,7 +48,9 @@ public sealed class SqlServerSchemaScriptBuilder
         sql.AppendLine($"    [{Escape(installedSoftware.CollectedAtUtcColumn)}] DATETIMEOFFSET NOT NULL,");
         sql.AppendLine($"    CONSTRAINT [{Escape(BuildIdentifier("FK", installedSoftware.TableName, pc.TableName))}] FOREIGN KEY ([{Escape(installedSoftware.PcForeignKeyColumn)}]) REFERENCES [{schema}].[{Escape(pc.TableName)}]([{Escape(pc.PrimaryKeyColumn)}])");
         sql.AppendLine(");");
+        sql.AppendLine("END");
         sql.AppendLine();
+        AppendTableIfMissing(sql, schema, policy.TableName);
         sql.AppendLine($"CREATE TABLE [{schema}].[{Escape(policy.TableName)}] (");
         sql.AppendLine($"    [{Escape(policy.PrimaryKeyColumn)}] BIGINT IDENTITY(1,1) NOT NULL PRIMARY KEY,");
         sql.AppendLine($"    [{Escape(policy.ClassificationColumn)}] NVARCHAR(32) NOT NULL,");
@@ -55,7 +61,9 @@ public sealed class SqlServerSchemaScriptBuilder
         sql.AppendLine($"    [{Escape(policy.EnabledColumn)}] BIT NOT NULL CONSTRAINT [{Escape(BuildIdentifier("DF", policy.TableName, policy.EnabledColumn))}] DEFAULT(1),");
         sql.AppendLine($"    [{Escape(policy.UpdatedAtUtcColumn)}] DATETIMEOFFSET NOT NULL");
         sql.AppendLine(");");
+        sql.AppendLine("END");
         sql.AppendLine();
+        AppendTableIfMissing(sql, schema, violation.TableName);
         sql.AppendLine($"CREATE TABLE [{schema}].[{Escape(violation.TableName)}] (");
         sql.AppendLine($"    [{Escape(violation.PrimaryKeyColumn)}] BIGINT IDENTITY(1,1) NOT NULL PRIMARY KEY,");
         sql.AppendLine($"    [{Escape(violation.PcForeignKeyColumn)}] BIGINT NOT NULL,");
@@ -69,12 +77,39 @@ public sealed class SqlServerSchemaScriptBuilder
         sql.AppendLine($"    CONSTRAINT [{Escape(BuildIdentifier("FK", violation.TableName, policy.TableName))}] FOREIGN KEY ([{Escape(violation.PolicyForeignKeyColumn)}]) REFERENCES [{schema}].[{Escape(policy.TableName)}]([{Escape(policy.PrimaryKeyColumn)}]) ON DELETE CASCADE,");
         sql.AppendLine($"    CONSTRAINT [{Escape(BuildIdentifier("UX", violation.TableName, violation.PcForeignKeyColumn, violation.DisplayNameColumn))}] UNIQUE ([{Escape(violation.PcForeignKeyColumn)}], [{Escape(violation.DisplayNameColumn)}])");
         sql.AppendLine(");");
+        sql.AppendLine("END");
         sql.AppendLine();
-        sql.AppendLine($"CREATE INDEX [{Escape(BuildIdentifier("IX", installedSoftware.TableName, installedSoftware.PcForeignKeyColumn))}] ON [{schema}].[{Escape(installedSoftware.TableName)}]([{Escape(installedSoftware.PcForeignKeyColumn)}]);");
-        sql.AppendLine($"CREATE INDEX [{Escape(BuildIdentifier("IX", installedSoftware.TableName, installedSoftware.ClassificationColumn))}] ON [{schema}].[{Escape(installedSoftware.TableName)}]([{Escape(installedSoftware.ClassificationColumn)}]);");
-        sql.AppendLine($"CREATE INDEX [{Escape(BuildIdentifier("IX", policy.TableName, policy.ClassificationColumn))}] ON [{schema}].[{Escape(policy.TableName)}]([{Escape(policy.ClassificationColumn)}]);");
-        sql.AppendLine($"CREATE INDEX [{Escape(BuildIdentifier("IX", violation.TableName, violation.PolicyForeignKeyColumn))}] ON [{schema}].[{Escape(violation.TableName)}]([{Escape(violation.PolicyForeignKeyColumn)}]);");
+        AppendTableIfMissing(sql, schema, staleHeartbeat.TableName);
+        sql.AppendLine($"CREATE TABLE [{schema}].[{Escape(staleHeartbeat.TableName)}] (");
+        sql.AppendLine($"    [{Escape(staleHeartbeat.PrimaryKeyColumn)}] BIGINT IDENTITY(1,1) NOT NULL PRIMARY KEY,");
+        sql.AppendLine($"    [{Escape(staleHeartbeat.PcForeignKeyColumn)}] BIGINT NOT NULL,");
+        sql.AppendLine($"    [{Escape(staleHeartbeat.NotifiedAtUtcColumn)}] DATETIMEOFFSET NOT NULL,");
+        sql.AppendLine($"    CONSTRAINT [{Escape(BuildIdentifier("FK", staleHeartbeat.TableName, pc.TableName))}] FOREIGN KEY ([{Escape(staleHeartbeat.PcForeignKeyColumn)}]) REFERENCES [{schema}].[{Escape(pc.TableName)}]([{Escape(pc.PrimaryKeyColumn)}]) ON DELETE CASCADE,");
+        sql.AppendLine($"    CONSTRAINT [{Escape(BuildIdentifier("UX", staleHeartbeat.TableName, staleHeartbeat.PcForeignKeyColumn))}] UNIQUE ([{Escape(staleHeartbeat.PcForeignKeyColumn)}])");
+        sql.AppendLine(");");
+        sql.AppendLine("END");
+        sql.AppendLine();
+        AppendIndexIfMissing(sql, schema, installedSoftware.TableName, installedSoftware.PcForeignKeyColumn);
+        AppendIndexIfMissing(sql, schema, installedSoftware.TableName, installedSoftware.ClassificationColumn);
+        AppendIndexIfMissing(sql, schema, policy.TableName, policy.ClassificationColumn);
+        AppendIndexIfMissing(sql, schema, violation.TableName, violation.PolicyForeignKeyColumn);
         return sql.ToString();
+    }
+
+    private static void AppendTableIfMissing(StringBuilder sql, string escapedSchema, string tableName)
+    {
+        var objectId = EscapeSqlLiteral($"[{escapedSchema}].[{Escape(tableName)}]");
+        sql.AppendLine($"IF OBJECT_ID(N'{objectId}', N'U') IS NULL");
+        sql.AppendLine("BEGIN");
+    }
+
+    private static void AppendIndexIfMissing(StringBuilder sql, string escapedSchema, string tableName, string columnName)
+    {
+        var indexName = Escape(BuildIdentifier("IX", tableName, columnName));
+        var objectId = EscapeSqlLiteral($"[{escapedSchema}].[{Escape(tableName)}]");
+        var indexLiteral = EscapeSqlLiteral(indexName);
+        sql.AppendLine($"IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'{indexLiteral}' AND object_id = OBJECT_ID(N'{objectId}'))");
+        sql.AppendLine($"CREATE INDEX [{indexName}] ON [{escapedSchema}].[{Escape(tableName)}]([{Escape(columnName)}]);");
     }
 
     private static string BuildIdentifier(string prefix, params string[] parts)
@@ -125,7 +160,9 @@ public static class SqlIdentifierValidator
             options.SoftwareViolationTable.PcForeignKeyColumn, options.SoftwareViolationTable.PolicyForeignKeyColumn,
             options.SoftwareViolationTable.DisplayNameColumn, options.SoftwareViolationTable.DisplayVersionColumn,
             options.SoftwareViolationTable.PublisherColumn, options.SoftwareViolationTable.DetectedAtUtcColumn,
-            options.SoftwareViolationTable.LastSeenAtUtcColumn
+            options.SoftwareViolationTable.LastSeenAtUtcColumn,
+            options.StaleHeartbeatNotificationTable.TableName, options.StaleHeartbeatNotificationTable.PrimaryKeyColumn,
+            options.StaleHeartbeatNotificationTable.PcForeignKeyColumn, options.StaleHeartbeatNotificationTable.NotifiedAtUtcColumn
         };
 
         if (identifiers.Any(identifier => !IsValid(identifier)))

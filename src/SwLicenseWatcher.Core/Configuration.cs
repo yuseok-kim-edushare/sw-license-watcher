@@ -75,10 +75,51 @@ public sealed class LocalStateStoreOptions
 
 public sealed class ApiSecurityOptions
 {
-    [Required]
     public string Token { get; set; } = string.Empty;
 
+    public string AgentToken { get; set; } = string.Empty;
+
+    public string AdminToken { get; set; } = string.Empty;
+
     public bool RequireHttps { get; set; } = true;
+}
+
+public static class ApiSecurityOptionsValidator
+{
+    public const int MinimumTokenLength = 32;
+
+    public static bool HasUsableToken(string? value) =>
+        !string.IsNullOrWhiteSpace(value) && value.Length >= MinimumTokenLength;
+
+    public static bool HasAtLeastOneUsableToken(ApiSecurityOptions options) =>
+        HasUsableToken(options.Token) ||
+        HasUsableToken(options.AgentToken) ||
+        HasUsableToken(options.AdminToken);
+
+    public static bool HasValidConfiguredTokenLengths(ApiSecurityOptions options) =>
+        IsMissingOrUsable(options.Token) &&
+        IsMissingOrUsable(options.AgentToken) &&
+        IsMissingOrUsable(options.AdminToken);
+
+    public static bool HasDistinctRoleTokens(ApiSecurityOptions options)
+    {
+        if (!HasUsableToken(options.AgentToken))
+        {
+            return true;
+        }
+
+        if (HasUsableToken(options.AdminToken) &&
+            string.Equals(options.AgentToken, options.AdminToken, StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        return !HasUsableToken(options.Token) ||
+            !string.Equals(options.AgentToken, options.Token, StringComparison.Ordinal);
+    }
+
+    private static bool IsMissingOrUsable(string? value) =>
+        string.IsNullOrWhiteSpace(value) || value.Length >= MinimumTokenLength;
 }
 
 public sealed class UpdateManifestOptions
@@ -100,6 +141,11 @@ public sealed class UpdateManifestOptions
         new(TargetServiceName, Version, PackageUrl, Sha256, RequireAuthenticode, RollbackAfterMinutes);
 }
 
+public sealed class DatabaseOptions
+{
+    public bool ApplySchemaOnStartup { get; set; }
+}
+
 public sealed class SqlServerStorageOptions
 {
     public string ConnectionString { get; set; } = string.Empty;
@@ -114,6 +160,8 @@ public sealed class SqlServerStorageOptions
     public SoftwarePolicyTableOptions SoftwarePolicyTable { get; set; } = new();
 
     public SoftwareViolationTableOptions SoftwareViolationTable { get; set; } = new();
+
+    public StaleHeartbeatNotificationTableOptions StaleHeartbeatNotificationTable { get; set; } = new();
 }
 
 public sealed class PcTableOptions
@@ -202,6 +250,17 @@ public sealed class SoftwareViolationTableOptions
     public string DetectedAtUtcColumn { get; set; } = "detected_at_utc";
 
     public string LastSeenAtUtcColumn { get; set; } = "last_seen_at_utc";
+}
+
+public sealed class StaleHeartbeatNotificationTableOptions
+{
+    public string TableName { get; set; } = "stale_heartbeat_notification";
+
+    public string PrimaryKeyColumn { get; set; } = "stale_heartbeat_notification_id";
+
+    public string PcForeignKeyColumn { get; set; } = "pc_id";
+
+    public string NotifiedAtUtcColumn { get; set; } = "notified_at_utc";
 }
 
 public sealed class NotificationOptions

@@ -2,7 +2,7 @@
 
 회사 PC에는 Worker와 Watchdog만 설치합니다. **API는 서버에서 호스팅하는 웹 앱이며, 클라이언트에 복사하지 않습니다.** 개발용 `dotnet run`은 [README.md](../README.md)를 참고하세요.
 
-에이전트는 PC의 `appsettings.json`에 적은 서버 URL과 공유 토큰으로 API에 접속합니다.
+에이전트는 PC의 `appsettings.json`에 적은 서버 URL과 에이전트 토큰으로 API에 접속합니다.
 
 ```
 회사 PC (클라이언트)                       회사 서버 (여기만 API)
@@ -21,12 +21,15 @@ deploy/
     appsettings.worker.company.json    PC Worker
     appsettings.watchdog.company.json  PC Watchdog
   scripts/
-    New-ApiToken.ps1      공유 토큰 생성 (서버와 에이전트에 같은 값)
-    Install-Agent.ps1     PC에 Worker + Watchdog만 설치
+    New-ApiToken.ps1        토큰 생성 (에이전트용·관리자용을 따로 두 번 실행)
+    Apply-DbSchema.ps1      SQL Server 스키마 적용 (API 또는 .sql 파일)
+    Install-ApiServer.ps1   서버에 Kestrel Windows Service 설치
+    Uninstall-ApiServer.ps1
+    Install-Agent.ps1       PC에 Worker + Watchdog만 설치
     Uninstall-Agent.ps1
 ```
 
-Release ZIP의 `api/win-x64`(AOT)와 `api/iis/win-x64`(IIS)는 서버용입니다. `Install-Agent.ps1`은 `agent-worker`와 `agent-watchdog`만 복사합니다.
+Release ZIP의 `api/win-x64`(AOT)와 `api/iis/win-x64`(IIS)는 서버용입니다. `Install-ApiServer.ps1`은 `api/win-x64`만 복사하고, `Install-Agent.ps1`은 `agent-worker`와 `agent-watchdog`만 복사합니다.
 
 ## 1. 구성 요소
 
@@ -42,51 +45,85 @@ Release ZIP의 `api/win-x64`(AOT)와 `api/iis/win-x64`(IIS)는 서버용입니�
 
 - PC: Windows x64, 관리자 PowerShell 5.1 이상. Native AOT라 대상 PC에 .NET 런타임은 필요 없습니다.
 - 서버 API URL (HTTPS). HTTP는 loopback 진단만 허용됩니다.
-- 서버 `Security:Token`과 같은 32자 이상 공유 토큰
+- 서버 `Security:AgentToken`(32자 이상). PC `ApiToken`과 동일. 조회·정책 API는 `Security:AdminToken`을 씁니다. `AgentToken`/`AdminToken`이 비어 있으면 레거시 `Security:Token`이 모든 엔드포인트에 유효합니다.
 - 자체 패치를 쓸 때: 서버가 가리키는 Worker ZIP에 `SwLicenseWatcher.Agent.Worker.exe`가 정확히 하나, EXE/DLL이 신뢰된 Authenticode 서명
 
 토큰은 저장소에 커밋하지 마세요.
 
 ## 3. 서버 API
 
-API는 서버에서만 호스팅합니다. Windows Service가 아니고, PC 에이전트 설치 대상도 아닙니다. Release ZIP에는 두 가지 서버 산출물이 있습니다.
+API는 서버에서만 호스팅합니다. PC 에이전트 설치 대상이 아닙니다. Kestrel(Native AOT)은 `Install-ApiServer.ps1`로 Windows Service로 등록하고, IIS in-process는 아래 수동 절차를 따릅니다. Release ZIP에는 두 가지 서버 산출물이 있습니다.
 
 | 산출물 | 언제 | 설정 예시 |
 | --- | --- | --- |
-| `api/win-x64/` Native AOT | Kestrel로 직접 실행 | [appsettings.api.company.json](../deploy/examples/appsettings.api.company.json) |
+| `api/win-x64/` Native AOT | Kestrel Windows Service (`Install-ApiServer.ps1`) | [appsettings.api.company.json](../deploy/examples/appsettings.api.company.json) |
 | `api/iis/win-x64/` framework-dependent | IIS in-process (`web.config`) | [appsettings.api.iis.company.json](../deploy/examples/appsettings.api.iis.company.json) |
 
 공통 키:
 
 | 키 | 필수 | 설명 |
 | --- | --- | --- |
-| `Security:Token` | 예 | 32자 이상. 에이전트 `ApiToken`과 동일 |
+| `Security:AgentToken` | 권장 | 32자 이상. 스냅샷·하트비트·manifest만. PC `ApiToken`과 동일 |
+| `Security:AdminToken` | 권장 | 32자 이상. 조회·정책·위반·design/schema. `AgentToken`과 달라야 함 |
+| `Security:Token` | 레거시 | 32자 이상. Agent/Admin이 비어 있으면 모든 엔드포인트 |
 | `Security:RequireHttps` | | 운영은 `true`. 원격 HTTP는 거부, loopback HTTP는 허용 |
 | `Storage:SqlServer:ConnectionString` | 예 | `TrustServerCertificate=False` 권장 |
-| `Storage:SqlServer:SchemaName` 및 테이블/컬럼 | 예 | 기본 예시는 `inventory.company_pc` 등. 식별자는 영문·숫자·밑줄만 |
+| `Storage:SqlServer:SchemaName` 및 테이블/컬럼 | 예 | 기본 예시는 `inventory.company_pc`, `inventory.company_stale_heartbeat_notification` 등. 식별자는 영문·숫자·밑줄만 |
+| `Database:ApplySchemaOnStartup` | | 기본 `false`. `true`면 API 기동 시 idempotent DDL을 적용하고, 실패하면 기동하지 않음 |
 | `Updates:Worker:PackageUrl` | 예 | 절대 URI. Watchdog 다운로드는 **HTTPS**만 허용 |
 | `Updates:Worker:Sha256` | | 64자 hex. 첫 패키지 전까지 플레이스홀더라도 API는 기동함 |
 | `Updates:Worker:Version` | | Worker `.version`과 비교 |
 | `Updates:Worker:RequireAuthenticode` | | 운영은 `true` |
 | `Kestrel:Endpoints` | AOT만 | Kestrel 단독 호스트의 HTTPS 바인딩. **IIS에서는 넣지 않습니다.** 인증서와 포트는 IIS 사이트 바인딩으로 엽니다. |
 
-환경 변수 예: `Security__Token`, `Storage__SqlServer__ConnectionString`.
+환경 변수 예: `Security__AgentToken`, `Security__AdminToken`, `Storage__SqlServer__ConnectionString`, `Database__ApplySchemaOnStartup`.
 
 ```powershell
-$token = .\New-ApiToken.ps1
+$agentToken = .\New-ApiToken.ps1
+$adminToken = .\New-ApiToken.ps1
 ```
 
-이 값을 서버 `Security:Token`과 PC `ApiToken`에 같이 넣습니다.
+`$agentToken`은 서버 `Security:AgentToken`과 PC `ApiToken`에, `$adminToken`은 서버 `Security:AdminToken`에 넣습니다.
 
-### Kestrel (Native AOT)
+### Kestrel (Native AOT) Windows Service
 
-`api/win-x64`를 서버에 두고 [appsettings.api.company.json](../deploy/examples/appsettings.api.company.json)을 `appsettings.json`으로 복사한 뒤 `REPLACE_ME_*`를 채웁니다.
+`Install-ApiServer.ps1`이 `api/win-x64`를 `C:\Program Files\SwLicenseWatcher\Api`에 복사하고, `SwLicenseWatcher.Api` 서비스를 자동 시작·실패 시 재시작으로 등록합니다. 회사 템플릿 [appsettings.api.company.json](../deploy/examples/appsettings.api.company.json)에 연결 문자열과 토큰을 넣습니다. 대상 서버에 .NET 런타임은 필요 없습니다.
+
+관리자 PowerShell에서:
 
 ```powershell
-& .\SwLicenseWatcher.Api.exe
+.\Install-ApiServer.ps1 `
+  -SourcePath D:\SwLicenseWatcher-1.0.1 `
+  -ConnectionString $env:Storage__SqlServer__ConnectionString `
+  -AgentToken $agentToken `
+  -AdminToken $adminToken `
+  -ListenUrl "https://0.0.0.0:443" `
+  -FirewallPort 443
 ```
 
-대상 서버에 .NET 런타임은 필요 없습니다.
+같은 스크립트를 다시 실행하면 서비스를 멈춘 뒤 파일을 교체하고 다시 시작합니다. `-SourcePath`는 압축을 푼 Release 폴더이거나 `api\win-x64` 자체입니다. IIS 산출물(`api\iis\win-x64`)은 거부합니다.
+
+확인:
+
+```powershell
+Get-Service SwLicenseWatcher.Api
+Invoke-RestMethod -Uri "https://license-watcher.contoso.local/health"
+```
+
+`-ListenUrl`을 생략하면 템플릿의 `Kestrel:Endpoints:Https:Url`을 유지합니다. `-FirewallPort`를 주면 인바운드 TCP 허용 규칙(`SW License Watcher API`)을 만듭니다. `-ApplySchemaOnStartup`을 주면 기동 시 스키마를 적용합니다.
+
+HTTPS 인증서는 스크립트가 설치하지 않습니다. 서버 인증서를 `LocalMachine\My`에 넣고, `appsettings.json`의 `Kestrel:Endpoints:Https:Certificate:Subject`(예: `CN=license-watcher.contoso.local`)와 맞춥니다. LocalSystem이 개인 키를 읽을 수 있어야 합니다. 진단용으로 콘솔에서 직접 실행할 때만:
+
+```powershell
+& "C:\Program Files\SwLicenseWatcher\Api\SwLicenseWatcher.Api.exe"
+```
+
+제거:
+
+```powershell
+.\Uninstall-ApiServer.ps1                 # 서비스만 삭제, 파일·방화벽 규칙 유지
+.\Uninstall-ApiServer.ps1 -RemoveFiles -RemoveFirewall
+```
 
 ### IIS in-process
 
@@ -101,13 +138,32 @@ Native AOT는 IIS in-process를 지원하지 않습니다. `api/iis/win-x64`를 
 
 IIS가 TLS를 종료하므로 에이전트의 `ServerBaseUrl`은 사이트 HTTPS 주소입니다.
 
-최초 기동 후 인증된 `GET /api/schema/sql`을 검토해 DB에 적용합니다. `/health`는 Bearer가 필요 없습니다.
+스키마는 다음 중 한 가지로 적용합니다. `/health`는 Bearer가 필요 없습니다.
+
+1. API를 기동한 뒤 [Apply-DbSchema.ps1](../deploy/scripts/Apply-DbSchema.ps1)이 `GET /api/schema/sql`을 받아 DB에 실행합니다. 스키마가 없을 때 `/health`는 503일 수 있습니다.
+2. `Database:ApplySchemaOnStartup`을 `true`로 두면 API가 기동 시 idempotent DDL을 적용합니다. 실패하면 기동하지 않습니다.
+3. 이미 저장해 둔 `.sql`이 있으면 `-SqlPath`로 적용합니다. `-WhatIf`로 배치를 검토할 수 있습니다.
 
 ```powershell
-$headers = @{ Authorization = "Bearer $token" }
+$headers = @{ Authorization = "Bearer $adminToken" }
+.\Apply-DbSchema.ps1 `
+  -ConnectionString $env:Storage__SqlServer__ConnectionString `
+  -ApiBaseUrl "https://license-watcher.contoso.local" `
+  -ApiToken $adminToken `
+  -WhatIf
+.\Apply-DbSchema.ps1 `
+  -ConnectionString $env:Storage__SqlServer__ConnectionString `
+  -ApiBaseUrl "https://license-watcher.contoso.local" `
+  -ApiToken $adminToken
+Invoke-RestMethod -Uri "https://license-watcher.contoso.local/health"
+```
+
+로컬 파일로 적용:
+
+```powershell
 Invoke-RestMethod -Uri "https://license-watcher.contoso.local/api/schema/sql" -Headers $headers |
   Set-Content -Encoding utf8 .\schema.sql
-Invoke-RestMethod -Uri "https://license-watcher.contoso.local/health"
+.\Apply-DbSchema.ps1 -Server sql.contoso.local -Database SwLicenseWatcher -SqlPath .\schema.sql
 ```
 
 ## 4. 클라이언트 appsettings.json
@@ -121,7 +177,7 @@ Invoke-RestMethod -Uri "https://license-watcher.contoso.local/health"
 | `Agent:DeviceCode` | 예 | 미지정 시 컴퓨터 이름. 전 PC가 같으면 서버에서 한 자산으로 UPSERT됩니다. |
 | `Agent:DomainName` | 예 | `USERDOMAIN`, 없으면 `WORKGROUP` |
 | `Agent:ServerBaseUrl` | 예 | 서버 API 주소, 예: `https://license-watcher.contoso.local` |
-| `Agent:ApiToken` | 예 | 서버 `Security:Token`과 **동일**, 32자 이상 |
+| `Agent:ApiToken` | 예 | 서버 `Security:AgentToken`(또는 레거시 `Security:Token`)과 **동일**, 32자 이상 |
 | `Agent:SnapshotPath` | | `/api/inventory/snapshots` |
 | `Agent:HeartbeatPath` | | `/api/agents/heartbeats` |
 | `Agent:PollInterval` / `MaxJitter` | | `00:30:00` / `00:15:00` |
@@ -207,23 +263,29 @@ Watchdog이 서버 `GET /api/updates/worker/manifest`를 읽고 Worker만 교체
 | 증상 | 확인할 것 |
 | --- | --- |
 | 서비스가 바로 종료 | Event Log. 빈 토큰, 비-loopback HTTP `ServerBaseUrl` |
-| `401` | PC `ApiToken`과 서버 `Security:Token`이 다름 |
+| `401` | PC `ApiToken`과 서버 `Security:AgentToken`(또는 레거시 `Security:Token`)이 다름 |
 | 스냅샷이 한 PC로만 보임 | 모든 에이전트가 같은 `DeviceCode`(예: 개발용 `pc-demo-001`) |
 | Watchdog이 업데이트를 안 함 | 서버 manifest `Version`이 이미 `.version`과 같음, `PackageUrl`이 HTTP, SHA-256 불일치 |
 | Authenticode 실패 | ZIP 안의 EXE/DLL이 회사 신뢰 루트로 서명되지 않음 |
 | 업데이트 후 롤백 | Worker가 `HealthFilePath`에 버전을 못 씀. 경로가 Worker/Watchdog JSON에서 같은지 |
 | IIS `500.30` / `500.31` | Hosting Bundle(.NET 10) 설치, 앱 풀 No Managed Code, `api/iis`를 쓰는지(AOT 폴더 아님) |
 | IIS에서 Kestrel 포트 충돌 | IIS용 JSON에 `Kestrel:Endpoints`가 있으면 제거. HTTPS는 사이트 바인딩만 사용 |
+| API 서비스가 바로 종료 | Event Log. 빈/짧은 토큰, AgentToken=AdminToken, 연결 문자열, `Kestrel` 인증서 Subject가 LocalMachine\My와 다른지 |
+| `Install-ApiServer.ps1`이 IIS 폴더를 거부 | `api\win-x64`(Native AOT)를 넘기세요. IIS는 위 IIS in-process 절을 따릅니다 |
 
 ```powershell
-.\Uninstall-Agent.ps1                 # 서비스와 Program Files 에이전트만
-.\Uninstall-Agent.ps1 -RemoveState    # 큐·헬스·staging·backup까지
+.\Uninstall-ApiServer.ps1                         # API 서비스만
+.\Uninstall-ApiServer.ps1 -RemoveFiles -RemoveFirewall
+.\Uninstall-Agent.ps1                             # 서비스와 Program Files 에이전트만
+.\Uninstall-Agent.ps1 -RemoveState                # 큐·헬스·staging·backup까지
 ```
 
-## PC 설치 경로
+## 설치 경로
 
 | 항목 | 기본 경로 |
 | --- | --- |
+| API (Kestrel Windows Service) | `C:\Program Files\SwLicenseWatcher\Api` |
+| API 서비스 이름 | `SwLicenseWatcher.Api` |
 | Worker | `C:\Program Files\SwLicenseWatcher\Agent.Worker` |
 | Watchdog | `C:\Program Files\SwLicenseWatcher\Agent.Watchdog` |
 | 헬스 파일 | `C:\ProgramData\SwLicenseWatcher\state\worker-health.json` |

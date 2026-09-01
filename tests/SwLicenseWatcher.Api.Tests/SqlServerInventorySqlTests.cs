@@ -121,4 +121,68 @@ public class SqlServerInventorySqlTests
         Assert.Contains("[device]]code]", sql, StringComparison.Ordinal);
         Assert.Contains("[last]]heartbeat] < @cutoff", sql, StringComparison.Ordinal);
     }
+
+    [Fact]
+    public void BuildGetNotifiedStaleHeartbeatDeviceCodesSql_joins_notification_rows_to_pcs()
+    {
+        var sql = new SqlServerInventoryRepository(new SqlServerStorageOptions()).BuildGetNotifiedStaleHeartbeatDeviceCodesSql();
+        Assert.Contains("SELECT p.[device_code]", sql, StringComparison.Ordinal);
+        Assert.Contains("FROM [inventory].[stale_heartbeat_notification] AS n", sql, StringComparison.Ordinal);
+        Assert.Contains("INNER JOIN [inventory].[pc_entity] AS p", sql, StringComparison.Ordinal);
+        Assert.Contains("p.[pc_id] = n.[pc_id]", sql, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void BuildClearRecoveredStaleHeartbeatNotificationsSql_deletes_pcs_that_are_no_longer_stale()
+    {
+        var sql = new SqlServerInventoryRepository(new SqlServerStorageOptions()).BuildClearRecoveredStaleHeartbeatNotificationsSql();
+        Assert.Contains("DELETE n", sql, StringComparison.Ordinal);
+        Assert.Contains("FROM [inventory].[stale_heartbeat_notification] AS n", sql, StringComparison.Ordinal);
+        Assert.Contains("[last_heartbeat_utc] IS NULL", sql, StringComparison.Ordinal);
+        Assert.Contains("[last_heartbeat_utc] >= @cutoff", sql, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void BuildInsertStaleHeartbeatNotificationSql_inserts_by_device_code_when_missing()
+    {
+        var sql = new SqlServerInventoryRepository(new SqlServerStorageOptions()).BuildInsertStaleHeartbeatNotificationSql();
+        Assert.Contains("INSERT INTO [inventory].[stale_heartbeat_notification]", sql, StringComparison.Ordinal);
+        Assert.Contains("([pc_id], [notified_at_utc])", sql, StringComparison.Ordinal);
+        Assert.Contains("WHERE p.[device_code] = @deviceCode", sql, StringComparison.Ordinal);
+        Assert.Contains("SELECT p.[pc_id], @notifiedAt", sql, StringComparison.Ordinal);
+        Assert.Contains("NOT EXISTS", sql, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void BuildClearStaleHeartbeatNotificationIfHeartbeatAppliedSql_deletes_only_when_heartbeat_matches()
+    {
+        var sql = new SqlServerInventoryRepository(new SqlServerStorageOptions()).BuildClearStaleHeartbeatNotificationIfHeartbeatAppliedSql();
+        Assert.Contains("DELETE n", sql, StringComparison.Ordinal);
+        Assert.Contains("FROM [inventory].[stale_heartbeat_notification] AS n", sql, StringComparison.Ordinal);
+        Assert.Contains("n.[pc_id] = @pcId", sql, StringComparison.Ordinal);
+        Assert.Contains("p.[last_heartbeat_utc] = @heartbeatAt", sql, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Stale_heartbeat_notification_sql_quotes_identifiers_with_closing_brackets()
+    {
+        var options = new SqlServerStorageOptions { SchemaName = "inv]entory" };
+        options.PcTable.TableName = "pc]entity";
+        options.PcTable.PrimaryKeyColumn = "pc]id";
+        options.PcTable.DeviceCodeColumn = "device]code";
+        options.PcTable.LastHeartbeatUtcColumn = "last]heartbeat";
+        options.StaleHeartbeatNotificationTable.TableName = "stale]notify";
+        options.StaleHeartbeatNotificationTable.PcForeignKeyColumn = "pc]fk";
+        options.StaleHeartbeatNotificationTable.NotifiedAtUtcColumn = "notified]at";
+        var repository = new SqlServerInventoryRepository(options);
+
+        var notified = repository.BuildGetNotifiedStaleHeartbeatDeviceCodesSql();
+        Assert.Contains("[inv]]entory].[stale]]notify]", notified, StringComparison.Ordinal);
+        Assert.Contains("[inv]]entory].[pc]]entity]", notified, StringComparison.Ordinal);
+        Assert.Contains("p.[pc]]id] = n.[pc]]fk]", notified, StringComparison.Ordinal);
+
+        var insert = repository.BuildInsertStaleHeartbeatNotificationSql();
+        Assert.Contains("([pc]]fk], [notified]]at])", insert, StringComparison.Ordinal);
+        Assert.Contains("p.[device]]code] = @deviceCode", insert, StringComparison.Ordinal);
+    }
 }

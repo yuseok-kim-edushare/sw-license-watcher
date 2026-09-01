@@ -5,14 +5,11 @@ using SwLicenseWatcher.Core;
 namespace SwLicenseWatcher.Api;
 
 public sealed class StaleHeartbeatMonitor(
-    SqlServerInventoryRepository repository,
+    IStaleHeartbeatNotificationStore store,
     NotificationPublisher publisher,
     IOptions<NotificationOptions> options,
     ILogger<StaleHeartbeatMonitor> logger) : BackgroundService
 {
-    private readonly ConcurrentDictionary<string, byte> _notifiedDeviceCodes =
-        new(StringComparer.OrdinalIgnoreCase);
-
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         var interval = options.Value.StaleHeartbeatCheckInterval;
@@ -25,7 +22,7 @@ public sealed class StaleHeartbeatMonitor(
         while (await timer.WaitForNextTickAsync(stoppingToken));
     }
 
-    private async Task CheckOnceAsync(CancellationToken cancellationToken)
+    internal async Task CheckOnceAsync(CancellationToken cancellationToken)
     {
         var current = options.Value;
         if (!current.Events.StaleHeartbeat || !current.HasEnabledChannel)
@@ -35,9 +32,9 @@ public sealed class StaleHeartbeatMonitor(
 
         try
         {
-            var cutoff = DateTimeOffset.UtcNow - current.StaleHeartbeatThreshold;
-            var stalePcs = await repository.GetStaleHeartbeatsAsync(cutoff, cancellationToken);
-            var newlyStale = TakeNewlyStale(stalePcs, _notifiedDeviceCodes);
+            var now = DateTimeOffset.UtcNow;
+            var cutoff = now - current.StaleHeartbeatThreshold;
+            var newlyStale = await store.ClaimNewlyStaleHeartbeatsAsync(cutoff, now, cancellationToken);
             if (newlyStale.Count == 0)
             {
                 return;
