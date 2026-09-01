@@ -21,30 +21,41 @@ public sealed class Worker(
 
         do
         {
-            var queueDrained = await snapshotQueue.FlushAsync(apiClient, stoppingToken);
-            var snapshot = await CollectSnapshotAsync(agentOptions, stoppingToken);
-            await WriteHealthReportAsync(agentOptions, stoppingToken);
-            logger.LogInformation(
-                "Collected {SoftwareCount} software entries via uninstall registry keys. Win32_Product/WMI is intentionally not used.",
-                snapshot.InstalledSoftware.Count);
-            logger.LogInformation(
-                "Local store-and-forward queue {QueueDirectory} uses DPAPI scope {DpapiScope}.",
-                localOptions.QueueDirectory,
-                localOptions.DpapiScope);
-
-            if (!queueDrained || !await apiClient.PublishSnapshotAsync(snapshot, stoppingToken))
+            try
             {
-                await snapshotQueue.EnqueueAsync(snapshot, stoppingToken);
+                var queueDrained = await snapshotQueue.FlushAsync(apiClient, stoppingToken);
+                var snapshot = await CollectSnapshotAsync(agentOptions, stoppingToken);
+                await WriteHealthReportAsync(agentOptions, stoppingToken);
+                logger.LogInformation(
+                    "Collected {SoftwareCount} software entries via uninstall registry keys. Win32_Product/WMI is intentionally not used.",
+                    snapshot.InstalledSoftware.Count);
+                logger.LogInformation(
+                    "Local store-and-forward queue {QueueDirectory} uses DPAPI scope {DpapiScope}.",
+                    localOptions.QueueDirectory,
+                    localOptions.DpapiScope);
+
+                if (!queueDrained || await apiClient.PublishSnapshotAsync(snapshot, stoppingToken) == AgentPublishResult.RetryableFailure)
+                {
+                    await snapshotQueue.EnqueueAsync(snapshot, stoppingToken);
+                }
+                await apiClient.PublishHeartbeatAsync(
+                    new AgentHeartbeat(
+                        snapshot.Pc.DeviceCode,
+                        snapshot.Pc.HostName,
+                        "Worker",
+                        snapshot.Pc.AgentVersion,
+                        DateTimeOffset.UtcNow,
+                        "Healthy"),
+                    stoppingToken);
             }
-            await apiClient.PublishHeartbeatAsync(
-                new AgentHeartbeat(
-                    snapshot.Pc.DeviceCode,
-                    snapshot.Pc.HostName,
-                    "Worker",
-                    snapshot.Pc.AgentVersion,
-                    DateTimeOffset.UtcNow,
-                    "Healthy"),
-                stoppingToken);
+            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+            {
+                return;
+            }
+            catch (Exception ex)
+            {
+                logger.LogError(ex, "An unexpected error occurred during the inventory collection cycle.");
+            }
 
             if (agentOptions.RunOnceForDiagnostics)
             {
@@ -56,7 +67,7 @@ public sealed class Worker(
             {
                 await Task.Delay(JitterDelayCalculator.NextDelay(agentOptions.PollInterval, agentOptions.MaxJitter), stoppingToken);
             }
-            catch (TaskCanceledException) when (stoppingToken.IsCancellationRequested)
+            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
             {
                 return;
             }
@@ -91,7 +102,7 @@ public sealed class Worker(
         }
     }
 
-    private static string ResolveInstalledVersion()
+    private string ResolveInstalledVersion()
     {
         var versionFile = Path.Combine(AppContext.BaseDirectory, ".version");
         try
@@ -107,6 +118,7 @@ public sealed class Worker(
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
+            logger.LogDebug(ex, "Unable to read the installed version from {VersionFile}.", versionFile);
         }
 
         return typeof(Worker).Assembly.GetName().Version?.ToString() ?? "1.0.0";

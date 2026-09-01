@@ -53,9 +53,28 @@ public sealed class LocalSnapshotQueue(
                 var protectedPayload = await File.ReadAllTextAsync(path, cancellationToken);
                 var json = protector.Unprotect(protectedPayload);
                 var snapshot = ReadValidatedSnapshot(json);
-                if (!await apiClient.PublishSnapshotAsync(snapshot, cancellationToken))
+                var publishResult = await apiClient.PublishSnapshotAsync(snapshot, cancellationToken);
+                if (publishResult == AgentPublishResult.RetryableFailure)
                 {
                     return false;
+                }
+
+                if (publishResult == AgentPublishResult.NonRetryableFailure)
+                {
+                    logger.LogError(
+                        "API rejected queued snapshot {SnapshotFile} with a non-retryable error; moving it aside.",
+                        Path.GetFileName(path));
+                    try
+                    {
+                        File.Move(path, path + ".invalid", true);
+                    }
+                    catch (Exception moveException) when (moveException is IOException or UnauthorizedAccessException)
+                    {
+                        logger.LogError(moveException, "Unable to quarantine queued snapshot {SnapshotFile}.", Path.GetFileName(path));
+                        return false;
+                    }
+
+                    continue;
                 }
             }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or FormatException or JsonException or CryptographicException)
