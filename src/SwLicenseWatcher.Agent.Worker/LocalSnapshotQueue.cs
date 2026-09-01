@@ -55,8 +55,6 @@ public sealed class LocalSnapshotQueue(
                 {
                     return false;
                 }
-
-                File.Delete(path);
             }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or FormatException or JsonException or CryptographicException)
             {
@@ -69,6 +67,17 @@ public sealed class LocalSnapshotQueue(
                 {
                     logger.LogError(moveException, "Unable to quarantine queued snapshot {SnapshotFile}.", Path.GetFileName(path));
                 }
+
+                continue;
+            }
+
+            try
+            {
+                File.Delete(path);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                logger.LogWarning(ex, "Delivered queued snapshot {SnapshotFile} could not be removed and may be resent.", Path.GetFileName(path));
             }
         }
 
