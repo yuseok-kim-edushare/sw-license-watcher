@@ -50,7 +50,14 @@ public sealed class LocalSnapshotQueue(
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or FormatException or JsonException or CryptographicException)
             {
                 logger.LogError(ex, "Unable to process queued snapshot {SnapshotFile}; moving it aside.", Path.GetFileName(path));
-                File.Move(path, path + ".invalid", true);
+                try
+                {
+                    File.Move(path, path + ".invalid", true);
+                }
+                catch (Exception moveException) when (moveException is IOException or UnauthorizedAccessException)
+                {
+                    logger.LogError(moveException, "Unable to quarantine queued snapshot {SnapshotFile}.", Path.GetFileName(path));
+                }
             }
         }
     }

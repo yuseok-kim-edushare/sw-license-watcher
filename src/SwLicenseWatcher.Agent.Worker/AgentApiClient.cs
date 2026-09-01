@@ -40,7 +40,7 @@ public sealed class AgentApiClient
         }
         catch (TaskCanceledException) when (cancellationToken.IsCancellationRequested)
         {
-            return false;
+            throw;
         }
         catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException)
         {

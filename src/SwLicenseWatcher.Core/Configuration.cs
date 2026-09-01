@@ -51,7 +51,9 @@ public sealed class WatchdogOptions
 
     public TimeSpan MaxJitter { get; set; } = TimeSpan.FromMinutes(60);
 
-    public TimeSpan WorkerHealthyTimeout { get; set; } = TimeSpan.FromMinutes(10);
+    public long MaxPackageBytes { get; set; } = 512 * 1024 * 1024;
+
+    public long MaxExtractedBytes { get; set; } = 1024 * 1024 * 1024;
 
     public bool RunOnceForDiagnostics { get; set; }
 }

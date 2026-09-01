@@ -46,9 +46,8 @@ public sealed class Worker(
             }
 
             logger.LogInformation(
-                "Worker service restarts must rollback from {BackupDirectory} if healthy heartbeat is not restored within {WorkerHealthyTimeout}. Download checks are jittered by up to {MaxJitter}.",
+                "Worker service restarts rollback from {BackupDirectory} if health is not restored within the manifest timeout. Download checks are jittered by up to {MaxJitter}.",
                 watchdogOptions.BackupDirectory,
-                watchdogOptions.WorkerHealthyTimeout,
                 watchdogOptions.MaxJitter);
 
             if (watchdogOptions.RunOnceForDiagnostics)

@@ -14,6 +14,8 @@ builder.Services.AddOptions<WatchdogOptions>()
             && (uri.Scheme == Uri.UriSchemeHttps || uri.IsLoopback),
         "Watchdog:ServerBaseUrl must use HTTPS (HTTP is allowed only for loopback diagnostics).")
     .Validate(options => !string.IsNullOrWhiteSpace(options.ApiToken), "Watchdog:ApiToken is required.")
+    .Validate(options => options.MaxPackageBytes > 0 && options.MaxExtractedBytes >= options.MaxPackageBytes,
+        "Watchdog package limits must be positive and MaxExtractedBytes must be at least MaxPackageBytes.")
     .ValidateOnStart();
 builder.Services.AddHttpClient<UpdateManifestClient>((sp, client) =>
 {

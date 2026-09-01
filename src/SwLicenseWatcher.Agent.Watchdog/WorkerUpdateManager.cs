@@ -45,13 +45,17 @@ public sealed class WorkerUpdateManager(
         {
             await DownloadAsync(new Uri(manifest.PackageUrl), archivePath, cancellationToken);
             await VerifyHashAsync(archivePath, manifest.Sha256, cancellationToken);
-            ExtractSafely(archivePath, extractedPath);
+            await ExtractSafelyAsync(archivePath, extractedPath, cancellationToken);
             if (manifest.RequireAuthenticode)
             {
                 VerifyAuthenticode(extractedPath);
             }
 
-            await ReplaceAndVerifyAsync(ResolveWorkerPayload(extractedPath), manifest.Version, cancellationToken);
+            await ReplaceAndVerifyAsync(
+                ResolveWorkerPayload(extractedPath),
+                manifest.Version,
+                TimeSpan.FromMinutes(manifest.RollbackAfterMinutes),
+                cancellationToken);
         }
         finally
         {
@@ -71,15 +75,34 @@ public sealed class WorkerUpdateManager(
         {
             throw new InvalidOperationException("The manifest must contain a 64-character SHA-256 digest.");
         }
+        if (manifest.RollbackAfterMinutes is < 1 or > 60)
+        {
+            throw new InvalidOperationException("The rollback timeout must be between 1 and 60 minutes.");
+        }
     }
 
     private async Task DownloadAsync(Uri uri, string path, CancellationToken cancellationToken)
     {
         using var response = await httpClient.GetAsync(uri, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
         response.EnsureSuccessStatusCode();
+        if (response.Content.Headers.ContentLength > _options.MaxPackageBytes)
+        {
+            throw new InvalidDataException("The update package exceeds the configured download limit.");
+        }
         await using var source = await response.Content.ReadAsStreamAsync(cancellationToken);
         await using var destination = new FileStream(path, FileMode.CreateNew, FileAccess.Write, FileShare.None);
-        await source.CopyToAsync(destination, cancellationToken);
+        var buffer = new byte[81920];
+        long total = 0;
+        int read;
+        while ((read = await source.ReadAsync(buffer, cancellationToken)) > 0)
+        {
+            total += read;
+            if (total > _options.MaxPackageBytes)
+            {
+                throw new InvalidDataException("The update package exceeds the configured download limit.");
+            }
+            await destination.WriteAsync(buffer.AsMemory(0, read), cancellationToken);
+        }
     }
 
     private static async Task VerifyHashAsync(string path, string expected, CancellationToken cancellationToken)
@@ -94,10 +117,11 @@ public sealed class WorkerUpdateManager(
         }
     }
 
-    private static void ExtractSafely(string archivePath, string destination)
+    private async Task ExtractSafelyAsync(string archivePath, string destination, CancellationToken cancellationToken)
     {
         var destinationRoot = Path.GetFullPath(destination) + Path.DirectorySeparatorChar;
         using var archive = ZipFile.OpenRead(archivePath);
+        long expandedSize = 0;
         foreach (var entry in archive.Entries)
         {
             var target = Path.GetFullPath(Path.Combine(destination, entry.FullName));
@@ -113,7 +137,19 @@ public sealed class WorkerUpdateManager(
             }
 
             Directory.CreateDirectory(Path.GetDirectoryName(target)!);
-            entry.ExtractToFile(target);
+            await using var source = entry.Open();
+            await using var output = new FileStream(target, FileMode.CreateNew, FileAccess.Write, FileShare.None);
+            var buffer = new byte[81920];
+            int read;
+            while ((read = await source.ReadAsync(buffer, cancellationToken)) > 0)
+            {
+                expandedSize = checked(expandedSize + read);
+                if (expandedSize > _options.MaxExtractedBytes)
+                {
+                    throw new InvalidDataException("The update package exceeds the configured extraction limit.");
+                }
+                await output.WriteAsync(buffer.AsMemory(0, read), cancellationToken);
+            }
         }
     }
 
@@ -153,34 +189,42 @@ public sealed class WorkerUpdateManager(
     }
 
     [SupportedOSPlatform("windows")]
-    private async Task ReplaceAndVerifyAsync(string source, string version, CancellationToken cancellationToken)
+    private async Task ReplaceAndVerifyAsync(
+        string source,
+        string version,
+        TimeSpan healthTimeout,
+        CancellationToken cancellationToken)
     {
         var backup = Path.Combine(_options.BackupDirectory, "worker-previous");
         using var service = new ServiceController(_options.WorkerServiceName);
         await SetServiceStateAsync(service, start: false, cancellationToken);
-        TryDeleteDirectory(backup);
-        if (Directory.Exists(_options.WorkerInstallDirectory))
-        {
-            CopyDirectory(_options.WorkerInstallDirectory, backup);
-        }
-
+        var installReplaced = false;
         try
         {
+            TryDeleteDirectory(backup);
+            if (Directory.Exists(_options.WorkerInstallDirectory))
+            {
+                CopyDirectory(_options.WorkerInstallDirectory, backup);
+            }
             TryDeleteDirectory(_options.WorkerInstallDirectory);
+            installReplaced = true;
             CopyDirectory(source, _options.WorkerInstallDirectory);
             await File.WriteAllTextAsync(Path.Combine(_options.WorkerInstallDirectory, ".version"), version, cancellationToken);
             await SetServiceStateAsync(service, start: true, cancellationToken);
-            await WaitForHealthAsync(service, cancellationToken);
+            await WaitForHealthAsync(service, healthTimeout, cancellationToken);
             logger.LogInformation("Worker service updated successfully to {Version}.", version);
         }
         catch
         {
             logger.LogError("Worker update failed; restoring backup.");
             await SetServiceStateAsync(service, start: false, CancellationToken.None);
-            TryDeleteDirectory(_options.WorkerInstallDirectory);
-            if (Directory.Exists(backup))
+            if (installReplaced)
             {
-                CopyDirectory(backup, _options.WorkerInstallDirectory);
+                TryDeleteDirectory(_options.WorkerInstallDirectory);
+                if (Directory.Exists(backup))
+                {
+                    CopyDirectory(backup, _options.WorkerInstallDirectory);
+                }
             }
             await SetServiceStateAsync(service, start: true, CancellationToken.None);
             throw;
@@ -188,9 +232,12 @@ public sealed class WorkerUpdateManager(
     }
 
     [SupportedOSPlatform("windows")]
-    private async Task WaitForHealthAsync(ServiceController service, CancellationToken cancellationToken)
+    private async Task WaitForHealthAsync(
+        ServiceController service,
+        TimeSpan healthTimeout,
+        CancellationToken cancellationToken)
     {
-        var deadline = DateTimeOffset.UtcNow + _options.WorkerHealthyTimeout;
+        var deadline = DateTimeOffset.UtcNow + healthTimeout;
         while (DateTimeOffset.UtcNow < deadline)
         {
             cancellationToken.ThrowIfCancellationRequested();

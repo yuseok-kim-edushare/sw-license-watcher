@@ -8,7 +8,6 @@ public sealed class SqlServerInventoryRepository(SqlServerStorageOptions options
 {
     public async Task SaveSnapshotAsync(InventoryIngestionRequest snapshot, CancellationToken cancellationToken)
     {
-        SqlIdentifierValidator.Validate(options);
         await using var connection = new SqlConnection(options.ConnectionString);
         await connection.OpenAsync(cancellationToken);
         await using var transaction = (SqlTransaction)await connection.BeginTransactionAsync(IsolationLevel.Serializable, cancellationToken);
@@ -42,7 +41,6 @@ public sealed class SqlServerInventoryRepository(SqlServerStorageOptions options
 
     public async Task SaveHeartbeatAsync(AgentHeartbeat heartbeat, CancellationToken cancellationToken)
     {
-        SqlIdentifierValidator.Validate(options);
         await using var connection = new SqlConnection(options.ConnectionString);
         await connection.OpenAsync(cancellationToken);
         await using var transaction = (SqlTransaction)await connection.BeginTransactionAsync(IsolationLevel.Serializable, cancellationToken);

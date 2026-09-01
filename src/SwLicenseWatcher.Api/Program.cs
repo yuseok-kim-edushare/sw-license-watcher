@@ -59,8 +59,8 @@ app.Use(async (context, next) =>
 
     var security = context.RequestServices.GetRequiredService<IOptions<ApiSecurityOptions>>().Value;
     if (security.RequireHttps && !context.Request.IsHttps &&
-        context.Connection.RemoteIpAddress is not null &&
-        !System.Net.IPAddress.IsLoopback(context.Connection.RemoteIpAddress))
+        (context.Connection.RemoteIpAddress is null ||
+         !System.Net.IPAddress.IsLoopback(context.Connection.RemoteIpAddress)))
     {
         context.Response.StatusCode = StatusCodes.Status400BadRequest;
         await context.Response.WriteAsync("HTTPS is required.");
