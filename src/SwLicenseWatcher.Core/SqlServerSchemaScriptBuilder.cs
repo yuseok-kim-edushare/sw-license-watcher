@@ -7,6 +7,7 @@ public sealed class SqlServerSchemaScriptBuilder
 {
     public string Build(SqlServerStorageOptions options)
     {
+        SqlIdentifierValidator.Validate(options);
         var schema = Escape(options.SchemaName);
         var schemaLiteral = EscapeSqlLiteral(options.SchemaName);
         var schemaCommandIdentifier = EscapeSqlLiteral(schema);
@@ -36,7 +37,7 @@ public sealed class SqlServerSchemaScriptBuilder
         sql.AppendLine($"    [{Escape(installedSoftware.DisplayVersionColumn)}] NVARCHAR(64) NULL,");
         sql.AppendLine($"    [{Escape(installedSoftware.PublisherColumn)}] NVARCHAR(256) NULL,");
         sql.AppendLine($"    [{Escape(installedSoftware.InstallLocationColumn)}] NVARCHAR(512) NULL,");
-        sql.AppendLine($"    [{Escape(installedSoftware.DiscoveryScopeColumn)}] NVARCHAR(32) NOT NULL,");
+        sql.AppendLine($"    [{Escape(installedSoftware.DiscoveryScopeColumn)}] NVARCHAR(256) NOT NULL,");
         sql.AppendLine($"    [{Escape(installedSoftware.DiscoverySourceColumn)}] NVARCHAR(64) NOT NULL,");
         sql.AppendLine($"    [{Escape(installedSoftware.CollectedAtUtcColumn)}] DATETIMEOFFSET NOT NULL,");
         sql.AppendLine($"    CONSTRAINT [{Escape(BuildIdentifier("FK", installedSoftware.TableName, pc.TableName))}] FOREIGN KEY ([{Escape(installedSoftware.PcForeignKeyColumn)}]) REFERENCES [{schema}].[{Escape(pc.TableName)}]([{Escape(pc.PrimaryKeyColumn)}])");
@@ -70,7 +71,42 @@ public sealed class SqlServerSchemaScriptBuilder
         return $"{identifier[..(128 - hash.Length - 1)]}_{hash}";
     }
 
-    private static string Escape(string identifier) => identifier.Replace("]", "]]", StringComparison.Ordinal);
+    internal static string Escape(string identifier) => identifier.Replace("]", "]]", StringComparison.Ordinal);
 
     private static string EscapeSqlLiteral(string value) => value.Replace("'", "''", StringComparison.Ordinal);
+}
+
+public static class SqlIdentifierValidator
+{
+    public static bool IsValid(string? identifier) =>
+        !string.IsNullOrWhiteSpace(identifier) &&
+        identifier.Length <= 128 &&
+        (char.IsAsciiLetter(identifier[0]) || identifier[0] == '_') &&
+        identifier.All(character => char.IsAsciiLetterOrDigit(character) || character == '_');
+
+    public static void Validate(SqlServerStorageOptions options)
+    {
+        var identifiers = new[]
+        {
+            options.SchemaName,
+            options.PcTable.TableName, options.PcTable.PrimaryKeyColumn, options.PcTable.DeviceCodeColumn,
+            options.PcTable.HostNameColumn, options.PcTable.DomainNameColumn, options.PcTable.OperatingSystemColumn,
+            options.PcTable.AgentVersionColumn, options.PcTable.LastHeartbeatUtcColumn, options.PcTable.LastInventoryUtcColumn,
+            options.InstalledSoftwareTable.TableName, options.InstalledSoftwareTable.PrimaryKeyColumn,
+            options.InstalledSoftwareTable.PcForeignKeyColumn, options.InstalledSoftwareTable.DisplayNameColumn,
+            options.InstalledSoftwareTable.DisplayVersionColumn, options.InstalledSoftwareTable.PublisherColumn,
+            options.InstalledSoftwareTable.InstallLocationColumn, options.InstalledSoftwareTable.DiscoveryScopeColumn,
+            options.InstalledSoftwareTable.DiscoverySourceColumn, options.InstalledSoftwareTable.CollectedAtUtcColumn,
+            options.SoftwarePolicyTable.TableName, options.SoftwarePolicyTable.PrimaryKeyColumn,
+            options.SoftwarePolicyTable.ClassificationColumn, options.SoftwarePolicyTable.ProductNameColumn,
+            options.SoftwarePolicyTable.PublisherColumn, options.SoftwarePolicyTable.VersionPatternColumn,
+            options.SoftwarePolicyTable.NotesColumn, options.SoftwarePolicyTable.EnabledColumn,
+            options.SoftwarePolicyTable.UpdatedAtUtcColumn
+        };
+
+        if (identifiers.Any(identifier => !IsValid(identifier)))
+        {
+            throw new ArgumentException("SQL identifiers must start with a letter or underscore and contain only ASCII letters, digits, or underscores (maximum 128 characters).");
+        }
+    }
 }

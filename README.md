@@ -1,6 +1,6 @@
 # sw-license-watcher
 
-.NET 10 기반의 기업용 소프트웨어 라이선스 감시 설계/스캐폴드입니다. 로컬 PC 에이전트는 **Watchdog + Worker**의 투 프로세스 Windows Service 구조를 사용하고, 서버는 **ASP.NET Core API**로 소프트웨어 수집과 업데이트 메타데이터를 제공합니다.
+.NET 10 기반의 기업용 소프트웨어 라이선스 감시 서비스입니다. 로컬 PC 에이전트는 **Watchdog + Worker**의 투 프로세스 Windows Service 구조를 사용하고, 서버는 **ASP.NET Core API**와 SQL Server로 소프트웨어 수집과 업데이트 메타데이터를 제공합니다.
 
 ## 구현된 핵심 요구사항
 
@@ -8,20 +8,27 @@
   - `SwLicenseWatcher.Agent.Watchdog`: 자체 패치, SHA-256/Authenticode 검증, 백업/롤백 정책 담당
   - `SwLicenseWatcher.Agent.Worker`: 설치 소프트웨어 수집, heartbeat/snapshot 전송 담당
 - **로컬 상태 저장 설계**
-  - ESENT `.edb` 파일 경로/테이블 이름 구성
-  - DPAPI 보호기(`DpapiLocalStateProtector`) 포함
+  - 전송 실패 스냅샷을 원자적 파일 큐에 저장하고 다음 주기에 재전송
+  - 큐가 모두 전송되기 전에는 새 스냅샷을 전송하지 않고 큐에 적재하여 오래된 전체 스냅샷이 최신 스냅샷을 덮어쓰지 않도록 방지
+  - 큐 페이로드는 DPAPI(`LocalMachine` 기본값)로 보호
+  - `LocalState:MaxQueuedSnapshots`, `LocalState:MaxQueueBytes` 할당량 초과 시 가장 오래된 스냅샷부터 제거
 - **서버 측 API**
   - 수집 API: `/api/inventory/snapshots`, `/api/agents/heartbeats`
+  - SQL Server 트랜잭션 기반 PC UPSERT 및 설치 소프트웨어 교체 저장
+  - 공유 API 토큰 인증 및 원격 요청 HTTPS 강제
   - 설계/스키마 API: `/api/design`, `/api/schema/sql`
   - 업데이트 manifest API: `/api/updates/worker/manifest`
 - **SQL Server 스키마 커스터마이징**
   - PC entity / PC installed software / software policy(white|managed|black) 테이블 이름과 컬럼 이름 모두 `appsettings.json`에서 변경 가능
 - **수집 방식 안전장치**
   - `Win32_Product` / WMI 미사용
-  - `HKLM(64)`, `HKLM(32)`, `HKCU` `Uninstall` 키만 순회
+  - `HKLM(64)`, `HKLM(32)`, `HKCU`, 로드된 `HKEY_USERS` 사용자 SID의 `Uninstall` 키 순회
+  - 접근이 거부된 레지스트리 키는 개별 건너뛰기
 - **자체 패치 안정성**
   - 랜덤 Jitter 기반 업데이트 주기
-  - Heartbeat 복구 실패 시 자동 Rollback 설계
+  - HTTPS 패키지 다운로드, SHA-256 및 WinVerifyTrust Authenticode 검증
+  - ZIP 경로 이탈 방지, 서비스 중지/교체/시작, 헬스체크 실패 시 자동 롤백
+  - 헬스체크는 Worker가 직접 기록하는 로컬 health 신호 파일(설치 버전 + 기록 시각)을 롤백 제한 시간 내에서 확인
 - **Native AOT 컴파일**
   - Worker/Watchdog/Api 모두 `PublishAot=true`로 네이티브 바이너리 publish
   - Source-generated 구성 바인딩(`EnableConfigurationBindingGenerator`)과 System.Text.Json source generator를 사용해 리플렉션 없이 동작
@@ -86,7 +93,28 @@ Worker/Watchdog 클라이언트가 접속할 서버 주소는 설정 파일로 �
 }
 ```
 
-환경 변수(`Agent__ServerBaseUrl`, `Watchdog__ServerBaseUrl`) 또는 커맨드라인 인자(`--Agent:ServerBaseUrl=...`)로도 재정의할 수 있습니다. 값이 절대 http/https URI가 아니면 서비스가 시작 시점에 검증 오류로 실패합니다.
+환경 변수(`Agent__ServerBaseUrl`, `Watchdog__ServerBaseUrl`) 또는 커맨드라인 인자(`--Agent:ServerBaseUrl=...`)로도 재정의할 수 있습니다. 원격 주소는 HTTPS여야 하며 HTTP는 loopback 진단에만 허용됩니다.
+
+## 필수 보안 및 저장소 설정
+
+토큰과 SQL Server 연결 문자열은 소스에 저장하지 말고 환경 변수 또는 비밀 저장소로 주입합니다. API 토큰은 32자 이상이어야 하며 API, Worker, Watchdog에 동일한 값을 설정합니다.
+
+```text
+Security__Token=<random-token>
+Storage__SqlServer__ConnectionString=<sql-server-connection-string>
+Agent__ApiToken=<same-random-token>
+Watchdog__ApiToken=<same-random-token>
+```
+
+운영 SQL Server 연결에서는 서버 인증서를 검증하고 `TrustServerCertificate=False`를 유지하십시오. 최초 실행 전에 인증된 `GET /api/schema/sql` 결과를 검토하여 데이터베이스에 적용해야 합니다.
+
+기존 스키마를 사용 중이라면 `discovery_scope` 컬럼이 `NVARCHAR(256)`으로 확장되었으므로 다음과 같이 마이그레이션합니다(테이블/컬럼 이름은 설정값에 맞게 변경).
+
+```sql
+ALTER TABLE [inventory].[pc_installed_sw] ALTER COLUMN [discovery_scope] NVARCHAR(256) NOT NULL;
+```
+
+Watchdog에는 Worker 실행 파일이 설치된 `Watchdog__WorkerInstallDirectory`와 업데이트 후 확인할 `Watchdog__WorkerHealthFilePath`도 설정합니다. 이 경로는 Worker의 `Agent__HealthFilePath`와 동일해야 하며, Worker 서비스 계정이 쓰고 Watchdog 서비스 계정이 읽을 수 있어야 합니다. 업데이트 ZIP에는 정확히 하나의 `SwLicenseWatcher.Agent.Worker.exe`가 있어야 하며 모든 EXE/DLL이 신뢰된 Authenticode 서명을 가져야 합니다.
 
 ## 수동 실행 예시
 

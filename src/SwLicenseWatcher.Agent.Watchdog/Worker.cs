@@ -1,11 +1,13 @@
 using Microsoft.Extensions.Options;
 using SwLicenseWatcher.Core;
+using System.Security.Cryptography;
 
 namespace SwLicenseWatcher.Agent.Watchdog;
 
 public sealed class Worker(
     ILogger<Worker> logger,
     UpdateManifestClient manifestClient,
+    WorkerUpdateManager updateManager,
     IOptions<WatchdogOptions> options,
     IHostApplicationLifetime applicationLifetime) : BackgroundService
 {
@@ -33,12 +35,19 @@ public sealed class Worker(
                     manifest.Version,
                     !string.IsNullOrWhiteSpace(manifest.Sha256),
                     manifest.RequireAuthenticode);
+                try
+                {
+                    await updateManager.ApplyAsync(manifest, stoppingToken);
+                }
+                catch (Exception ex) when (!stoppingToken.IsCancellationRequested)
+                {
+                    logger.LogError(ex, "Worker update to {Version} failed.", manifest.Version);
+                }
             }
 
             logger.LogInformation(
-                "Worker service restarts must rollback from {BackupDirectory} if healthy heartbeat is not restored within {WorkerHealthyTimeout}. Download checks are jittered by up to {MaxJitter}.",
+                "Worker service restarts rollback from {BackupDirectory} if health is not restored within the manifest timeout. Download checks are jittered by up to {MaxJitter}.",
                 watchdogOptions.BackupDirectory,
-                watchdogOptions.WorkerHealthyTimeout,
                 watchdogOptions.MaxJitter);
 
             if (watchdogOptions.RunOnceForDiagnostics)

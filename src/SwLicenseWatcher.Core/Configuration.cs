@@ -21,6 +21,10 @@ public sealed class WorkerAgentOptions
     public TimeSpan MaxJitter { get; set; } = TimeSpan.FromMinutes(15);
 
     public bool RunOnceForDiagnostics { get; set; }
+
+    public string ApiToken { get; set; } = string.Empty;
+
+    public string HealthFilePath { get; set; } = @"C:\ProgramData\SwLicenseWatcher\state\worker-health.json";
 }
 
 public sealed class WatchdogOptions
@@ -39,11 +43,19 @@ public sealed class WatchdogOptions
 
     public string BackupDirectory { get; set; } = @"C:\ProgramData\SwLicenseWatcher\backup";
 
+    public string WorkerInstallDirectory { get; set; } = @"C:\Program Files\SwLicenseWatcher\Agent.Worker";
+
+    public string WorkerHealthFilePath { get; set; } = @"C:\ProgramData\SwLicenseWatcher\state\worker-health.json";
+
+    public string ApiToken { get; set; } = string.Empty;
+
     public TimeSpan CheckInterval { get; set; } = TimeSpan.FromHours(4);
 
     public TimeSpan MaxJitter { get; set; } = TimeSpan.FromMinutes(60);
 
-    public TimeSpan WorkerHealthyTimeout { get; set; } = TimeSpan.FromMinutes(10);
+    public long MaxPackageBytes { get; set; } = 512 * 1024 * 1024;
+
+    public long MaxExtractedBytes { get; set; } = 1024 * 1024 * 1024;
 
     public bool RunOnceForDiagnostics { get; set; }
 }
@@ -52,13 +64,21 @@ public sealed class LocalStateStoreOptions
 {
     public string InstanceName { get; set; } = "SwLicenseWatcher";
 
-    public string EsentDatabaseFilePath { get; set; } = @"C:\ProgramData\SwLicenseWatcher\state\agent.edb";
-
-    public string MetadataTableName { get; set; } = "AgentMetadata";
-
-    public string SnapshotTableName { get; set; } = "InventoryCheckpoint";
+    public string QueueDirectory { get; set; } = @"C:\ProgramData\SwLicenseWatcher\state\queue";
 
     public string DpapiScope { get; set; } = "LocalMachine";
+
+    public int MaxQueuedSnapshots { get; set; } = 48;
+
+    public long MaxQueueBytes { get; set; } = 64 * 1024 * 1024;
+}
+
+public sealed class ApiSecurityOptions
+{
+    [Required]
+    public string Token { get; set; } = string.Empty;
+
+    public bool RequireHttps { get; set; } = true;
 }
 
 public sealed class UpdateManifestOptions

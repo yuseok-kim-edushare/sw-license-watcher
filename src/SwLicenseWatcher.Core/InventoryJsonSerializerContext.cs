@@ -7,4 +7,5 @@ namespace SwLicenseWatcher.Core;
 [JsonSerializable(typeof(InventoryIngestionRequest))]
 [JsonSerializable(typeof(AgentHeartbeat))]
 [JsonSerializable(typeof(UpdateManifest))]
+[JsonSerializable(typeof(WorkerHealthReport))]
 public sealed partial class InventoryJsonSerializerContext : JsonSerializerContext;
