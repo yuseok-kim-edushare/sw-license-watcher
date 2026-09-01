@@ -11,8 +11,9 @@ builder.Services.AddOptions<WorkerAgentOptions>()
         "Agent:DeviceCode is required.")
     .Validate(
         options => Uri.TryCreate(options.ServerBaseUrl, UriKind.Absolute, out var uri)
-            && (uri.Scheme == Uri.UriSchemeHttp || uri.Scheme == Uri.UriSchemeHttps),
-        "Agent:ServerBaseUrl must be an absolute http(s) URI. Set it in appsettings.json (or via the Agent__ServerBaseUrl environment variable / --Agent:ServerBaseUrl argument) to point the agent at a remote server.")
+            && (uri.Scheme == Uri.UriSchemeHttps || uri.IsLoopback),
+        "Agent:ServerBaseUrl must use HTTPS (HTTP is allowed only for loopback diagnostics).")
+    .Validate(options => !string.IsNullOrWhiteSpace(options.ApiToken), "Agent:ApiToken is required.")
     .ValidateOnStart();
 builder.Services.AddOptions<LocalStateStoreOptions>()
     .Bind(builder.Configuration.GetSection("LocalState"))
@@ -20,6 +21,7 @@ builder.Services.AddOptions<LocalStateStoreOptions>()
 builder.Services.AddSingleton(sp => sp.GetRequiredService<IOptions<LocalStateStoreOptions>>().Value);
 builder.Services.AddSingleton<ILocalStateProtector, DpapiLocalStateProtector>();
 builder.Services.AddSingleton<ISoftwareInventoryCollector, RegistrySoftwareInventoryCollector>();
+builder.Services.AddSingleton<LocalSnapshotQueue>();
 builder.Services.AddHttpClient<AgentApiClient>((sp, client) =>
 {
     var options = sp.GetRequiredService<IOptions<WorkerAgentOptions>>().Value;

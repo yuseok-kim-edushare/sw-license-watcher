@@ -1,6 +1,7 @@
 using System.Net.Http.Json;
 using Microsoft.Extensions.Options;
 using SwLicenseWatcher.Core;
+using System.Net.Http.Headers;
 
 namespace SwLicenseWatcher.Agent.Watchdog;
 
@@ -21,7 +22,11 @@ public sealed class UpdateManifestClient
     {
         try
         {
-            return await _httpClient.GetFromJsonAsync(_options.ManifestPath, InventoryJsonSerializerContext.Default.UpdateManifest, cancellationToken);
+            using var request = new HttpRequestMessage(HttpMethod.Get, _options.ManifestPath);
+            request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _options.ApiToken);
+            using var response = await _httpClient.SendAsync(request, cancellationToken);
+            response.EnsureSuccessStatusCode();
+            return await response.Content.ReadFromJsonAsync(InventoryJsonSerializerContext.Default.UpdateManifest, cancellationToken);
         }
         catch (TaskCanceledException) when (cancellationToken.IsCancellationRequested)
         {

@@ -21,6 +21,8 @@ public sealed class WorkerAgentOptions
     public TimeSpan MaxJitter { get; set; } = TimeSpan.FromMinutes(15);
 
     public bool RunOnceForDiagnostics { get; set; }
+
+    public string ApiToken { get; set; } = string.Empty;
 }
 
 public sealed class WatchdogOptions
@@ -39,6 +41,12 @@ public sealed class WatchdogOptions
 
     public string BackupDirectory { get; set; } = @"C:\ProgramData\SwLicenseWatcher\backup";
 
+    public string WorkerInstallDirectory { get; set; } = @"C:\Program Files\SwLicenseWatcher\Agent.Worker";
+
+    public string WorkerHealthUrl { get; set; } = "http://localhost:5080/health";
+
+    public string ApiToken { get; set; } = string.Empty;
+
     public TimeSpan CheckInterval { get; set; } = TimeSpan.FromHours(4);
 
     public TimeSpan MaxJitter { get; set; } = TimeSpan.FromMinutes(60);
@@ -52,13 +60,17 @@ public sealed class LocalStateStoreOptions
 {
     public string InstanceName { get; set; } = "SwLicenseWatcher";
 
-    public string EsentDatabaseFilePath { get; set; } = @"C:\ProgramData\SwLicenseWatcher\state\agent.edb";
-
-    public string MetadataTableName { get; set; } = "AgentMetadata";
-
-    public string SnapshotTableName { get; set; } = "InventoryCheckpoint";
+    public string QueueDirectory { get; set; } = @"C:\ProgramData\SwLicenseWatcher\state\queue";
 
     public string DpapiScope { get; set; } = "LocalMachine";
+}
+
+public sealed class ApiSecurityOptions
+{
+    [Required]
+    public string Token { get; set; } = string.Empty;
+
+    public bool RequireHttps { get; set; } = true;
 }
 
 public sealed class UpdateManifestOptions

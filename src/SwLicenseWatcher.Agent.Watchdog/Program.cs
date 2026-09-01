@@ -11,14 +11,16 @@ builder.Services.AddOptions<WatchdogOptions>()
         "Watchdog:DeviceCode is required.")
     .Validate(
         options => Uri.TryCreate(options.ServerBaseUrl, UriKind.Absolute, out var uri)
-            && (uri.Scheme == Uri.UriSchemeHttp || uri.Scheme == Uri.UriSchemeHttps),
-        "Watchdog:ServerBaseUrl must be an absolute http(s) URI. Set it in appsettings.json (or via the Watchdog__ServerBaseUrl environment variable / --Watchdog:ServerBaseUrl argument) to point the watchdog at a remote server.")
+            && (uri.Scheme == Uri.UriSchemeHttps || uri.IsLoopback),
+        "Watchdog:ServerBaseUrl must use HTTPS (HTTP is allowed only for loopback diagnostics).")
+    .Validate(options => !string.IsNullOrWhiteSpace(options.ApiToken), "Watchdog:ApiToken is required.")
     .ValidateOnStart();
 builder.Services.AddHttpClient<UpdateManifestClient>((sp, client) =>
 {
     var options = sp.GetRequiredService<IOptions<WatchdogOptions>>().Value;
     client.BaseAddress = new Uri(options.ServerBaseUrl);
 });
+builder.Services.AddHttpClient<WorkerUpdateManager>();
 builder.Services.AddHostedService<Worker>();
 
 await builder.Build().RunAsync();

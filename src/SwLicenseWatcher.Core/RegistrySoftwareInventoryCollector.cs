@@ -1,5 +1,6 @@
 using Microsoft.Win32;
 using System.Runtime.Versioning;
+using System.Security;
 
 namespace SwLicenseWatcher.Core;
 
@@ -40,6 +41,7 @@ public sealed class RegistrySoftwareInventoryCollector : ISoftwareInventoryColle
 
         cancellationToken.ThrowIfCancellationRequested();
         ReadCurrentUserEntries(software, dedupe, cancellationToken);
+        ReadLoadedUserEntries(software, dedupe, cancellationToken);
 
         return software;
     }
@@ -47,13 +49,50 @@ public sealed class RegistrySoftwareInventoryCollector : ISoftwareInventoryColle
     [SupportedOSPlatform("windows")]
     private static void ReadCurrentUserEntries(List<InstalledSoftwareEntry> software, HashSet<string> dedupe, CancellationToken cancellationToken)
     {
-        using var currentUserKey = Registry.CurrentUser.OpenSubKey(@"Software\Microsoft\Windows\CurrentVersion\Uninstall");
-        if (currentUserKey is null)
+        try
         {
-            return;
+            using var currentUserKey = Registry.CurrentUser.OpenSubKey(@"Software\Microsoft\Windows\CurrentVersion\Uninstall");
+            if (currentUserKey is not null)
+            {
+                AppendEntries(currentUserKey, "User", software, dedupe, cancellationToken);
+            }
         }
+        catch (Exception ex) when (ex is SecurityException or UnauthorizedAccessException)
+        {
+        }
+    }
 
-        AppendEntries(currentUserKey, "User", software, dedupe, cancellationToken);
+    [SupportedOSPlatform("windows")]
+    private static void ReadLoadedUserEntries(List<InstalledSoftwareEntry> software, HashSet<string> dedupe, CancellationToken cancellationToken)
+    {
+        try
+        {
+            using var users = RegistryKey.OpenBaseKey(RegistryHive.Users, RegistryView.Default);
+            foreach (var sid in users.GetSubKeyNames())
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                if (!sid.StartsWith("S-1-5-21-", StringComparison.OrdinalIgnoreCase) ||
+                    sid.EndsWith("_Classes", StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                try
+                {
+                    using var uninstallKey = users.OpenSubKey($@"{sid}\Software\Microsoft\Windows\CurrentVersion\Uninstall");
+                    if (uninstallKey is not null)
+                    {
+                        AppendEntries(uninstallKey, $"User:{sid}", software, dedupe, cancellationToken);
+                    }
+                }
+                catch (Exception ex) when (ex is SecurityException or UnauthorizedAccessException)
+                {
+                }
+            }
+        }
+        catch (Exception ex) when (ex is SecurityException or UnauthorizedAccessException)
+        {
+        }
     }
 
     [SupportedOSPlatform("windows")]
@@ -66,14 +105,18 @@ public sealed class RegistrySoftwareInventoryCollector : ISoftwareInventoryColle
         HashSet<string> dedupe,
         CancellationToken cancellationToken)
     {
-        using var baseKey = RegistryKey.OpenBaseKey(hive, view);
-        using var uninstallKey = baseKey.OpenSubKey(subKeyPath);
-        if (uninstallKey is null)
+        try
         {
-            return;
+            using var baseKey = RegistryKey.OpenBaseKey(hive, view);
+            using var uninstallKey = baseKey.OpenSubKey(subKeyPath);
+            if (uninstallKey is not null)
+            {
+                AppendEntries(uninstallKey, scope, software, dedupe, cancellationToken);
+            }
         }
-
-        AppendEntries(uninstallKey, scope, software, dedupe, cancellationToken);
+        catch (Exception ex) when (ex is SecurityException or UnauthorizedAccessException)
+        {
+        }
     }
 
     [SupportedOSPlatform("windows")]
@@ -84,37 +127,54 @@ public sealed class RegistrySoftwareInventoryCollector : ISoftwareInventoryColle
         HashSet<string> dedupe,
         CancellationToken cancellationToken)
     {
-        foreach (var productKeyName in uninstallKey.GetSubKeyNames())
+        string[] productKeyNames;
+        try
+        {
+            productKeyNames = uninstallKey.GetSubKeyNames();
+        }
+        catch (Exception ex) when (ex is SecurityException or UnauthorizedAccessException)
+        {
+            return;
+        }
+
+        foreach (var productKeyName in productKeyNames)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            using var productKey = uninstallKey.OpenSubKey(productKeyName);
-            if (productKey is null)
+            try
+            {
+                using var productKey = uninstallKey.OpenSubKey(productKeyName);
+                if (productKey is null)
+                {
+                    continue;
+                }
+
+                var displayName = productKey.GetValue("DisplayName") as string;
+                if (string.IsNullOrWhiteSpace(displayName))
+                {
+                    continue;
+                }
+
+                var version = productKey.GetValue("DisplayVersion") as string;
+                var publisher = productKey.GetValue("Publisher") as string;
+                var installLocation = productKey.GetValue("InstallLocation") as string;
+                var dedupeKey = string.Join('|', displayName, version, publisher, installLocation, scope);
+                if (!dedupe.Add(dedupeKey))
+                {
+                    continue;
+                }
+
+                software.Add(new InstalledSoftwareEntry(
+                    displayName,
+                    string.IsNullOrWhiteSpace(version) ? null : version,
+                    string.IsNullOrWhiteSpace(publisher) ? null : publisher,
+                    string.IsNullOrWhiteSpace(installLocation) ? null : installLocation,
+                    scope,
+                    "Registry.Uninstall"));
+            }
+            catch (Exception ex) when (ex is SecurityException or UnauthorizedAccessException)
             {
                 continue;
             }
-
-            var displayName = productKey.GetValue("DisplayName") as string;
-            if (string.IsNullOrWhiteSpace(displayName))
-            {
-                continue;
-            }
-
-            var version = productKey.GetValue("DisplayVersion") as string;
-            var publisher = productKey.GetValue("Publisher") as string;
-            var installLocation = productKey.GetValue("InstallLocation") as string;
-            var dedupeKey = string.Join('|', displayName, version, publisher, installLocation, scope);
-            if (!dedupe.Add(dedupeKey))
-            {
-                continue;
-            }
-
-            software.Add(new InstalledSoftwareEntry(
-                displayName,
-                string.IsNullOrWhiteSpace(version) ? null : version,
-                string.IsNullOrWhiteSpace(publisher) ? null : publisher,
-                string.IsNullOrWhiteSpace(installLocation) ? null : installLocation,
-                scope,
-                "Registry.Uninstall"));
         }
     }
 

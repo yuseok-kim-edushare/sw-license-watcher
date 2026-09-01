@@ -7,6 +7,7 @@ public sealed class Worker(
     ILogger<Worker> logger,
     ISoftwareInventoryCollector inventoryCollector,
     AgentApiClient apiClient,
+    LocalSnapshotQueue snapshotQueue,
     IOptions<WorkerAgentOptions> options,
     IOptions<LocalStateStoreOptions> localStateOptions,
     IHostApplicationLifetime applicationLifetime) : BackgroundService
@@ -18,16 +19,20 @@ public sealed class Worker(
 
         do
         {
+            await snapshotQueue.FlushAsync(apiClient, stoppingToken);
             var snapshot = await CollectSnapshotAsync(agentOptions, stoppingToken);
             logger.LogInformation(
                 "Collected {SoftwareCount} software entries via uninstall registry keys. Win32_Product/WMI is intentionally not used.",
                 snapshot.InstalledSoftware.Count);
             logger.LogInformation(
-                "Local agent state is designed for ESENT file {EsentDatabaseFilePath} with DPAPI scope {DpapiScope}.",
-                localOptions.EsentDatabaseFilePath,
+                "Local store-and-forward queue {QueueDirectory} uses DPAPI scope {DpapiScope}.",
+                localOptions.QueueDirectory,
                 localOptions.DpapiScope);
 
-            await apiClient.PublishSnapshotAsync(snapshot, stoppingToken);
+            if (!await apiClient.PublishSnapshotAsync(snapshot, stoppingToken))
+            {
+                await snapshotQueue.EnqueueAsync(snapshot, stoppingToken);
+            }
             await apiClient.PublishHeartbeatAsync(
                 new AgentHeartbeat(
                     snapshot.Pc.DeviceCode,

@@ -1,11 +1,13 @@
 using Microsoft.Extensions.Options;
 using SwLicenseWatcher.Core;
+using System.Security.Cryptography;
 
 namespace SwLicenseWatcher.Agent.Watchdog;
 
 public sealed class Worker(
     ILogger<Worker> logger,
     UpdateManifestClient manifestClient,
+    WorkerUpdateManager updateManager,
     IOptions<WatchdogOptions> options,
     IHostApplicationLifetime applicationLifetime) : BackgroundService
 {
@@ -33,6 +35,14 @@ public sealed class Worker(
                     manifest.Version,
                     !string.IsNullOrWhiteSpace(manifest.Sha256),
                     manifest.RequireAuthenticode);
+                try
+                {
+                    await updateManager.ApplyAsync(manifest, stoppingToken);
+                }
+                catch (Exception ex) when (!stoppingToken.IsCancellationRequested)
+                {
+                    logger.LogError(ex, "Worker update to {Version} failed.", manifest.Version);
+                }
             }
 
             logger.LogInformation(
