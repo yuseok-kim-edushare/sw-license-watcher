@@ -1,6 +1,7 @@
 using Microsoft.Win32;
 using System.Runtime.Versioning;
 using System.Security;
+using System.Security.Principal;
 
 namespace SwLicenseWatcher.Core;
 
@@ -65,6 +66,7 @@ public sealed class RegistrySoftwareInventoryCollector : ISoftwareInventoryColle
     [SupportedOSPlatform("windows")]
     private static void ReadLoadedUserEntries(List<InstalledSoftwareEntry> software, HashSet<string> dedupe, CancellationToken cancellationToken)
     {
+        var currentSid = TryGetCurrentUserSid();
         try
         {
             using var users = RegistryKey.OpenBaseKey(RegistryHive.Users, RegistryView.Default);
@@ -72,7 +74,8 @@ public sealed class RegistrySoftwareInventoryCollector : ISoftwareInventoryColle
             {
                 cancellationToken.ThrowIfCancellationRequested();
                 if (!sid.StartsWith("S-1-5-21-", StringComparison.OrdinalIgnoreCase) ||
-                    sid.EndsWith("_Classes", StringComparison.OrdinalIgnoreCase))
+                    sid.EndsWith("_Classes", StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(sid, currentSid, StringComparison.OrdinalIgnoreCase))
                 {
                     continue;
                 }
@@ -92,6 +95,20 @@ public sealed class RegistrySoftwareInventoryCollector : ISoftwareInventoryColle
         }
         catch (Exception ex) when (ex is SecurityException or UnauthorizedAccessException)
         {
+        }
+    }
+
+    [SupportedOSPlatform("windows")]
+    private static string? TryGetCurrentUserSid()
+    {
+        try
+        {
+            using var identity = WindowsIdentity.GetCurrent();
+            return identity.User?.Value;
+        }
+        catch (Exception ex) when (ex is SecurityException or UnauthorizedAccessException)
+        {
+            return null;
         }
     }
 
@@ -132,7 +149,7 @@ public sealed class RegistrySoftwareInventoryCollector : ISoftwareInventoryColle
         {
             productKeyNames = uninstallKey.GetSubKeyNames();
         }
-        catch (Exception ex) when (ex is SecurityException or UnauthorizedAccessException)
+        catch (Exception ex) when (ex is SecurityException or UnauthorizedAccessException or IOException)
         {
             return;
         }
@@ -171,7 +188,7 @@ public sealed class RegistrySoftwareInventoryCollector : ISoftwareInventoryColle
                     scope,
                     "Registry.Uninstall"));
             }
-            catch (Exception ex) when (ex is SecurityException or UnauthorizedAccessException)
+            catch (Exception ex) when (ex is SecurityException or UnauthorizedAccessException or IOException)
             {
                 continue;
             }

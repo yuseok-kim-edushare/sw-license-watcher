@@ -23,6 +23,8 @@ public sealed class WorkerAgentOptions
     public bool RunOnceForDiagnostics { get; set; }
 
     public string ApiToken { get; set; } = string.Empty;
+
+    public string HealthFilePath { get; set; } = @"C:\ProgramData\SwLicenseWatcher\state\worker-health.json";
 }
 
 public sealed class WatchdogOptions
@@ -43,7 +45,7 @@ public sealed class WatchdogOptions
 
     public string WorkerInstallDirectory { get; set; } = @"C:\Program Files\SwLicenseWatcher\Agent.Worker";
 
-    public string WorkerHealthUrl { get; set; } = "http://localhost:5080/health";
+    public string WorkerHealthFilePath { get; set; } = @"C:\ProgramData\SwLicenseWatcher\state\worker-health.json";
 
     public string ApiToken { get; set; } = string.Empty;
 
@@ -65,6 +67,10 @@ public sealed class LocalStateStoreOptions
     public string QueueDirectory { get; set; } = @"C:\ProgramData\SwLicenseWatcher\state\queue";
 
     public string DpapiScope { get; set; } = "LocalMachine";
+
+    public int MaxQueuedSnapshots { get; set; } = 48;
+
+    public long MaxQueueBytes { get; set; } = 64 * 1024 * 1024;
 }
 
 public sealed class ApiSecurityOptions

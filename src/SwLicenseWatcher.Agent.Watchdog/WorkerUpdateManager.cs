@@ -1,4 +1,5 @@
 using System.IO.Compression;
+using System.Text.Json;
 using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using System.ServiceProcess;
@@ -199,6 +200,7 @@ public sealed class WorkerUpdateManager(
         using var service = new ServiceController(_options.WorkerServiceName);
         await SetServiceStateAsync(service, start: false, cancellationToken);
         var installReplaced = false;
+        var startedAtUtc = DateTimeOffset.UtcNow;
         try
         {
             TryDeleteDirectory(backup);
@@ -211,14 +213,32 @@ public sealed class WorkerUpdateManager(
             CopyDirectory(source, _options.WorkerInstallDirectory);
             await File.WriteAllTextAsync(Path.Combine(_options.WorkerInstallDirectory, ".version"), version, cancellationToken);
             await SetServiceStateAsync(service, start: true, cancellationToken);
-            await WaitForHealthAsync(service, healthTimeout, cancellationToken);
+            await WaitForHealthAsync(service, version, startedAtUtc, healthTimeout, cancellationToken);
             logger.LogInformation("Worker service updated successfully to {Version}.", version);
         }
         catch
         {
             logger.LogError("Worker update failed; restoring backup.");
+            await RollbackAsync(service, backup, installReplaced);
+            throw;
+        }
+    }
+
+    [SupportedOSPlatform("windows")]
+    private async Task RollbackAsync(ServiceController service, string backup, bool installReplaced)
+    {
+        try
+        {
             await SetServiceStateAsync(service, start: false, CancellationToken.None);
-            if (installReplaced)
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Unable to stop the Worker service before restoring the backup; attempting restoration anyway.");
+        }
+
+        if (installReplaced)
+        {
+            try
             {
                 TryDeleteDirectory(_options.WorkerInstallDirectory);
                 if (Directory.Exists(backup))
@@ -226,14 +246,27 @@ public sealed class WorkerUpdateManager(
                     CopyDirectory(backup, _options.WorkerInstallDirectory);
                 }
             }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                logger.LogError(ex, "Unable to restore the previous Worker installation from {BackupDirectory}.", backup);
+            }
+        }
+
+        try
+        {
             await SetServiceStateAsync(service, start: true, CancellationToken.None);
-            throw;
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Unable to restart the Worker service after rollback.");
         }
     }
 
     [SupportedOSPlatform("windows")]
     private async Task WaitForHealthAsync(
         ServiceController service,
+        string expectedVersion,
+        DateTimeOffset startedAtUtc,
         TimeSpan healthTimeout,
         CancellationToken cancellationToken)
     {
@@ -242,23 +275,44 @@ public sealed class WorkerUpdateManager(
         {
             cancellationToken.ThrowIfCancellationRequested();
             service.Refresh();
-            if (service.Status == ServiceControllerStatus.Running)
+            if (service.Status == ServiceControllerStatus.Running &&
+                IsWorkerHealthy(expectedVersion, startedAtUtc))
             {
-                try
-                {
-                    using var response = await httpClient.GetAsync(_options.WorkerHealthUrl, cancellationToken);
-                    if (response.IsSuccessStatusCode)
-                    {
-                        return;
-                    }
-                }
-                catch (HttpRequestException)
-                {
-                }
+                return;
             }
-            await Task.Delay(TimeSpan.FromSeconds(5), cancellationToken);
+
+            var remaining = deadline - DateTimeOffset.UtcNow;
+            if (remaining <= TimeSpan.Zero)
+            {
+                break;
+            }
+
+            await Task.Delay(remaining < TimeSpan.FromSeconds(5) ? remaining : TimeSpan.FromSeconds(5), cancellationToken);
         }
         throw new System.TimeoutException("Worker health was not restored before the rollback deadline.");
+    }
+
+    private bool IsWorkerHealthy(string expectedVersion, DateTimeOffset startedAtUtc)
+    {
+        try
+        {
+            if (!File.Exists(_options.WorkerHealthFilePath))
+            {
+                return false;
+            }
+
+            var report = JsonSerializer.Deserialize(
+                File.ReadAllText(_options.WorkerHealthFilePath),
+                InventoryJsonSerializerContext.Default.WorkerHealthReport);
+            return report is not null &&
+                report.ReportedAtUtc >= startedAtUtc &&
+                string.Equals(report.Version, expectedVersion, StringComparison.Ordinal);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException)
+        {
+            logger.LogDebug(ex, "Worker health signal {HealthFilePath} is not readable yet.", _options.WorkerHealthFilePath);
+            return false;
+        }
     }
 
     [SupportedOSPlatform("windows")]

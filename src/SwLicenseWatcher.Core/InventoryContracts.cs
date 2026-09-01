@@ -43,6 +43,11 @@ public sealed record SoftwarePolicyEntry(
     string? Notes,
     bool Enabled);
 
+public sealed record WorkerHealthReport(
+    string ServiceName,
+    string Version,
+    DateTimeOffset ReportedAtUtc);
+
 public sealed record UpdateManifest(
     string TargetServiceName,
     string Version,

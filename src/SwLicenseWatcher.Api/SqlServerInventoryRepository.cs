@@ -12,6 +12,12 @@ public sealed class SqlServerInventoryRepository(SqlServerStorageOptions options
         await connection.OpenAsync(cancellationToken);
         await using var transaction = (SqlTransaction)await connection.BeginTransactionAsync(IsolationLevel.Serializable, cancellationToken);
 
+        if (await IsStaleSnapshotAsync(connection, transaction, snapshot, cancellationToken))
+        {
+            await transaction.RollbackAsync(cancellationToken);
+            return;
+        }
+
         var pcId = await UpsertPcAsync(connection, transaction, snapshot.Pc, snapshot.CollectedAtUtc, null, cancellationToken);
         var software = options.InstalledSoftwareTable;
         await ExecuteAsync(connection, transaction,
@@ -47,6 +53,24 @@ public sealed class SqlServerInventoryRepository(SqlServerStorageOptions options
         var identity = new PcIdentity(heartbeat.DeviceCode, heartbeat.HostName, string.Empty, string.Empty, heartbeat.Version);
         await UpsertPcAsync(connection, transaction, identity, null, heartbeat.ReportedAtUtc, cancellationToken);
         await transaction.CommitAsync(cancellationToken);
+    }
+
+    private async Task<bool> IsStaleSnapshotAsync(
+        SqlConnection connection,
+        SqlTransaction transaction,
+        InventoryIngestionRequest snapshot,
+        CancellationToken cancellationToken)
+    {
+        var table = options.PcTable;
+        var sql = $"""
+            SELECT {Name(table.LastInventoryUtcColumn)}
+            FROM {Name(options.SchemaName, table.TableName)} WITH (UPDLOCK, HOLDLOCK)
+            WHERE {Name(table.DeviceCodeColumn)} = @deviceCode;
+            """;
+        await using var command = new SqlCommand(sql, connection, transaction);
+        command.Parameters.Add(new SqlParameter("@deviceCode", snapshot.Pc.DeviceCode));
+        var stored = await command.ExecuteScalarAsync(cancellationToken);
+        return stored is DateTimeOffset lastInventoryUtc && lastInventoryUtc >= snapshot.CollectedAtUtc;
     }
 
     private async Task<long> UpsertPcAsync(

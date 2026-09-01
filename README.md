@@ -9,7 +9,9 @@
   - `SwLicenseWatcher.Agent.Worker`: 설치 소프트웨어 수집, heartbeat/snapshot 전송 담당
 - **로컬 상태 저장 설계**
   - 전송 실패 스냅샷을 원자적 파일 큐에 저장하고 다음 주기에 재전송
+  - 큐가 모두 전송되기 전에는 새 스냅샷을 전송하지 않고 큐에 적재하여 오래된 전체 스냅샷이 최신 스냅샷을 덮어쓰지 않도록 방지
   - 큐 페이로드는 DPAPI(`LocalMachine` 기본값)로 보호
+  - `LocalState:MaxQueuedSnapshots`, `LocalState:MaxQueueBytes` 할당량 초과 시 가장 오래된 스냅샷부터 제거
 - **서버 측 API**
   - 수집 API: `/api/inventory/snapshots`, `/api/agents/heartbeats`
   - SQL Server 트랜잭션 기반 PC UPSERT 및 설치 소프트웨어 교체 저장
@@ -26,6 +28,7 @@
   - 랜덤 Jitter 기반 업데이트 주기
   - HTTPS 패키지 다운로드, SHA-256 및 WinVerifyTrust Authenticode 검증
   - ZIP 경로 이탈 방지, 서비스 중지/교체/시작, 헬스체크 실패 시 자동 롤백
+  - 헬스체크는 Worker가 직접 기록하는 로컬 health 신호 파일(설치 버전 + 기록 시각)을 롤백 제한 시간 내에서 확인
 - **Native AOT 컴파일**
   - Worker/Watchdog/Api 모두 `PublishAot=true`로 네이티브 바이너리 publish
   - Source-generated 구성 바인딩(`EnableConfigurationBindingGenerator`)과 System.Text.Json source generator를 사용해 리플렉션 없이 동작
@@ -105,7 +108,13 @@ Watchdog__ApiToken=<same-random-token>
 
 운영 SQL Server 연결에서는 서버 인증서를 검증하고 `TrustServerCertificate=False`를 유지하십시오. 최초 실행 전에 인증된 `GET /api/schema/sql` 결과를 검토하여 데이터베이스에 적용해야 합니다.
 
-Watchdog에는 Worker 실행 파일이 설치된 `Watchdog__WorkerInstallDirectory`와 업데이트 후 확인할 `Watchdog__WorkerHealthUrl`도 설정합니다. 업데이트 ZIP에는 정확히 하나의 `SwLicenseWatcher.Agent.Worker.exe`가 있어야 하며 모든 EXE/DLL이 신뢰된 Authenticode 서명을 가져야 합니다.
+기존 스키마를 사용 중이라면 `discovery_scope` 컬럼이 `NVARCHAR(256)`으로 확장되었으므로 다음과 같이 마이그레이션합니다(테이블/컬럼 이름은 설정값에 맞게 변경).
+
+```sql
+ALTER TABLE [inventory].[pc_installed_sw] ALTER COLUMN [discovery_scope] NVARCHAR(256) NOT NULL;
+```
+
+Watchdog에는 Worker 실행 파일이 설치된 `Watchdog__WorkerInstallDirectory`와 업데이트 후 확인할 `Watchdog__WorkerHealthFilePath`도 설정합니다. 이 경로는 Worker의 `Agent__HealthFilePath`와 동일해야 하며, Worker 서비스 계정이 쓰고 Watchdog 서비스 계정이 읽을 수 있어야 합니다. 업데이트 ZIP에는 정확히 하나의 `SwLicenseWatcher.Agent.Worker.exe`가 있어야 하며 모든 EXE/DLL이 신뢰된 Authenticode 서명을 가져야 합니다.
 
 ## 수동 실행 예시
 

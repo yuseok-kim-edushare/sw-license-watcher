@@ -11,7 +11,7 @@ builder.Services.AddOptions<WorkerAgentOptions>()
         "Agent:DeviceCode is required.")
     .Validate(
         options => Uri.TryCreate(options.ServerBaseUrl, UriKind.Absolute, out var uri)
-            && (uri.Scheme == Uri.UriSchemeHttps || uri.IsLoopback),
+            && (uri.Scheme == Uri.UriSchemeHttps || (uri.Scheme == Uri.UriSchemeHttp && uri.IsLoopback)),
         "Agent:ServerBaseUrl must use HTTPS (HTTP is allowed only for loopback diagnostics).")
     .Validate(options => !string.IsNullOrWhiteSpace(options.ApiToken), "Agent:ApiToken is required.")
     .ValidateOnStart();

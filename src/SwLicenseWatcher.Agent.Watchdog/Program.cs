@@ -11,9 +11,11 @@ builder.Services.AddOptions<WatchdogOptions>()
         "Watchdog:DeviceCode is required.")
     .Validate(
         options => Uri.TryCreate(options.ServerBaseUrl, UriKind.Absolute, out var uri)
-            && (uri.Scheme == Uri.UriSchemeHttps || uri.IsLoopback),
+            && (uri.Scheme == Uri.UriSchemeHttps || (uri.Scheme == Uri.UriSchemeHttp && uri.IsLoopback)),
         "Watchdog:ServerBaseUrl must use HTTPS (HTTP is allowed only for loopback diagnostics).")
     .Validate(options => !string.IsNullOrWhiteSpace(options.ApiToken), "Watchdog:ApiToken is required.")
+    .Validate(options => !string.IsNullOrWhiteSpace(options.WorkerHealthFilePath),
+        "Watchdog:WorkerHealthFilePath is required to verify Worker health after an update.")
     .Validate(options => options.MaxPackageBytes > 0 && options.MaxExtractedBytes >= options.MaxPackageBytes,
         "Watchdog package limits must be positive and MaxExtractedBytes must be at least MaxPackageBytes.")
     .ValidateOnStart();

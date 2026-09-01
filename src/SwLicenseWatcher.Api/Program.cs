@@ -51,12 +51,6 @@ var app = builder.Build();
 
 app.Use(async (context, next) =>
 {
-    if (context.Request.Path == "/health")
-    {
-        await next(context);
-        return;
-    }
-
     var security = context.RequestServices.GetRequiredService<IOptions<ApiSecurityOptions>>().Value;
     if (security.RequireHttps && !context.Request.IsHttps &&
         (context.Connection.RemoteIpAddress is null ||
@@ -64,6 +58,12 @@ app.Use(async (context, next) =>
     {
         context.Response.StatusCode = StatusCodes.Status400BadRequest;
         await context.Response.WriteAsync("HTTPS is required.");
+        return;
+    }
+
+    if (context.Request.Path == "/health")
+    {
+        await next(context);
         return;
     }
 

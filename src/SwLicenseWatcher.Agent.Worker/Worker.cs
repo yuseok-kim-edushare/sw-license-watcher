@@ -1,3 +1,5 @@
+using System.Text;
+using System.Text.Json;
 using Microsoft.Extensions.Options;
 using SwLicenseWatcher.Core;
 
@@ -19,7 +21,8 @@ public sealed class Worker(
 
         do
         {
-            await snapshotQueue.FlushAsync(apiClient, stoppingToken);
+            await WriteHealthReportAsync(agentOptions, stoppingToken);
+            var queueDrained = await snapshotQueue.FlushAsync(apiClient, stoppingToken);
             var snapshot = await CollectSnapshotAsync(agentOptions, stoppingToken);
             logger.LogInformation(
                 "Collected {SoftwareCount} software entries via uninstall registry keys. Win32_Product/WMI is intentionally not used.",
@@ -29,7 +32,7 @@ public sealed class Worker(
                 localOptions.QueueDirectory,
                 localOptions.DpapiScope);
 
-            if (!await apiClient.PublishSnapshotAsync(snapshot, stoppingToken))
+            if (!queueDrained || !await apiClient.PublishSnapshotAsync(snapshot, stoppingToken))
             {
                 await snapshotQueue.EnqueueAsync(snapshot, stoppingToken);
             }
@@ -61,6 +64,54 @@ public sealed class Worker(
         while (!stoppingToken.IsCancellationRequested);
     }
 
+    private async Task WriteHealthReportAsync(WorkerAgentOptions agentOptions, CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(agentOptions.HealthFilePath))
+        {
+            return;
+        }
+
+        var report = new WorkerHealthReport("Worker", ResolveInstalledVersion(), DateTimeOffset.UtcNow);
+        var json = JsonSerializer.Serialize(report, InventoryJsonSerializerContext.Default.WorkerHealthReport);
+        var temporaryPath = agentOptions.HealthFilePath + ".tmp";
+        try
+        {
+            var directory = Path.GetDirectoryName(agentOptions.HealthFilePath);
+            if (!string.IsNullOrEmpty(directory))
+            {
+                Directory.CreateDirectory(directory);
+            }
+
+            await File.WriteAllTextAsync(temporaryPath, json, Encoding.UTF8, cancellationToken);
+            File.Move(temporaryPath, agentOptions.HealthFilePath, true);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            logger.LogError(ex, "Unable to publish the Worker health signal to {HealthFilePath}.", agentOptions.HealthFilePath);
+        }
+    }
+
+    private static string ResolveInstalledVersion()
+    {
+        var versionFile = Path.Combine(AppContext.BaseDirectory, ".version");
+        try
+        {
+            if (File.Exists(versionFile))
+            {
+                var installedVersion = File.ReadAllText(versionFile).Trim();
+                if (!string.IsNullOrEmpty(installedVersion))
+                {
+                    return installedVersion;
+                }
+            }
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+        }
+
+        return typeof(Worker).Assembly.GetName().Version?.ToString() ?? "1.0.0";
+    }
+
     private async Task<InventoryIngestionRequest> CollectSnapshotAsync(WorkerAgentOptions agentOptions, CancellationToken cancellationToken)
     {
         var software = await inventoryCollector.CollectAsync(cancellationToken);
@@ -69,7 +120,7 @@ public sealed class Worker(
             Environment.MachineName,
             agentOptions.DomainName,
             Environment.OSVersion.VersionString,
-            typeof(Worker).Assembly.GetName().Version?.ToString() ?? "1.0.0");
+            ResolveInstalledVersion());
 
         return new InventoryIngestionRequest(identity, software, DateTimeOffset.UtcNow);
     }
