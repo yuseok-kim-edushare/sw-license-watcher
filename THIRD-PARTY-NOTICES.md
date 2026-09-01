@@ -4,12 +4,14 @@ sw-license-watcher는 아래의 서드파티 소프트웨어를 사용합니다.
 
 ## NuGet 패키지
 
-| 패키지 | 버전 | 라이선스 | 저작권 | 출처 |
-| --- | --- | --- | --- | --- |
-| Microsoft.Extensions.Hosting | 10.0.11 | MIT | © .NET Foundation and Contributors | https://github.com/dotnet/runtime |
-| Microsoft.Extensions.Hosting.WindowsServices | 10.0.11 | MIT | © .NET Foundation and Contributors | https://github.com/dotnet/runtime |
-| Microsoft.Extensions.Http | 10.0.11 | MIT | © .NET Foundation and Contributors | https://github.com/dotnet/runtime |
-| System.Security.Cryptography.ProtectedData | 10.0.11 | MIT | © .NET Foundation and Contributors | https://github.com/dotnet/runtime |
+이 저장소에 명시된 NuGet 패키지는 버전 정보를 생략합니다. 버전이 포함되면 Dependabot 자동 업데이트 시 이 문서가 오래된 상태로 남기 쉬워서 의도적으로 제외합니다.
+
+| 패키지 | 라이선스 | 저작권 | 출처 |
+| --- | --- | --- | --- |
+| Microsoft.Extensions.Hosting | MIT | © .NET Foundation and Contributors | https://github.com/dotnet/runtime |
+| Microsoft.Extensions.Hosting.WindowsServices | MIT | © .NET Foundation and Contributors | https://github.com/dotnet/runtime |
+| Microsoft.Extensions.Http | MIT | © .NET Foundation and Contributors | https://github.com/dotnet/runtime |
+| System.Security.Cryptography.ProtectedData | MIT | © .NET Foundation and Contributors | https://github.com/dotnet/runtime |
 
 ## 런타임 / 프레임워크
 
