@@ -106,9 +106,47 @@ public class WorkerUpdateManagerTests : IDisposable
         var manager = CreateManager();
 
         var ex = await Assert.ThrowsAsync<InvalidOperationException>(
-            () => manager.ApplyAsync(Manifest(version: "1.2.3", packageUrl: "http://example.local/worker.zip"), CancellationToken.None));
+            () => manager.ApplyAsync(Manifest(version: "1.2.3", rollbackAfterMinutes: 0), CancellationToken.None));
 
-        Assert.Equal("Update packages must use an absolute HTTPS URL.", ex.Message);
+        Assert.Equal("The rollback timeout must be between 1 and 60 minutes.", ex.Message);
+    }
+
+    [Fact]
+    public void IsPlaceholderManifest_is_true_when_sha256_is_not_64_hex_characters()
+    {
+        Assert.True(WorkerUpdateManager.IsPlaceholderManifest(Manifest(sha256: "REPLACE_WITH_RELEASE_SHA256")));
+        Assert.True(WorkerUpdateManager.IsPlaceholderManifest(Manifest(sha256: "abc")));
+    }
+
+    [Fact]
+    public void IsPlaceholderManifest_is_true_when_version_contains_replace_me()
+    {
+        Assert.True(WorkerUpdateManager.IsPlaceholderManifest(Manifest(version: "REPLACE_ME_WORKER_VERSION")));
+        Assert.True(WorkerUpdateManager.IsPlaceholderManifest(Manifest(version: " ")));
+    }
+
+    [Fact]
+    public void IsPlaceholderManifest_is_true_when_package_url_is_not_absolute_https()
+    {
+        Assert.True(WorkerUpdateManager.IsPlaceholderManifest(Manifest(packageUrl: "http://example.local/worker.zip")));
+    }
+
+    [Fact]
+    public void IsPlaceholderManifest_is_false_for_a_complete_https_manifest()
+    {
+        Assert.False(WorkerUpdateManager.IsPlaceholderManifest(Manifest()));
+    }
+
+    [Fact]
+    public async Task ApplyAsync_skips_placeholder_manifests_without_downloading()
+    {
+        var handler = new StaticHandler("unused"u8.ToArray());
+        var manager = CreateManager(handler);
+
+        await manager.ApplyAsync(Manifest(sha256: "REPLACE_WITH_RELEASE_SHA256"), CancellationToken.None);
+        await manager.ApplyAsync(Manifest(version: "REPLACE_ME_WORKER_VERSION"), CancellationToken.None);
+
+        Assert.Equal(0, handler.RequestCount);
     }
 
     [Fact]
@@ -263,6 +301,61 @@ public class WorkerUpdateManagerTests : IDisposable
         File.WriteAllText(Path.Combine(extracted, "nested", WorkerExeName), "two");
         var duplicated = Assert.Throws<InvalidDataException>(() => WorkerUpdateManager.ResolveWorkerPayload(extracted));
         Assert.Equal("The package must contain exactly one Worker executable.", duplicated.Message);
+    }
+
+    [Fact]
+    public void PreserveConfigurationFiles_restores_existing_appsettings_over_the_package_payload()
+    {
+        var install = Path.Combine(_root, "install");
+        var payload = Path.Combine(_root, "payload");
+        var preserve = Path.Combine(_root, "preserve");
+        Directory.CreateDirectory(install);
+        Directory.CreateDirectory(payload);
+        File.WriteAllText(Path.Combine(install, "appsettings.json"), """{"Agent":{"DeviceCode":"pc-prod"}}""");
+        File.WriteAllText(Path.Combine(install, "appsettings.Production.json"), """{"Agent":{"PollInterval":"01:00:00"}}""");
+        File.WriteAllText(Path.Combine(install, "other.json"), "leave-behind");
+        File.WriteAllText(Path.Combine(payload, "appsettings.json"), """{"Agent":{"DeviceCode":"pc-demo-001"}}""");
+        File.WriteAllText(Path.Combine(payload, WorkerExeName), "exe");
+
+        WorkerUpdateManager.PreserveConfigurationFiles(install, preserve);
+        WorkerUpdateManager.TryDeleteDirectory(install);
+        WorkerUpdateManager.CopyDirectory(payload, install);
+        WorkerUpdateManager.RestoreConfigurationFiles(preserve, install);
+
+        Assert.Equal("""{"Agent":{"DeviceCode":"pc-prod"}}""", File.ReadAllText(Path.Combine(install, "appsettings.json")));
+        Assert.Equal("""{"Agent":{"PollInterval":"01:00:00"}}""", File.ReadAllText(Path.Combine(install, "appsettings.Production.json")));
+        Assert.False(File.Exists(Path.Combine(install, "other.json")));
+        Assert.Equal("exe", File.ReadAllText(Path.Combine(install, WorkerExeName)));
+        Assert.False(File.Exists(Path.Combine(preserve, "other.json")));
+    }
+
+    [Fact]
+    public void PreserveConfigurationFiles_leaves_package_appsettings_when_install_has_none()
+    {
+        var install = Path.Combine(_root, "install");
+        var payload = Path.Combine(_root, "payload");
+        var preserve = Path.Combine(_root, "preserve");
+        Directory.CreateDirectory(payload);
+        File.WriteAllText(Path.Combine(payload, "appsettings.json"), """{"dev":true}""");
+        File.WriteAllText(Path.Combine(payload, WorkerExeName), "exe");
+
+        WorkerUpdateManager.PreserveConfigurationFiles(install, preserve);
+        WorkerUpdateManager.CopyDirectory(payload, install);
+        WorkerUpdateManager.RestoreConfigurationFiles(preserve, install);
+
+        Assert.Equal("""{"dev":true}""", File.ReadAllText(Path.Combine(install, "appsettings.json")));
+        Assert.False(Directory.Exists(preserve));
+    }
+
+    [Theory]
+    [InlineData("appsettings.json", true)]
+    [InlineData("appsettings.Production.json", true)]
+    [InlineData("APPSETTINGS.Development.JSON", true)]
+    [InlineData("other.json", false)]
+    [InlineData("appsettingsfoo.json", false)]
+    public void IsProtectedConfigurationFile_matches_appsettings_json_variants(string fileName, bool expected)
+    {
+        Assert.Equal(expected, WorkerUpdateManager.IsProtectedConfigurationFile(fileName));
     }
 
     [Fact]

@@ -27,6 +27,10 @@ public sealed class Worker(
                 var snapshot = await CollectSnapshotAsync(agentOptions, stoppingToken);
                 await WriteHealthReportAsync(agentOptions, stoppingToken);
                 logger.LogInformation(
+                    "Collected inventory for {HostName} running {OperatingSystem}.",
+                    snapshot.Pc.HostName,
+                    snapshot.Pc.OperatingSystem);
+                logger.LogInformation(
                     "Collected {SoftwareCount} software entries via uninstall registry keys. Win32_Product/WMI is intentionally not used.",
                     snapshot.InstalledSoftware.Count);
                 logger.LogInformation(
@@ -34,10 +38,20 @@ public sealed class Worker(
                     localOptions.QueueDirectory,
                     localOptions.DpapiScope);
 
-                if (!queueDrained || await apiClient.PublishSnapshotAsync(snapshot, stoppingToken) == AgentPublishResult.RetryableFailure)
+                var publishResult = AgentPublishResult.RetryableFailure;
+                if (queueDrained)
+                {
+                    publishResult = await apiClient.PublishSnapshotAsync(snapshot, stoppingToken);
+                    if (publishResult == AgentPublishResult.RetryableFailure)
+                    {
+                        await snapshotQueue.EnqueueAsync(snapshot, stoppingToken);
+                    }
+                }
+                else
                 {
                     await snapshotQueue.EnqueueAsync(snapshot, stoppingToken);
                 }
+
                 await apiClient.PublishHeartbeatAsync(
                     new AgentHeartbeat(
                         snapshot.Pc.DeviceCode,
@@ -45,7 +59,7 @@ public sealed class Worker(
                         "Worker",
                         snapshot.Pc.AgentVersion,
                         DateTimeOffset.UtcNow,
-                        "Healthy"),
+                        HeartbeatStatus.Resolve(queueDrained, publishResult)),
                     stoppingToken);
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
@@ -131,7 +145,7 @@ public sealed class Worker(
             agentOptions.DeviceCode,
             Environment.MachineName,
             agentOptions.DomainName,
-            Environment.OSVersion.VersionString,
+            WindowsOsDescription.Resolve(logger),
             ResolveInstalledVersion());
 
         return new InventoryIngestionRequest(identity, software, DateTimeOffset.UtcNow);

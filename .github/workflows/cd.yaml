@@ -47,17 +47,124 @@ jobs:
       - name: Restore dependencies
         run: dotnet restore SwLicenseWatcher.slnx
 
+      - name: Compute next release version
+        shell: pwsh
+        run: |
+          $latestRelease = git tag --list --sort=-version:refname | Where-Object { $_ -match '^\d+\.\d+\.\d+$' } | Select-Object -First 1
+
+          if ($latestRelease) {
+            Write-Output "Latest release version: $latestRelease"
+            echo "latest_release=$latestRelease" >> $env:GITHUB_ENV
+
+            $version = [Version]$latestRelease
+            $newVersionString = '{0}.{1}.{2}' -f $version.Major, $version.Minor, ($version.Build + 1)
+
+            # Allow commit messages like "Update Version To 0.1.2" to override the patch bump.
+            $latestCommitMessages = (git log "$latestRelease..HEAD" --pretty=%B 2>$null)
+            foreach ($line in $latestCommitMessages) {
+              if ($line -match "Update Version To (\d+\.\d+\.\d+)") {
+                $newVersionString = $Matches[1]
+              }
+            }
+          } else {
+            Write-Output "No previous release found. Creating initial release 0.0.1"
+            $newVersionString = "0.0.1"
+          }
+
+          Write-Output "Next release version: $newVersionString"
+          echo "new_release=$newVersionString" >> $env:GITHUB_ENV
+
       - name: Publish Agent Watchdog (win-x64, Native AOT)
-        run: dotnet publish src/SwLicenseWatcher.Agent.Watchdog/SwLicenseWatcher.Agent.Watchdog.csproj -r win-x64 -c Release -o ./publish/agent-watchdog/win-x64
+        shell: pwsh
+        run: dotnet publish src/SwLicenseWatcher.Agent.Watchdog/SwLicenseWatcher.Agent.Watchdog.csproj -r win-x64 -c Release -p:Version=$env:new_release -p:AssemblyVersion=$($env:new_release).0 -p:FileVersion=$($env:new_release).0 -p:InformationalVersion=$env:new_release -o ./publish/agent-watchdog/win-x64
 
       - name: Publish Agent Worker (win-x64, Native AOT)
-        run: dotnet publish src/SwLicenseWatcher.Agent.Worker/SwLicenseWatcher.Agent.Worker.csproj -r win-x64 -c Release -o ./publish/agent-worker/win-x64
+        shell: pwsh
+        run: dotnet publish src/SwLicenseWatcher.Agent.Worker/SwLicenseWatcher.Agent.Worker.csproj -r win-x64 -c Release -p:Version=$env:new_release -p:AssemblyVersion=$($env:new_release).0 -p:FileVersion=$($env:new_release).0 -p:InformationalVersion=$env:new_release -o ./publish/agent-worker/win-x64
 
       - name: Publish Api (win-x64, Native AOT)
-        run: dotnet publish src/SwLicenseWatcher.Api/SwLicenseWatcher.Api.csproj -r win-x64 -c Release -o ./publish/api/win-x64
+        shell: pwsh
+        run: dotnet publish src/SwLicenseWatcher.Api/SwLicenseWatcher.Api.csproj -r win-x64 -c Release -p:Version=$env:new_release -p:AssemblyVersion=$($env:new_release).0 -p:FileVersion=$($env:new_release).0 -p:InformationalVersion=$env:new_release -o ./publish/api/win-x64
 
       - name: Publish Api (win-x64, IIS in-process)
-        run: dotnet publish src/SwLicenseWatcher.Api/SwLicenseWatcher.Api.csproj -r win-x64 -c Release --self-contained false -p:PublishAot=false -p:PublishTrimmed=false -p:UseAppHost=false -o ./publish/api/iis/win-x64
+        shell: pwsh
+        run: dotnet publish src/SwLicenseWatcher.Api/SwLicenseWatcher.Api.csproj -r win-x64 -c Release --self-contained false -p:PublishAot=false -p:PublishTrimmed=false -p:UseAppHost=false -p:Version=$env:new_release -p:AssemblyVersion=$($env:new_release).0 -p:FileVersion=$($env:new_release).0 -p:InformationalVersion=$env:new_release -o ./publish/api/iis/win-x64
+
+      - name: Stamp agent version files
+        shell: pwsh
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:new_release)) {
+            throw "new_release is not set."
+          }
+
+          $utf8NoBom = New-Object System.Text.UTF8Encoding $false
+          foreach ($relative in @("publish\agent-worker\win-x64", "publish\agent-watchdog\win-x64")) {
+            $dir = Join-Path "${{ github.workspace }}" $relative
+            if (!(Test-Path $dir)) {
+              Write-Error "Publish output not found at: $dir"
+              exit 1
+            }
+            $path = Join-Path $dir ".version"
+            [System.IO.File]::WriteAllText($path, $env:new_release, $utf8NoBom)
+            Write-Host "Wrote $path"
+          }
+
+      - name: Detect signing certificate
+        shell: pwsh
+        run: |
+          if ("${{ secrets.SIGNING_CERTIFICATE_PFX_BASE64 }}" -ne "") {
+            echo "HAS_SIGNING_CERT=true" >> $env:GITHUB_ENV
+          } else {
+            echo "HAS_SIGNING_CERT=false" >> $env:GITHUB_ENV
+            Write-Host "No SIGNING_CERTIFICATE_PFX_BASE64 secret. Published binaries are unsigned. Set Updates:Worker:RequireAuthenticode to false, or sign the Worker ZIP contents with a company certificate and re-hash."
+          }
+
+      - name: Sign published binaries
+        if: env.HAS_SIGNING_CERT == 'true'
+        shell: pwsh
+        env:
+          SIGNING_CERTIFICATE_PFX_BASE64: ${{ secrets.SIGNING_CERTIFICATE_PFX_BASE64 }}
+          SIGNING_CERTIFICATE_PASSWORD: ${{ secrets.SIGNING_CERTIFICATE_PASSWORD }}
+          SIGNING_TIMESTAMP_URL: ${{ secrets.SIGNING_TIMESTAMP_URL }}
+        run: |
+          $pfxPath = Join-Path $env:RUNNER_TEMP "signing.pfx"
+          [System.IO.File]::WriteAllBytes($pfxPath, [Convert]::FromBase64String($env:SIGNING_CERTIFICATE_PFX_BASE64))
+
+          $kitsRoot = [Environment]::GetEnvironmentVariable("ProgramFiles(x86)")
+          $signtool = Get-ChildItem -Path (Join-Path $kitsRoot "Windows Kits\10\bin\*\x64\signtool.exe") -ErrorAction SilentlyContinue |
+            Sort-Object { [version]$_.Directory.Parent.Name } -Descending |
+            Select-Object -First 1
+          if ($null -eq $signtool) {
+            throw "signtool.exe was not found under the Windows SDK (Windows Kits\10\bin\*\x64)."
+          }
+
+          $timestampUrl = $env:SIGNING_TIMESTAMP_URL
+          if ([string]::IsNullOrWhiteSpace($timestampUrl)) {
+            $timestampUrl = "http://timestamp.digicert.com"
+          }
+
+          $publishRoot = Join-Path "${{ github.workspace }}" "publish"
+          $binaries = Get-ChildItem -Path $publishRoot -Recurse -File | Where-Object { $_.Extension -in ".exe", ".dll" }
+          if ($binaries.Count -eq 0) {
+            throw "No EXE/DLL files found under publish/ to sign."
+          }
+
+          Write-Host "Signing $($binaries.Count) binaries with $($signtool.FullName)"
+          foreach ($file in $binaries) {
+            & $signtool.FullName sign /f $pfxPath /p $env:SIGNING_CERTIFICATE_PASSWORD /fd SHA256 /tr $timestampUrl /td SHA256 $file.FullName
+            if ($LASTEXITCODE -ne 0) {
+              throw "signtool failed for $($file.FullName) with exit code $LASTEXITCODE."
+            }
+          }
+
+      - name: Remove signing certificate
+        if: always()
+        shell: pwsh
+        run: |
+          $pfxPath = Join-Path $env:RUNNER_TEMP "signing.pfx"
+          if (Test-Path $pfxPath) {
+            Remove-Item -Path $pfxPath -Force
+          }
 
       - name: Prepare release files
         shell: pwsh
@@ -98,34 +205,21 @@ jobs:
           echo "STAGING_DIR=$stagingDir" >> $env:GITHUB_ENV
           echo "RELEASE_ROOT=$releaseRoot" >> $env:GITHUB_ENV
 
-      - name: Get latest release version and generate release notes
+      - name: Generate release notes and packages
         shell: pwsh
         run: |
-          $latestRelease = git tag --list --sort=-version:refname | Where-Object { $_ -match '^\d+\.\d+\.\d+$' } | Select-Object -First 1
+          $newVersionString = $env:new_release
+          if ([string]::IsNullOrWhiteSpace($newVersionString)) {
+            throw "new_release is not set."
+          }
 
+          $latestRelease = $env:latest_release
           if ($latestRelease) {
-            Write-Output "Latest release version: $latestRelease"
-            echo "latest_release=$latestRelease" >> $env:GITHUB_ENV
-
-            $version = [Version]$latestRelease
-            $newVersionString = '{0}.{1}.{2}' -f $version.Major, $version.Minor, ($version.Build + 1)
-
-            # Allow commit messages like "Update Version To 0.1.2" to override the patch bump.
-            $latestCommitMessages = (git log "$latestRelease..HEAD" --pretty=%B 2>$null)
-            foreach ($line in $latestCommitMessages) {
-              if ($line -match "Update Version To (\d+\.\d+\.\d+)") {
-                $newVersionString = $Matches[1]
-              }
-            }
-
             $releaseNotes = "## Changes since $latestRelease`n"
             $releaseNotes += (git log "$latestRelease..HEAD" --oneline) -join "`n"
             $releaseNotes += "`n`n### Files changed`n`n"
             $releaseNotes += (git diff "$latestRelease..HEAD" --compact-summary) -join "`n"
           } else {
-            Write-Output "No previous release found. Creating initial release 0.0.1"
-            $newVersionString = "0.0.1"
-
             $releaseNotes = "## Initial Release v0.0.1`n"
             $releaseNotes += (git log --oneline -20) -join "`n"
             $releaseNotes += "`n`n### Package contents`n`n"
@@ -134,8 +228,6 @@ jobs:
             $releaseNotes += "- api/win-x64/ - ASP.NET Core API Native AOT (Kestrel)`n"
             $releaseNotes += "- api/iis/win-x64/ - ASP.NET Core API for IIS in-process hosting`n"
           }
-
-          echo "new_release=$newVersionString" >> $env:GITHUB_ENV
 
           $zipName = "SwLicenseWatcher-$newVersionString.zip"
           $zipPath = Join-Path $env:RELEASE_ROOT $zipName
@@ -148,8 +240,42 @@ jobs:
           }
           Compress-Archive -Path $renamedStaging -DestinationPath $zipPath -Force
 
+          $workerPublish = Join-Path "${{ github.workspace }}" "publish\agent-worker\win-x64"
+          if (!(Test-Path $workerPublish)) {
+            Write-Error "Worker publish output not found at: $workerPublish"
+            exit 1
+          }
+          $workerZipName = "SwLicenseWatcher.Agent.Worker-$newVersionString.zip"
+          $workerZipPath = Join-Path $env:RELEASE_ROOT $workerZipName
+          if (Test-Path $workerZipPath) {
+            Remove-Item -Path $workerZipPath -Force
+          }
+          Compress-Archive -Path (Join-Path $workerPublish "*") -DestinationPath $workerZipPath -Force
+
+          $combinedSha = (Get-FileHash -Algorithm SHA256 -Path $zipPath).Hash.ToLowerInvariant()
+          $workerSha = (Get-FileHash -Algorithm SHA256 -Path $workerZipPath).Hash.ToLowerInvariant()
+          $sumsPath = Join-Path $env:RELEASE_ROOT "SHA256SUMS.txt"
+          $utf8NoBom = New-Object System.Text.UTF8Encoding $false
+          $sums = "$combinedSha  $zipName`n$workerSha  $workerZipName`n"
+          [System.IO.File]::WriteAllText($sumsPath, $sums, $utf8NoBom)
+
+          $packageUrl = "https://github.com/${{ github.repository }}/releases/download/$newVersionString/$workerZipName"
+          $releaseNotes += "`n`n### Worker self-update package`n`n"
+          $releaseNotes += "- Asset: $workerZipName`n"
+          $releaseNotes += "- SHA-256: $workerSha`n"
+          $releaseNotes += "`nReady-to-paste ``Updates:Worker``:`n`n"
+          $releaseNotes += "``````json`n"
+          $releaseNotes += "{`n"
+          $releaseNotes += "  `"Version`": `"$newVersionString`",`n"
+          $releaseNotes += "  `"PackageUrl`": `"$packageUrl`",`n"
+          $releaseNotes += "  `"Sha256`": `"$workerSha`"`n"
+          $releaseNotes += "}`n"
+          $releaseNotes += "```````n"
+
           echo "zip_path=$zipPath" >> $env:GITHUB_ENV
           echo "zip_name=$zipName" >> $env:GITHUB_ENV
+          echo "worker_zip_path=$workerZipPath" >> $env:GITHUB_ENV
+          echo "sha256sums_path=$sumsPath" >> $env:GITHUB_ENV
 
           $releaseNotes | Out-File -FilePath (Join-Path $env:RELEASE_ROOT "releaseNotes.txt") -Encoding utf8
           $releaseNotesContent = Get-Content -Path (Join-Path $env:RELEASE_ROOT "releaseNotes.txt") -Raw
@@ -160,7 +286,10 @@ jobs:
       - name: Create Release
         uses: softprops/action-gh-release@v3
         with:
-          files: ${{ env.zip_path }}
+          files: |
+            ${{ env.zip_path }}
+            ${{ env.worker_zip_path }}
+            ${{ env.sha256sums_path }}
           tag_name: ${{ env.new_release }}
           name: Release ${{ env.new_release }}
           body: ${{ env.release_notes }}

@@ -1,0 +1,160 @@
+:root {
+  --bg: #f3f5f8;
+  --card: #fff;
+  --text: #1b2430;
+  --muted: #5b6778;
+  --line: #d5dce6;
+  --accent: #0b5cab;
+  --accent-hover: #084a89;
+  --danger: #b42318;
+  --ok: #067647;
+  --warn: #b54708;
+  --row: #eef4fb;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  padding: 0;
+  background: var(--bg);
+  color: var(--text);
+  font: 14px/1.45 "Segoe UI", "Malgun Gothic", sans-serif;
+}
+
+.top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 16px 20px;
+  background: var(--card);
+  border-bottom: 1px solid var(--line);
+}
+
+h1, h2 { margin: 0 0 8px; }
+h1 { font-size: 20px; }
+h2 { font-size: 16px; }
+
+.status, .meta, .hint { color: var(--muted); margin: 0; }
+.hint { margin-top: 8px; font-size: 13px; }
+
+.card, #app-panel {
+  margin: 16px 20px;
+}
+
+.card {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 16px;
+}
+
+.tabs { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
+
+.toolbar, .form-grid, .form-actions, .pager, .drawer-head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: flex-end;
+}
+
+.toolbar, .pager { margin: 8px 0 12px; }
+
+label { display: flex; flex-direction: column; gap: 4px; color: var(--muted); font-size: 12px; }
+label.check { flex-direction: row; align-items: center; gap: 8px; font-size: 14px; color: var(--text); }
+input, select, button {
+  font: inherit;
+  color: var(--text);
+}
+input, select {
+  min-width: 160px;
+  padding: 6px 8px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: #fff;
+}
+button {
+  padding: 7px 12px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: #fff;
+  cursor: pointer;
+}
+button:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
+button:disabled { opacity: 0.5; cursor: default; }
+button.tab.is-active, #query-btn, #policy-save {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+button.tab.is-active:hover, #query-btn:hover, #policy-save:hover {
+  background: var(--accent-hover);
+  color: #fff;
+}
+#policy-delete:hover:not(:disabled), #logout-btn:hover { color: var(--danger); border-color: var(--danger); }
+
+.error { color: var(--danger); margin: 8px 0; }
+.ok { color: var(--ok); }
+.warn { color: var(--warn); }
+
+.form-grid { margin: 12px 0; }
+.form-grid .wide { flex: 1 1 240px; }
+
+table.data {
+  width: 100%;
+  border-collapse: collapse;
+  background: var(--card);
+  border: 1px solid var(--line);
+}
+table.data th, table.data td {
+  text-align: left;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--line);
+  vertical-align: top;
+  max-width: 280px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+table.data th { background: #eef1f5; font-weight: 600; }
+table.data tbody tr:hover { background: var(--row); }
+.empty { padding: 16px; color: var(--muted); }
+
+.linkish {
+  border: 0;
+  padding: 0;
+  background: none;
+  color: var(--accent);
+  text-decoration: underline;
+  cursor: pointer;
+  font: inherit;
+}
+
+.backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(18, 24, 32, 0.35);
+  z-index: 20;
+}
+
+.drawer {
+  position: fixed;
+  top: 0;
+  right: 0;
+  width: min(640px, 100%);
+  height: 100%;
+  background: var(--card);
+  border-left: 1px solid var(--line);
+  z-index: 21;
+  padding: 16px;
+  overflow: auto;
+}
+
+.drawer-head { justify-content: space-between; align-items: center; margin-bottom: 12px; }
+
+#drawer-class-wrap { margin-bottom: 12px; }
+
+@media (max-width: 700px) {
+  input, select { min-width: 120px; }
+  .top, .card, #app-panel { padding-left: 12px; padding-right: 12px; margin-left: 12px; margin-right: 12px; }
+}

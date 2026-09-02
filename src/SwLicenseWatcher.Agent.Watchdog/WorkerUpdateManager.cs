@@ -15,6 +15,7 @@ public sealed class WorkerUpdateManager(
     ILogger<WorkerUpdateManager> logger)
 {
     private readonly WatchdogOptions _options = options.Value;
+    private bool _placeholderLogged;
 
     public async Task ApplyAsync(UpdateManifest manifest, CancellationToken cancellationToken)
     {
@@ -33,6 +34,21 @@ public sealed class WorkerUpdateManager(
         if (File.Exists(currentVersionFile) &&
             string.Equals((await File.ReadAllTextAsync(currentVersionFile, cancellationToken)).Trim(), manifest.Version, StringComparison.Ordinal))
         {
+            return;
+        }
+
+        if (IsPlaceholderManifest(manifest))
+        {
+            if (_placeholderLogged)
+            {
+                logger.LogDebug("Update manifest is not ready yet (placeholder or incomplete values); skipping update check.");
+            }
+            else
+            {
+                logger.LogInformation("Update manifest is not ready yet (placeholder or incomplete values); skipping update check.");
+                _placeholderLogged = true;
+            }
+
             return;
         }
 
@@ -63,6 +79,32 @@ public sealed class WorkerUpdateManager(
             TryDeleteDirectory(operationDirectory);
         }
     }
+
+    internal static bool IsPlaceholderManifest(UpdateManifest manifest)
+    {
+        if (string.IsNullOrWhiteSpace(manifest.Version) ||
+            string.IsNullOrWhiteSpace(manifest.Sha256) ||
+            manifest.Sha256.Length != 64 ||
+            !manifest.Sha256.All(Uri.IsHexDigit))
+        {
+            return true;
+        }
+
+        if (ContainsPlaceholderToken(manifest.Version) ||
+            ContainsPlaceholderToken(manifest.Sha256) ||
+            ContainsPlaceholderToken(manifest.PackageUrl))
+        {
+            return true;
+        }
+
+        return !Uri.TryCreate(manifest.PackageUrl, UriKind.Absolute, out var packageUri) ||
+            packageUri.Scheme != Uri.UriSchemeHttps;
+    }
+
+    private static bool ContainsPlaceholderToken(string? value) =>
+        !string.IsNullOrEmpty(value) &&
+        (value.Contains("REPLACE_ME", StringComparison.OrdinalIgnoreCase) ||
+         value.Contains("REPLACE_WITH", StringComparison.OrdinalIgnoreCase));
 
     internal static void ValidateManifest(UpdateManifest manifest)
     {
@@ -207,18 +249,28 @@ public sealed class WorkerUpdateManager(
         var startedAtUtc = DateTimeOffset.UtcNow;
         try
         {
-            TryDeleteDirectory(backup);
-            if (Directory.Exists(_options.WorkerInstallDirectory))
+            var preservedConfigDirectory = Path.Combine(_options.StagingDirectory, "preserved-config-" + Guid.NewGuid().ToString("N"));
+            try
             {
-                CopyDirectory(_options.WorkerInstallDirectory, backup);
+                TryDeleteDirectory(backup);
+                if (Directory.Exists(_options.WorkerInstallDirectory))
+                {
+                    CopyDirectory(_options.WorkerInstallDirectory, backup);
+                }
+                PreserveConfigurationFiles(_options.WorkerInstallDirectory, preservedConfigDirectory);
+                installReplaced = true;
+                TryDeleteDirectory(_options.WorkerInstallDirectory);
+                CopyDirectory(source, _options.WorkerInstallDirectory);
+                RestoreConfigurationFiles(preservedConfigDirectory, _options.WorkerInstallDirectory);
+                await File.WriteAllTextAsync(Path.Combine(_options.WorkerInstallDirectory, ".version"), version, cancellationToken);
+                await SetServiceStateAsync(service, start: true, cancellationToken);
+                await WaitForHealthAsync(service, version, startedAtUtc, healthTimeout, cancellationToken);
+                logger.LogInformation("Worker service updated successfully to {Version}.", version);
             }
-            installReplaced = true;
-            TryDeleteDirectory(_options.WorkerInstallDirectory);
-            CopyDirectory(source, _options.WorkerInstallDirectory);
-            await File.WriteAllTextAsync(Path.Combine(_options.WorkerInstallDirectory, ".version"), version, cancellationToken);
-            await SetServiceStateAsync(service, start: true, cancellationToken);
-            await WaitForHealthAsync(service, version, startedAtUtc, healthTimeout, cancellationToken);
-            logger.LogInformation("Worker service updated successfully to {Version}.", version);
+            finally
+            {
+                TryDeleteDirectory(preservedConfigDirectory);
+            }
         }
         catch
         {
@@ -346,6 +398,38 @@ public sealed class WorkerUpdateManager(
         foreach (var file in Directory.EnumerateFiles(source, "*", SearchOption.AllDirectories))
         {
             File.Copy(file, Path.Combine(destination, Path.GetRelativePath(source, file)), true);
+        }
+    }
+
+    internal static bool IsProtectedConfigurationFile(string pathOrFileName)
+    {
+        var fileName = Path.GetFileName(pathOrFileName);
+        return fileName.StartsWith("appsettings.", StringComparison.OrdinalIgnoreCase) &&
+            fileName.EndsWith(".json", StringComparison.OrdinalIgnoreCase);
+    }
+
+    internal static void PreserveConfigurationFiles(string installDirectory, string destinationDirectory) =>
+        CopyProtectedConfigurationFiles(installDirectory, destinationDirectory);
+
+    internal static void RestoreConfigurationFiles(string sourceDirectory, string installDirectory) =>
+        CopyProtectedConfigurationFiles(sourceDirectory, installDirectory);
+
+    private static void CopyProtectedConfigurationFiles(string sourceDirectory, string destinationDirectory)
+    {
+        if (!Directory.Exists(sourceDirectory))
+        {
+            return;
+        }
+
+        Directory.CreateDirectory(destinationDirectory);
+        foreach (var file in Directory.EnumerateFiles(sourceDirectory, "appsettings*.json", SearchOption.TopDirectoryOnly))
+        {
+            if (!IsProtectedConfigurationFile(file))
+            {
+                continue;
+            }
+
+            File.Copy(file, Path.Combine(destinationDirectory, Path.GetFileName(file)), overwrite: true);
         }
     }
 

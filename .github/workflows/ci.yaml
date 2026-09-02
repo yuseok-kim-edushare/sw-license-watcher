@@ -65,12 +65,419 @@ jobs:
             Write-Host "No test projects found. Skipping tests."
           }
 
+  aot-publish:
+    runs-on: windows-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Get USERPROFILE and set CACHE_PATH
+        shell: pwsh
+        run: |
+          $userProfile = [System.Environment]::GetEnvironmentVariable("USERPROFILE")
+          $cachePath = Join-Path $userProfile ".nuget\packages"
+          echo "CACHE_PATH=$cachePath" >> $env:GITHUB_ENV
+
+      - name: Cache NuGet packages
+        uses: actions/cache@v6
+        with:
+          path: |
+            ~/.nuget/packages
+            ${{ env.CACHE_PATH }}
+          key: ${{ runner.os }}-nuget-${{ hashFiles('**/*.csproj', '**/*.slnx', '**/Directory.Packages.props') }}
+          restore-keys: |
+            ${{ runner.os }}-nuget-
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v6
+        with:
+          global-json-file: global.json
+
+      - name: Restore
+        run: dotnet restore SwLicenseWatcher.slnx -r win-x64
+
+      - name: Publish Native AOT and IIS (win-x64)
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+
+          function Test-FirstPartyIlMember {
+            # Our own code lives in SwLicenseWatcher.* namespaces, plus top-level-statement
+            # lambdas in Program (e.g. Program.<<Main>$>g__...). Anything else is a NuGet
+            # dependency (Microsoft.Data.SqlClient, Microsoft.Data.SqlTypes, System.Configuration, ...)
+            # whose trim/AOT warnings we cannot fix and only report.
+            param([Parameter(Mandatory)][string]$Member)
+            $prefixes = @('SwLicenseWatcher.', 'Program.', '<Program>', 'Program+')
+            foreach ($prefix in $prefixes) {
+              if ($Member.StartsWith($prefix, [StringComparison]::Ordinal)) {
+                return $true
+              }
+            }
+            return $false
+          }
+
+          function Publish-WithIlWarningGate {
+            param(
+              [Parameter(Mandatory)][string]$Project,
+              [Parameter(Mandatory)][string]$Output,
+              [Parameter(Mandatory)][string]$LogName,
+              [string[]]$ExtraArgs = @()
+            )
+
+            $log = Join-Path $env:RUNNER_TEMP "publish-$LogName.log"
+            $publishArgs = @(
+              'publish', $Project,
+              '-r', 'win-x64',
+              '-c', 'Release',
+              '-o', $Output,
+              '-p:TrimmerSingleWarn=false'
+            ) + $ExtraArgs
+
+            Write-Host "dotnet $($publishArgs -join ' ')"
+            & dotnet @publishArgs 2>&1 | Tee-Object -FilePath $log
+            if ($LASTEXITCODE -ne 0) {
+              Write-Host "::error::dotnet publish failed for $Project with exit code $LASTEXITCODE."
+              exit $LASTEXITCODE
+            }
+
+            $thirdParty = New-Object System.Collections.Generic.List[object]
+            $firstParty = New-Object System.Collections.Generic.List[object]
+            $warningMatches = @(Select-String -Path $log -Pattern 'warning IL\d{4}')
+            foreach ($warningMatch in $warningMatches) {
+              $line = $warningMatch.Line
+              $code = $null
+              $member = $null
+              $isThirdParty = $false
+              if ($line -match 'warning (IL\d{4}): (.+?): ') {
+                $code = $Matches[1]
+                $member = $Matches[2]
+                $isThirdParty = -not (Test-FirstPartyIlMember -Member $member)
+              }
+
+              $entry = [pscustomobject]@{
+                Line   = $line
+                Code   = $code
+                Member = $member
+              }
+              if ($isThirdParty) {
+                $thirdParty.Add($entry) | Out-Null
+              } else {
+                $firstParty.Add($entry) | Out-Null
+              }
+            }
+
+            if ($thirdParty.Count -gt 0) {
+              $warningFile = Join-Path $env:RUNNER_TEMP "il-warnings-$LogName.txt"
+              $thirdParty | ForEach-Object { $_.Line } | Set-Content -LiteralPath $warningFile -Encoding utf8
+
+              $codeCounts = @{}
+              $nsCounts = @{}
+              foreach ($entry in $thirdParty) {
+                $codeKey = $entry.Code
+                if ($codeCounts.ContainsKey($codeKey)) {
+                  $codeCounts[$codeKey] = $codeCounts[$codeKey] + 1
+                } else {
+                  $codeCounts[$codeKey] = 1
+                }
+
+                $dot = $entry.Member.IndexOf('.')
+                if ($dot -gt 0) {
+                  $nsKey = $entry.Member.Substring(0, $dot)
+                } else {
+                  $nsKey = $entry.Member
+                }
+                if ($nsCounts.ContainsKey($nsKey)) {
+                  $nsCounts[$nsKey] = $nsCounts[$nsKey] + 1
+                } else {
+                  $nsCounts[$nsKey] = 1
+                }
+              }
+
+              Write-Host '::group::Third-party IL warnings (informational)'
+              Write-Host ("Total: {0}" -f $thirdParty.Count)
+              Write-Host 'By warning code:'
+              foreach ($item in ($codeCounts.GetEnumerator() | Sort-Object Name)) {
+                Write-Host ("  {0}: {1}" -f $item.Name, $item.Value)
+              }
+              Write-Host 'By top-level namespace:'
+              foreach ($item in ($nsCounts.GetEnumerator() | Sort-Object Name)) {
+                Write-Host ("  {0}: {1}" -f $item.Name, $item.Value)
+              }
+              Write-Host 'Full lines:'
+              foreach ($entry in $thirdParty) {
+                Write-Host $entry.Line
+              }
+              Write-Host '::endgroup::'
+              Write-Host ("::warning::{0} third-party IL trim/AOT warning(s) in {1} (informational; not failing CI)" -f $thirdParty.Count, $Project)
+            }
+
+            if ($firstParty.Count -gt 0) {
+              foreach ($entry in $firstParty) {
+                Write-Host ("::error::{0}" -f $entry.Line)
+              }
+              Write-Host ("::error::{0} first-party IL trim/AOT warning(s) in {1}" -f $firstParty.Count, $Project)
+              exit 1
+            }
+          }
+
+          Publish-WithIlWarningGate `
+            -Project 'src/SwLicenseWatcher.Agent.Watchdog/SwLicenseWatcher.Agent.Watchdog.csproj' `
+            -Output './publish/agent-watchdog/win-x64' `
+            -LogName 'agent-watchdog'
+
+          Publish-WithIlWarningGate `
+            -Project 'src/SwLicenseWatcher.Agent.Worker/SwLicenseWatcher.Agent.Worker.csproj' `
+            -Output './publish/agent-worker/win-x64' `
+            -LogName 'agent-worker'
+
+          Publish-WithIlWarningGate `
+            -Project 'src/SwLicenseWatcher.Api/SwLicenseWatcher.Api.csproj' `
+            -Output './publish/api/win-x64' `
+            -LogName 'api-aot'
+
+          Publish-WithIlWarningGate `
+            -Project 'src/SwLicenseWatcher.Api/SwLicenseWatcher.Api.csproj' `
+            -Output './publish/api/iis/win-x64' `
+            -LogName 'api-iis' `
+            -ExtraArgs @(
+              '--self-contained', 'false',
+              '-p:PublishAot=false',
+              '-p:PublishTrimmed=false',
+              '-p:UseAppHost=false'
+            )
+
+      - name: Assert publish outputs
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $required = @(
+            'publish/agent-worker/win-x64/SwLicenseWatcher.Agent.Worker.exe',
+            'publish/agent-watchdog/win-x64/SwLicenseWatcher.Agent.Watchdog.exe',
+            'publish/api/win-x64/SwLicenseWatcher.Api.exe',
+            'publish/api/iis/win-x64/SwLicenseWatcher.Api.dll',
+            'publish/api/iis/win-x64/web.config'
+          )
+          foreach ($path in $required) {
+            if (-not (Test-Path -LiteralPath $path)) {
+              throw "Expected publish output missing: $path"
+            }
+            Write-Host "Found $path"
+          }
+
+      - name: Smoke-test native binaries
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+
+          function Invoke-NativeSmoke {
+            param(
+              [Parameter(Mandatory)][string]$FilePath,
+              [Parameter(Mandatory)][string[]]$ArgumentList,
+              [Parameter(Mandatory)][string]$WorkingDirectory,
+              [Parameter(Mandatory)][string]$Name,
+              [int]$TimeoutMs = 120000
+            )
+
+            $stdout = Join-Path $env:RUNNER_TEMP "$Name-stdout.log"
+            $stderr = Join-Path $env:RUNNER_TEMP "$Name-stderr.log"
+            Remove-Item -LiteralPath $stdout, $stderr -ErrorAction SilentlyContinue
+
+            $proc = Start-Process -FilePath $FilePath -ArgumentList $ArgumentList -WorkingDirectory $WorkingDirectory `
+              -RedirectStandardOutput $stdout -RedirectStandardError $stderr -PassThru
+            if (-not $proc.WaitForExit($TimeoutMs)) {
+              try { $proc.Kill($true) } catch { Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue }
+              $null = $proc.WaitForExit(10000)
+              Write-Host "=== $Name stdout ==="
+              if (Test-Path -LiteralPath $stdout) { Get-Content -LiteralPath $stdout }
+              Write-Host "=== $Name stderr ==="
+              if (Test-Path -LiteralPath $stderr) { Get-Content -LiteralPath $stderr }
+              throw "$Name did not exit within $($TimeoutMs / 1000)s and was killed."
+            }
+
+            if ($proc.ExitCode -ne 0) {
+              Write-Host "=== $Name stdout ==="
+              if (Test-Path -LiteralPath $stdout) { Get-Content -LiteralPath $stdout }
+              Write-Host "=== $Name stderr ==="
+              if (Test-Path -LiteralPath $stderr) { Get-Content -LiteralPath $stderr }
+              throw "$Name exited with code $($proc.ExitCode)."
+            }
+
+            Write-Host "$Name exited 0."
+          }
+
+          $swlw = Join-Path $env:RUNNER_TEMP 'swlw'
+          $queueDir = Join-Path $swlw 'queue'
+          $healthFile = Join-Path $swlw 'worker-health.json'
+          $stagingDir = Join-Path $swlw 'staging'
+          $backupDir = Join-Path $swlw 'backup'
+          $installDir = Join-Path $swlw 'worker-install'
+          New-Item -ItemType Directory -Force -Path $queueDir, $stagingDir, $backupDir, $installDir | Out-Null
+
+          $workerToken = 'ci-smoke-worker-api-token-00000001'
+          $watchdogToken = 'ci-smoke-watchdog-api-token-000001'
+          $agentToken = 'ci-smoke-agent-token-000000000001'
+          $adminToken = 'ci-smoke-admin-token-000000000001'
+
+          Invoke-NativeSmoke `
+            -FilePath (Join-Path $pwd 'publish/agent-worker/win-x64/SwLicenseWatcher.Agent.Worker.exe') `
+            -WorkingDirectory (Join-Path $pwd 'publish/agent-worker/win-x64') `
+            -Name 'agent-worker' `
+            -ArgumentList @(
+              '--Agent:RunOnceForDiagnostics=true',
+              "--Agent:ApiToken=$workerToken",
+              '--Agent:ServerBaseUrl=http://127.0.0.1:5080',
+              '--Agent:DeviceCode=ci-smoke',
+              "--Agent:HealthFilePath=$healthFile",
+              "--LocalState:QueueDirectory=$queueDir"
+            )
+
+          if (-not (Test-Path -LiteralPath $healthFile)) {
+            throw "Worker health file was not written: $healthFile"
+          }
+          Write-Host "Worker health file written: $healthFile"
+
+          Invoke-NativeSmoke `
+            -FilePath (Join-Path $pwd 'publish/agent-watchdog/win-x64/SwLicenseWatcher.Agent.Watchdog.exe') `
+            -WorkingDirectory (Join-Path $pwd 'publish/agent-watchdog/win-x64') `
+            -Name 'agent-watchdog' `
+            -ArgumentList @(
+              '--Watchdog:RunOnceForDiagnostics=true',
+              "--Watchdog:ApiToken=$watchdogToken",
+              '--Watchdog:ServerBaseUrl=http://127.0.0.1:5080',
+              '--Watchdog:DeviceCode=ci-smoke',
+              "--Watchdog:WorkerHealthFilePath=$healthFile",
+              "--Watchdog:StagingDirectory=$stagingDir",
+              "--Watchdog:BackupDirectory=$backupDir",
+              "--Watchdog:WorkerInstallDirectory=$installDir"
+            )
+
+          $apiDir = Join-Path $pwd 'publish/api/win-x64'
+          $apiExe = Join-Path $apiDir 'SwLicenseWatcher.Api.exe'
+          $apiStdout = Join-Path $env:RUNNER_TEMP 'api-stdout.log'
+          $apiStderr = Join-Path $env:RUNNER_TEMP 'api-stderr.log'
+          Remove-Item -LiteralPath $apiStdout, $apiStderr -ErrorAction SilentlyContinue
+
+          $env:Security__AgentToken = $agentToken
+          $env:Security__AdminToken = $adminToken
+          $env:Storage__SqlServer__ConnectionString = 'Server=127.0.0.1,1;Database=x;User Id=x;Password=x;Encrypt=False;Connect Timeout=1'
+          $env:Kestrel__Endpoints__Http__Url = 'http://127.0.0.1:5080'
+
+          $apiProc = Start-Process -FilePath $apiExe -WorkingDirectory $apiDir `
+            -RedirectStandardOutput $apiStdout -RedirectStandardError $apiStderr -PassThru
+          try {
+            $base = 'http://127.0.0.1:5080'
+            $deadline = (Get-Date).AddSeconds(60)
+            $ready = $false
+            do {
+              if ($apiProc.HasExited) {
+                Write-Host '=== api stdout ==='
+                if (Test-Path -LiteralPath $apiStdout) { Get-Content -LiteralPath $apiStdout }
+                Write-Host '=== api stderr ==='
+                if (Test-Path -LiteralPath $apiStderr) { Get-Content -LiteralPath $apiStderr }
+                throw "API process exited early with code $($apiProc.ExitCode)."
+              }
+
+              try {
+                $manifest = Invoke-WebRequest -Uri "$base/api/updates/worker/manifest" `
+                  -Headers @{ Authorization = "Bearer $agentToken" } `
+                  -UseBasicParsing -TimeoutSec 5
+                if ($manifest.StatusCode -eq 200) {
+                  $ready = $true
+                  break
+                }
+              } catch {
+                Start-Sleep -Seconds 2
+              }
+            } while ((Get-Date) -lt $deadline)
+
+            if (-not $ready) {
+              if ($apiProc.HasExited) {
+                Write-Host "API process exited with code $($apiProc.ExitCode) while waiting to become ready."
+              }
+              Write-Host '=== api stdout ==='
+              if (Test-Path -LiteralPath $apiStdout) { Get-Content -LiteralPath $apiStdout }
+              Write-Host '=== api stderr ==='
+              if (Test-Path -LiteralPath $apiStderr) { Get-Content -LiteralPath $apiStderr }
+              throw 'API did not return 200 from /api/updates/worker/manifest within 60s.'
+            }
+
+            Write-Host 'API manifest endpoint returned 200.'
+
+            $schemaAdmin = Invoke-WebRequest -Uri "$base/api/schema/sql" `
+              -Headers @{ Authorization = "Bearer $adminToken" } `
+              -UseBasicParsing -SkipHttpErrorCheck -TimeoutSec 15
+            if ($schemaAdmin.StatusCode -ne 200) {
+              throw "/api/schema/sql with admin token returned $($schemaAdmin.StatusCode), expected 200."
+            }
+            if ([string]::IsNullOrWhiteSpace($schemaAdmin.Content)) {
+              throw '/api/schema/sql with admin token returned an empty body.'
+            }
+            Write-Host 'API schema endpoint returned 200 with admin token.'
+
+            $schemaAgent = Invoke-WebRequest -Uri "$base/api/schema/sql" `
+              -Headers @{ Authorization = "Bearer $agentToken" } `
+              -UseBasicParsing -SkipHttpErrorCheck -TimeoutSec 15
+            if ($schemaAgent.StatusCode -ne 401) {
+              throw "/api/schema/sql with agent token returned $($schemaAgent.StatusCode), expected 401."
+            }
+            Write-Host 'API schema endpoint returned 401 with agent token.'
+
+            $health = Invoke-WebRequest -Uri "$base/health" -UseBasicParsing -SkipHttpErrorCheck -TimeoutSec 15
+            if ($health.StatusCode -ne 503) {
+              throw "/health returned $($health.StatusCode), expected 503."
+            }
+            Write-Host 'API health endpoint returned 503 (database unreachable).'
+
+            $admin = Invoke-WebRequest -Uri "$base/admin" -UseBasicParsing -SkipHttpErrorCheck -TimeoutSec 15
+            if ($admin.StatusCode -ne 200) {
+              throw "/admin returned $($admin.StatusCode), expected 200 (wwwroot/admin missing from the AOT publish?)."
+            }
+            if ($admin.Headers['Content-Type'] -notmatch 'text/html') {
+              throw "/admin returned Content-Type '$($admin.Headers['Content-Type'])', expected text/html."
+            }
+            if ($admin.Headers['Content-Security-Policy'] -notmatch "default-src 'self'") {
+              throw '/admin response is missing the Content-Security-Policy header.'
+            }
+            Write-Host 'API admin dashboard returned 200 with CSP (no token).'
+
+            if ($apiProc.HasExited) {
+              Write-Host '=== api stdout ==='
+              if (Test-Path -LiteralPath $apiStdout) { Get-Content -LiteralPath $apiStdout }
+              Write-Host '=== api stderr ==='
+              if (Test-Path -LiteralPath $apiStderr) { Get-Content -LiteralPath $apiStderr }
+              throw "API process exited during smoke tests with code $($apiProc.ExitCode)."
+            }
+          } finally {
+            if ($apiProc -and -not $apiProc.HasExited) {
+              try { $apiProc.Kill($true) } catch { Stop-Process -Id $apiProc.Id -Force -ErrorAction SilentlyContinue }
+              $null = $apiProc.WaitForExit(10000)
+            }
+          }
+
+      - name: Upload Native AOT artifacts
+        uses: actions/upload-artifact@v6
+        with:
+          name: native-aot-win-x64
+          path: publish
+          retention-days: 7
+          if-no-files-found: error
+
+      - name: Upload IL warning logs
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: il-warnings
+          path: ${{ runner.temp }}/il-warnings-*.txt
+          if-no-files-found: ignore
+
   trigger-auto-merge:
     runs-on: ubuntu-latest
-    needs: build-test
+    needs: [build-test, aot-publish]
     if: |
       github.event_name == 'pull_request' &&
       needs.build-test.result == 'success' &&
+      needs.aot-publish.result == 'success' &&
       github.actor == 'dependabot[bot]'
     permissions:
       actions: write

@@ -6,7 +6,7 @@
 
 - **Windows Service 2개**
   - `SwLicenseWatcher.Agent.Watchdog`: 자체 패치, SHA-256/Authenticode 검증, 백업/롤백 정책 담당
-  - `SwLicenseWatcher.Agent.Worker`: 설치 소프트웨어 수집, heartbeat/snapshot 전송 담당
+  - `SwLicenseWatcher.Agent.Worker`: 설치 소프트웨어 수집, heartbeat/snapshot 전송 담당. heartbeat `Status`는 스냅샷이 전달되면 `Healthy`, 재시도를 위해 큐에 적재되면 `Degraded`, API가 거절하면 `Rejected`
 - **로컬 상태 저장 설계**
   - 전송 실패 스냅샷을 원자적 파일 큐에 저장하고 다음 주기에 재전송
   - 큐가 모두 전송되기 전에는 새 스냅샷을 전송하지 않고 큐에 적재하여 오래된 전체 스냅샷이 최신 스냅샷을 덮어쓰지 않도록 방지
@@ -16,12 +16,13 @@
   - 수집 API: `/api/inventory/snapshots`, `/api/agents/heartbeats`
   - 조회 API: `/api/inventory/devices`, `/api/inventory/software` (JSON 및 `?format=csv`, `?classification=` 필터)
   - SQL Server 트랜잭션 기반 PC UPSERT 및 설치 소프트웨어 교체 저장(정책 매칭 분류 포함)
-  - Bearer 토큰 인증(에이전트/관리자 역할 분리) 및 원격 요청 HTTPS 강제
+  - Bearer 토큰 인증(에이전트/관리자 역할 분리), 원격 요청 HTTPS 강제, 수집 POST 본문 크기 제한(스냅샷 8 MiB, 하트비트 64 KiB)
   - 헬스체크: `/health`(인증 제외)는 SQL Server에 `SELECT 1`로 연결을 확인하고, 실패 시 503과 일반화된 사유만 반환
   - 설계/스키마 API: `/api/design`, `/api/schema/sql`
   - 업데이트 manifest API: `/api/updates/worker/manifest`
   - 소프트웨어 정책 CRUD: `/api/policies` (목록은 페이징·검색·분류 필터·CSV)
   - 블랙리스트 위반 목록: `/api/violations` (페이징·검색·기간 필터·CSV)
+  - 관리자 대시보드: `/admin` (정적 페이지, 외부 CDN/npm 없음). 페이지는 인증 없이 열리고, 데이터 API는 `AdminToken`이 필요
   - 스냅샷 수신 시 설치 SW를 정책과 매칭해 white/managed/black/unclassified로 분류하고, 분류 결과를 설치 SW 테이블에 저장하며, 블랙리스트 적발을 `company_sw_violation`에 기록
 - **서버 알림 (웹훅 + SMTP)**
   - Teams/Slack incoming webhook(`{ "text": "..." }`)과 SMTP로 운영 알림 전송
@@ -35,6 +36,7 @@
   - `Win32_Product` / WMI 미사용
   - `HKLM(64)`, `HKLM(32)`, `HKCU`, 로드된 `HKEY_USERS` 사용자 SID의 `Uninstall` 키 순회
   - 접근이 거부된 레지스트리 키는 개별 건너뛰기
+  - PC OS 설명은 `HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion`에서 `Windows 11 Pro 24H2 (10.0.26100.4351) x64`처럼 제품명·기능 업데이트·커널 빌드·아키텍처를 조합한다(Windows 11도 ProductName이 Windows 10으로 나오면 빌드 22000 이상으로 보정)
 - **자체 패치 안정성**
   - 랜덤 Jitter 기반 업데이트 주기
   - HTTPS 패키지 다운로드, SHA-256 및 WinVerifyTrust Authenticode 검증
@@ -54,23 +56,27 @@
 - `/deploy/examples`: 서버 API·PC 에이전트용 `appsettings.json` 템플릿
 - `/deploy/scripts`: 서버 API(Kestrel Windows Service) 및 PC Worker·Watchdog 설치/제거 스크립트, SQL Server 스키마 적용 스크립트
 - `/docs/company-deployment.md`: 서버 설정 예시와 회사 PC 클라이언트 배포 절차
-- `.github/workflows/ci.yaml`: CI (빌드/테스트, Dependabot auto-merge 트리거)
+- `.github/workflows/ci.yaml`: CI (빌드/테스트, Native AOT publish 검증, Dependabot auto-merge 트리거)
 - `.github/workflows/auto-merge.yaml`: Dependabot PR 자동 머지
-- `.github/workflows/cd.yaml`: CD (CI 성공 후 publish 산출물 ZIP GitHub Release)
+- `.github/workflows/cd.yaml`: CD (버전 스탬프 후 publish, GitHub Release에 통합 ZIP·Worker 자체 패치 ZIP·SHA256SUMS)
 
 ## CI/CD
 
-- **CI (`ci.yaml`)**: `main` 대상 push/PR에서 `windows-latest`로 솔루션 Restore/Build를 검증합니다. `tests/` 아래 테스트 프로젝트가 있으면 자동으로 실행합니다. Dependabot PR이 CI를 통과하면 auto-merge 워크플로우를 트리거합니다.
-- **CD (`cd.yaml`)**: `main`에서 CI가 성공하면 `Agent.Watchdog`, `Agent.Worker`를 win-x64 **Native AOT**로, API는 **Native AOT(Kestrel)** 와 **IIS in-process** 두 가지로 publish하고 `SwLicenseWatcher-{version}.zip`으로 GitHub Release를 생성합니다. 버전은 최신 태그의 patch 자동 증가이며, 커밋 메시지에 `Update Version To x.y.z`를 포함해 재정의할 수 있습니다.
+- **CI (`ci.yaml`)**: `main` 대상 push/PR에서 `windows-latest`로 솔루션 Restore/Build/Test를 검증합니다. 이와 병행해 win-x64 Native AOT publish를 수행합니다. IL trim/AOT 경고는 자체 코드(SwLicenseWatcher.*)에서 발생하면 실패하고, `Microsoft.Data.SqlClient` 등 서드파티 어셈블리 경고는 요약만 보고합니다. 산출된 native 실행 파일을 smoke-run한 뒤 `native-aot-win-x64` 아티팩트를 업로드합니다. Dependabot PR이 두 job을 모두 통과하면 auto-merge 워크플로우를 트리거합니다.
+- **CD (`cd.yaml`)**: `main`에서 CI가 성공하면 다음 릴리스 버전을 먼저 계산합니다(최신 `x.y.z` 태그 patch+1, 커밋 메시지 `Update Version To x.y.z`로 재정의). 그 버전으로 `Agent.Watchdog`/`Agent.Worker` Native AOT와 API Native AOT(Kestrel)·IIS in-process를 publish하고, 에이전트 폴더에 `.version`을 씁니다. GitHub 시크릿 `SIGNING_CERTIFICATE_PFX_BASE64`·`SIGNING_CERTIFICATE_PASSWORD`(선택 `SIGNING_TIMESTAMP_URL`)가 있으면 EXE/DLL에 Authenticode 서명을 합니다. Release 자산은 `SwLicenseWatcher-{version}.zip`, Worker 자체 패치용 `SwLicenseWatcher.Agent.Worker-{version}.zip`, `SHA256SUMS.txt`입니다.
 
 Release ZIP 구조:
 
 ```
-SwLicenseWatcher-{version}/
-  agent-watchdog/win-x64/   self-update Windows Service
-  agent-worker/win-x64/     inventory 수집 Windows Service
-  api/win-x64/              API Native AOT (Kestrel 단독)
-  api/iis/win-x64/          API IIS in-process (web.config 포함)
+SwLicenseWatcher-{version}.zip
+  SwLicenseWatcher-{version}/
+    agent-watchdog/win-x64/   Watchdog (.version 포함)
+    agent-worker/win-x64/     Worker (.version 포함)
+    api/win-x64/              API Native AOT (Kestrel 단독)
+    api/iis/win-x64/          API IIS in-process (web.config 포함)
+
+SwLicenseWatcher.Agent.Worker-{version}.zip   Worker 자체 패치 (ZIP 루트에 exe·.version)
+SHA256SUMS.txt                                위 ZIP의 SHA-256
 ```
 
 ## 커스터마이징 포인트
@@ -101,7 +107,7 @@ SwLicenseWatcher-{version}/
 
 서버 API는 [deploy/examples/appsettings.api.company.json](deploy/examples/appsettings.api.company.json)(Kestrel) 또는 [deploy/examples/appsettings.api.iis.company.json](deploy/examples/appsettings.api.iis.company.json)(IIS)으로 맞추고, 회사 PC에는 Worker·Watchdog만 설치합니다. 절차는 [docs/company-deployment.md](docs/company-deployment.md)를 참고하세요.
 
-Kestrel(Native AOT, `api/win-x64`)은 서버에서 [deploy/scripts/Install-ApiServer.ps1](deploy/scripts/Install-ApiServer.ps1)로 Windows Service(`SwLicenseWatcher.Api`)로 등록합니다. IIS in-process(`api/iis/win-x64`)는 Hosting Bundle과 사이트 바인딩을 쓰는 수동 절차입니다.
+Kestrel(Native AOT, `api/win-x64`)은 서버에서 [deploy/scripts/Install-ApiServer.ps1](deploy/scripts/Install-ApiServer.ps1)로 Windows Service(`SwLicenseWatcher.Api`)로 등록합니다. API는 `AddWindowsService`로 자신을 호스팅하므로 SCM에서 시작해도 콘텐츠 루트는 실행 파일 폴더이고, Application 이벤트 로그 원본은 `SwLicenseWatcher.Api`입니다. Native AOT slim builder에서도 `UseKestrelHttpsConfiguration`으로 `Kestrel:Endpoints:Https`가 적용됩니다. IIS in-process(`api/iis/win-x64`)는 Hosting Bundle과 사이트 바인딩을 쓰는 수동 절차입니다.
 
 ```powershell
 $agentToken = .\deploy\scripts\New-ApiToken.ps1
@@ -162,6 +168,8 @@ Watchdog__ApiToken=<shared-token>
 
 운영 SQL Server 연결에서는 서버 인증서를 검증하고 `TrustServerCertificate=False`를 유지하십시오.
 
+수집 POST 본문은 경로별로 상한을 둡니다. 스냅샷(`/api/inventory/snapshots`)은 8 MiB, 하트비트(`/api/agents/heartbeats`)는 64 KiB입니다. Native AOT slim builder는 MVC `RequestSizeLimit`를 쓰지 않으므로, 인증 미들웨어가 `IHttpMaxRequestBodySizeFeature`로 적용합니다. 한도를 넘기면 413입니다.
+
 스키마는 `GET /api/schema/sql`이 반환하는 idempotent DDL입니다. SSMS에서 손으로 실행하는 대신 [deploy/scripts/Apply-DbSchema.ps1](deploy/scripts/Apply-DbSchema.ps1)로 적용합니다. `-WhatIf`로 배치를 미리 볼 수 있습니다. API가 아직 기동 전이면 스크립트에 로컬 `.sql` 파일을 넘기거나, 기동 후 API에서 DDL을 받아 적용합니다.
 
 ```powershell
@@ -216,7 +224,7 @@ END
 
 회사 예시 매핑(`company_pc` / `company_stale_heartbeat_notification`)을 쓰는 기존 DB는 테이블·컬럼·FK 이름을 설정값에 맞게 바꿉니다.
 
-Watchdog에는 Worker 실행 파일이 설치된 `Watchdog__WorkerInstallDirectory`와 업데이트 후 확인할 `Watchdog__WorkerHealthFilePath`도 설정합니다. 이 경로는 Worker의 `Agent__HealthFilePath`와 동일해야 하며, Worker 서비스 계정이 쓰고 Watchdog 서비스 계정이 읽을 수 있어야 합니다. 업데이트 ZIP에는 정확히 하나의 `SwLicenseWatcher.Agent.Worker.exe`가 있어야 하며 모든 EXE/DLL이 신뢰된 Authenticode 서명을 가져야 합니다.
+Watchdog에는 Worker 실행 파일이 설치된 `Watchdog__WorkerInstallDirectory`와 업데이트 후 확인할 `Watchdog__WorkerHealthFilePath`도 설정합니다. 이 경로는 Worker의 `Agent__HealthFilePath`와 동일해야 하며, Worker 서비스 계정이 쓰고 Watchdog 서비스 계정이 읽을 수 있어야 합니다. 자체 패치 ZIP(`SwLicenseWatcher.Agent.Worker-{version}.zip`)에는 정확히 하나의 `SwLicenseWatcher.Agent.Worker.exe`가 있어야 하며, Watchdog은 설치 폴더의 `appsettings.json`(및 `appsettings.*.json`)을 유지합니다. `RequireAuthenticode`가 `true`(기본)이면 ZIP의 모든 EXE/DLL이 신뢰된 Authenticode 서명을 가져야 합니다. CD에 서명 시크릿이 없으면 릴리스는 서명되지 않으므로, 회사 인증서로 ZIP 내용을 서명한 뒤 재해시하거나 `Updates:Worker:RequireAuthenticode`를 `false`로 둡니다(비권장).
 
 ## 서버 알림 (웹훅 / SMTP)
 
@@ -304,6 +312,14 @@ API 실행 후:
 페이징 기본값은 JSON `take=100`, CSV `take=10000`이며 최대 10000입니다. `staleAfterHours`는 마지막 heartbeat가 없거나 지정 시간보다 오래된 PC만 남깁니다. `search`는 SQL `LIKE` 와일드카드가 이스케이프된 부분 일치입니다. `classification`은 `white` | `managed` | `black` | `unclassified`이며, 설치 SW 행에 저장된 분류로 필터링합니다(예: `?classification=unclassified`).
 
 스냅샷 접수 `Location`은 `/api/inventory/devices/{deviceCode}`를 가리키며, 이전 경로인 `GET /api/inventory/snapshots/{deviceCode}`도 같은 상세 응답을 반환합니다.
+
+## 관리자 대시보드
+
+브라우저에서 `https://<server>/admin` 으로 관리자 화면을 엽니다. curl이나 CSV 없이 PC 목록, 소프트웨어 집계, 위반, 정책을 조회하고 정책을 만들고 고칠 수 있습니다.
+
+정적 파일(`/admin`, `/admin/`, CSS/JS)은 인증 없이 내려갑니다. 비밀은 없고, 인벤토리·정책 데이터는 모두 `AdminToken`(또는 레거시 `Token`)이 있어야 합니다. 토큰은 브라우저 `sessionStorage`에만 두고, 탭을 닫으면 사라집니다. 쿠키와 `localStorage`는 쓰지 않습니다.
+
+페이지는 외부 CDN·npm 없이 동작하므로 인터넷이 없는 사내망에서도 열립니다. `/admin` 응답에는 `Content-Security-Policy`(self만 허용, 인라인 스크립트/스타일 없음), `X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer`, `Cache-Control: no-store`를 붙입니다.
 
 ## 소프트웨어 정책과 위반
 
