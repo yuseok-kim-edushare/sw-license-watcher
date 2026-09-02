@@ -106,9 +106,47 @@ public class WorkerUpdateManagerTests : IDisposable
         var manager = CreateManager();
 
         var ex = await Assert.ThrowsAsync<InvalidOperationException>(
-            () => manager.ApplyAsync(Manifest(version: "1.2.3", packageUrl: "http://example.local/worker.zip"), CancellationToken.None));
+            () => manager.ApplyAsync(Manifest(version: "1.2.3", rollbackAfterMinutes: 0), CancellationToken.None));
 
-        Assert.Equal("Update packages must use an absolute HTTPS URL.", ex.Message);
+        Assert.Equal("The rollback timeout must be between 1 and 60 minutes.", ex.Message);
+    }
+
+    [Fact]
+    public void IsPlaceholderManifest_is_true_when_sha256_is_not_64_hex_characters()
+    {
+        Assert.True(WorkerUpdateManager.IsPlaceholderManifest(Manifest(sha256: "REPLACE_WITH_RELEASE_SHA256")));
+        Assert.True(WorkerUpdateManager.IsPlaceholderManifest(Manifest(sha256: "abc")));
+    }
+
+    [Fact]
+    public void IsPlaceholderManifest_is_true_when_version_contains_replace_me()
+    {
+        Assert.True(WorkerUpdateManager.IsPlaceholderManifest(Manifest(version: "REPLACE_ME_WORKER_VERSION")));
+        Assert.True(WorkerUpdateManager.IsPlaceholderManifest(Manifest(version: " ")));
+    }
+
+    [Fact]
+    public void IsPlaceholderManifest_is_true_when_package_url_is_not_absolute_https()
+    {
+        Assert.True(WorkerUpdateManager.IsPlaceholderManifest(Manifest(packageUrl: "http://example.local/worker.zip")));
+    }
+
+    [Fact]
+    public void IsPlaceholderManifest_is_false_for_a_complete_https_manifest()
+    {
+        Assert.False(WorkerUpdateManager.IsPlaceholderManifest(Manifest()));
+    }
+
+    [Fact]
+    public async Task ApplyAsync_skips_placeholder_manifests_without_downloading()
+    {
+        var handler = new StaticHandler("unused"u8.ToArray());
+        var manager = CreateManager(handler);
+
+        await manager.ApplyAsync(Manifest(sha256: "REPLACE_WITH_RELEASE_SHA256"), CancellationToken.None);
+        await manager.ApplyAsync(Manifest(version: "REPLACE_ME_WORKER_VERSION"), CancellationToken.None);
+
+        Assert.Equal(0, handler.RequestCount);
     }
 
     [Fact]

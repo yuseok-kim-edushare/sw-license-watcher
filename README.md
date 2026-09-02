@@ -6,7 +6,7 @@
 
 - **Windows Service 2개**
   - `SwLicenseWatcher.Agent.Watchdog`: 자체 패치, SHA-256/Authenticode 검증, 백업/롤백 정책 담당
-  - `SwLicenseWatcher.Agent.Worker`: 설치 소프트웨어 수집, heartbeat/snapshot 전송 담당
+  - `SwLicenseWatcher.Agent.Worker`: 설치 소프트웨어 수집, heartbeat/snapshot 전송 담당. heartbeat `Status`는 스냅샷이 전달되면 `Healthy`, 재시도를 위해 큐에 적재되면 `Degraded`, API가 거절하면 `Rejected`
 - **로컬 상태 저장 설계**
   - 전송 실패 스냅샷을 원자적 파일 큐에 저장하고 다음 주기에 재전송
   - 큐가 모두 전송되기 전에는 새 스냅샷을 전송하지 않고 큐에 적재하여 오래된 전체 스냅샷이 최신 스냅샷을 덮어쓰지 않도록 방지
@@ -35,6 +35,7 @@
   - `Win32_Product` / WMI 미사용
   - `HKLM(64)`, `HKLM(32)`, `HKCU`, 로드된 `HKEY_USERS` 사용자 SID의 `Uninstall` 키 순회
   - 접근이 거부된 레지스트리 키는 개별 건너뛰기
+  - PC OS 설명은 `HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion`에서 `Windows 11 Pro 24H2 (10.0.26100.4351) x64`처럼 제품명·기능 업데이트·커널 빌드·아키텍처를 조합한다(Windows 11도 ProductName이 Windows 10으로 나오면 빌드 22000 이상으로 보정)
 - **자체 패치 안정성**
   - 랜덤 Jitter 기반 업데이트 주기
   - HTTPS 패키지 다운로드, SHA-256 및 WinVerifyTrust Authenticode 검증

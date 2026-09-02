@@ -15,6 +15,7 @@ public sealed class WorkerUpdateManager(
     ILogger<WorkerUpdateManager> logger)
 {
     private readonly WatchdogOptions _options = options.Value;
+    private bool _placeholderLogged;
 
     public async Task ApplyAsync(UpdateManifest manifest, CancellationToken cancellationToken)
     {
@@ -33,6 +34,21 @@ public sealed class WorkerUpdateManager(
         if (File.Exists(currentVersionFile) &&
             string.Equals((await File.ReadAllTextAsync(currentVersionFile, cancellationToken)).Trim(), manifest.Version, StringComparison.Ordinal))
         {
+            return;
+        }
+
+        if (IsPlaceholderManifest(manifest))
+        {
+            if (_placeholderLogged)
+            {
+                logger.LogDebug("Update manifest is not ready yet (placeholder or incomplete values); skipping update check.");
+            }
+            else
+            {
+                logger.LogInformation("Update manifest is not ready yet (placeholder or incomplete values); skipping update check.");
+                _placeholderLogged = true;
+            }
+
             return;
         }
 
@@ -63,6 +79,32 @@ public sealed class WorkerUpdateManager(
             TryDeleteDirectory(operationDirectory);
         }
     }
+
+    internal static bool IsPlaceholderManifest(UpdateManifest manifest)
+    {
+        if (string.IsNullOrWhiteSpace(manifest.Version) ||
+            string.IsNullOrWhiteSpace(manifest.Sha256) ||
+            manifest.Sha256.Length != 64 ||
+            !manifest.Sha256.All(Uri.IsHexDigit))
+        {
+            return true;
+        }
+
+        if (ContainsPlaceholderToken(manifest.Version) ||
+            ContainsPlaceholderToken(manifest.Sha256) ||
+            ContainsPlaceholderToken(manifest.PackageUrl))
+        {
+            return true;
+        }
+
+        return !Uri.TryCreate(manifest.PackageUrl, UriKind.Absolute, out var packageUri) ||
+            packageUri.Scheme != Uri.UriSchemeHttps;
+    }
+
+    private static bool ContainsPlaceholderToken(string? value) =>
+        !string.IsNullOrEmpty(value) &&
+        (value.Contains("REPLACE_ME", StringComparison.OrdinalIgnoreCase) ||
+         value.Contains("REPLACE_WITH", StringComparison.OrdinalIgnoreCase));
 
     internal static void ValidateManifest(UpdateManifest manifest)
     {
