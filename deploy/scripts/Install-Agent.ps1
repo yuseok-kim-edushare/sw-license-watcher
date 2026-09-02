@@ -280,5 +280,10 @@ Start-Service -Name $watchdogServiceName
 (Get-Service -Name $watchdogServiceName).WaitForStatus([System.ServiceProcess.ServiceControllerStatus]::Running, [TimeSpan]::FromSeconds(30))
 
 Write-Host "Services $workerServiceName and $watchdogServiceName are running."
+$workerVersionFile = Join-Path $workerDir ".version"
+if (Test-Path -LiteralPath $workerVersionFile) {
+    $workerVersion = [System.IO.File]::ReadAllText($workerVersionFile).Trim()
+    Write-Host "Installed Worker version: $workerVersion"
+}
 Write-Host "Health file: $healthPath"
 Write-Host "Queue directory: $queueDir"

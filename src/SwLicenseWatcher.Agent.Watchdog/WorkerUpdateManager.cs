@@ -207,18 +207,28 @@ public sealed class WorkerUpdateManager(
         var startedAtUtc = DateTimeOffset.UtcNow;
         try
         {
-            TryDeleteDirectory(backup);
-            if (Directory.Exists(_options.WorkerInstallDirectory))
+            var preservedConfigDirectory = Path.Combine(_options.StagingDirectory, "preserved-config-" + Guid.NewGuid().ToString("N"));
+            try
             {
-                CopyDirectory(_options.WorkerInstallDirectory, backup);
+                TryDeleteDirectory(backup);
+                if (Directory.Exists(_options.WorkerInstallDirectory))
+                {
+                    CopyDirectory(_options.WorkerInstallDirectory, backup);
+                }
+                PreserveConfigurationFiles(_options.WorkerInstallDirectory, preservedConfigDirectory);
+                installReplaced = true;
+                TryDeleteDirectory(_options.WorkerInstallDirectory);
+                CopyDirectory(source, _options.WorkerInstallDirectory);
+                RestoreConfigurationFiles(preservedConfigDirectory, _options.WorkerInstallDirectory);
+                await File.WriteAllTextAsync(Path.Combine(_options.WorkerInstallDirectory, ".version"), version, cancellationToken);
+                await SetServiceStateAsync(service, start: true, cancellationToken);
+                await WaitForHealthAsync(service, version, startedAtUtc, healthTimeout, cancellationToken);
+                logger.LogInformation("Worker service updated successfully to {Version}.", version);
             }
-            installReplaced = true;
-            TryDeleteDirectory(_options.WorkerInstallDirectory);
-            CopyDirectory(source, _options.WorkerInstallDirectory);
-            await File.WriteAllTextAsync(Path.Combine(_options.WorkerInstallDirectory, ".version"), version, cancellationToken);
-            await SetServiceStateAsync(service, start: true, cancellationToken);
-            await WaitForHealthAsync(service, version, startedAtUtc, healthTimeout, cancellationToken);
-            logger.LogInformation("Worker service updated successfully to {Version}.", version);
+            finally
+            {
+                TryDeleteDirectory(preservedConfigDirectory);
+            }
         }
         catch
         {
@@ -346,6 +356,38 @@ public sealed class WorkerUpdateManager(
         foreach (var file in Directory.EnumerateFiles(source, "*", SearchOption.AllDirectories))
         {
             File.Copy(file, Path.Combine(destination, Path.GetRelativePath(source, file)), true);
+        }
+    }
+
+    internal static bool IsProtectedConfigurationFile(string pathOrFileName)
+    {
+        var fileName = Path.GetFileName(pathOrFileName);
+        return fileName.StartsWith("appsettings.", StringComparison.OrdinalIgnoreCase) &&
+            fileName.EndsWith(".json", StringComparison.OrdinalIgnoreCase);
+    }
+
+    internal static void PreserveConfigurationFiles(string installDirectory, string destinationDirectory) =>
+        CopyProtectedConfigurationFiles(installDirectory, destinationDirectory);
+
+    internal static void RestoreConfigurationFiles(string sourceDirectory, string installDirectory) =>
+        CopyProtectedConfigurationFiles(sourceDirectory, installDirectory);
+
+    private static void CopyProtectedConfigurationFiles(string sourceDirectory, string destinationDirectory)
+    {
+        if (!Directory.Exists(sourceDirectory))
+        {
+            return;
+        }
+
+        Directory.CreateDirectory(destinationDirectory);
+        foreach (var file in Directory.EnumerateFiles(sourceDirectory, "appsettings*.json", SearchOption.TopDirectoryOnly))
+        {
+            if (!IsProtectedConfigurationFile(file))
+            {
+                continue;
+            }
+
+            File.Copy(file, Path.Combine(destinationDirectory, Path.GetFileName(file)), overwrite: true);
         }
     }
 

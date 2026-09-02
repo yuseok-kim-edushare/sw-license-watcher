@@ -102,17 +102,13 @@ jobs:
         run: |
           $ErrorActionPreference = 'Stop'
 
-          function Test-ThirdPartyIlMember {
+          function Test-FirstPartyIlMember {
+            # Our own code lives in SwLicenseWatcher.* namespaces, plus top-level-statement
+            # lambdas in Program (e.g. Program.<<Main>$>g__...). Anything else is a NuGet
+            # dependency (Microsoft.Data.SqlClient, Microsoft.Data.SqlTypes, System.Configuration, ...)
+            # whose trim/AOT warnings we cannot fix and only report.
             param([Parameter(Mandatory)][string]$Member)
-            $prefixes = @(
-              'Microsoft.Data.SqlClient.',
-              'Microsoft.SqlServer.',
-              'System.Configuration.',
-              'Microsoft.Identity',
-              'Microsoft.IdentityModel.',
-              'System.IdentityModel.',
-              'Azure.'
-            )
+            $prefixes = @('SwLicenseWatcher.', 'Program.', '<Program>', 'Program+')
             foreach ($prefix in $prefixes) {
               if ($Member.StartsWith($prefix, [StringComparison]::Ordinal)) {
                 return $true
@@ -156,7 +152,7 @@ jobs:
               if ($line -match 'warning (IL\d{4}): (.+?): ') {
                 $code = $Matches[1]
                 $member = $Matches[2]
-                $isThirdParty = Test-ThirdPartyIlMember -Member $member
+                $isThirdParty = -not (Test-FirstPartyIlMember -Member $member)
               }
 
               $entry = [pscustomobject]@{

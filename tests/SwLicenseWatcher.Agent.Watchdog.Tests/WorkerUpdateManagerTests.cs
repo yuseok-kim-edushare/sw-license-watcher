@@ -266,6 +266,61 @@ public class WorkerUpdateManagerTests : IDisposable
     }
 
     [Fact]
+    public void PreserveConfigurationFiles_restores_existing_appsettings_over_the_package_payload()
+    {
+        var install = Path.Combine(_root, "install");
+        var payload = Path.Combine(_root, "payload");
+        var preserve = Path.Combine(_root, "preserve");
+        Directory.CreateDirectory(install);
+        Directory.CreateDirectory(payload);
+        File.WriteAllText(Path.Combine(install, "appsettings.json"), """{"Agent":{"DeviceCode":"pc-prod"}}""");
+        File.WriteAllText(Path.Combine(install, "appsettings.Production.json"), """{"Agent":{"PollInterval":"01:00:00"}}""");
+        File.WriteAllText(Path.Combine(install, "other.json"), "leave-behind");
+        File.WriteAllText(Path.Combine(payload, "appsettings.json"), """{"Agent":{"DeviceCode":"pc-demo-001"}}""");
+        File.WriteAllText(Path.Combine(payload, WorkerExeName), "exe");
+
+        WorkerUpdateManager.PreserveConfigurationFiles(install, preserve);
+        WorkerUpdateManager.TryDeleteDirectory(install);
+        WorkerUpdateManager.CopyDirectory(payload, install);
+        WorkerUpdateManager.RestoreConfigurationFiles(preserve, install);
+
+        Assert.Equal("""{"Agent":{"DeviceCode":"pc-prod"}}""", File.ReadAllText(Path.Combine(install, "appsettings.json")));
+        Assert.Equal("""{"Agent":{"PollInterval":"01:00:00"}}""", File.ReadAllText(Path.Combine(install, "appsettings.Production.json")));
+        Assert.False(File.Exists(Path.Combine(install, "other.json")));
+        Assert.Equal("exe", File.ReadAllText(Path.Combine(install, WorkerExeName)));
+        Assert.False(File.Exists(Path.Combine(preserve, "other.json")));
+    }
+
+    [Fact]
+    public void PreserveConfigurationFiles_leaves_package_appsettings_when_install_has_none()
+    {
+        var install = Path.Combine(_root, "install");
+        var payload = Path.Combine(_root, "payload");
+        var preserve = Path.Combine(_root, "preserve");
+        Directory.CreateDirectory(payload);
+        File.WriteAllText(Path.Combine(payload, "appsettings.json"), """{"dev":true}""");
+        File.WriteAllText(Path.Combine(payload, WorkerExeName), "exe");
+
+        WorkerUpdateManager.PreserveConfigurationFiles(install, preserve);
+        WorkerUpdateManager.CopyDirectory(payload, install);
+        WorkerUpdateManager.RestoreConfigurationFiles(preserve, install);
+
+        Assert.Equal("""{"dev":true}""", File.ReadAllText(Path.Combine(install, "appsettings.json")));
+        Assert.False(Directory.Exists(preserve));
+    }
+
+    [Theory]
+    [InlineData("appsettings.json", true)]
+    [InlineData("appsettings.Production.json", true)]
+    [InlineData("APPSETTINGS.Development.JSON", true)]
+    [InlineData("other.json", false)]
+    [InlineData("appsettingsfoo.json", false)]
+    public void IsProtectedConfigurationFile_matches_appsettings_json_variants(string fileName, bool expected)
+    {
+        Assert.Equal(expected, WorkerUpdateManager.IsProtectedConfigurationFile(fileName));
+    }
+
+    [Fact]
     public void CopyDirectory_copies_nested_files_and_TryDeleteDirectory_removes_the_tree()
     {
         var source = Path.Combine(_root, "install");

@@ -1,0 +1,17 @@
+<Project>
+  <!--
+    The app projects default to PublishAot=true. The test projects reference them with
+    AdditionalProperties="PublishAot=false" (and CI/CD publish the IIS API flavour with
+    -p:PublishAot=false), so during a solution build each of these projects - and Core, which
+    inherits the global property - is built twice in parallel with different properties.
+    Without this file both flavours share the same bin/obj and race on intermediate files
+    (e.g. the StaticWebAssets cache), which surfaces as sporadic "file in use" build errors.
+    Importing this file from the non-AOT branch of a project gives that flavour its own
+    output directories while still sharing obj/project.assets.json from the single restore.
+  -->
+  <PropertyGroup>
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+    <IntermediateOutputPath>obj\$(Configuration)\$(TargetFramework)\noaot\</IntermediateOutputPath>
+    <OutputPath>bin\$(Configuration)\$(TargetFramework)\noaot\</OutputPath>
+  </PropertyGroup>
+</Project>

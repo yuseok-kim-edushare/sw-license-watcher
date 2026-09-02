@@ -46,9 +46,19 @@ Release ZIP의 `api/win-x64`(AOT)와 `api/iis/win-x64`(IIS)는 서버용입니�
 - PC: Windows x64, 관리자 PowerShell 5.1 이상. Native AOT라 대상 PC에 .NET 런타임은 필요 없습니다.
 - 서버 API URL (HTTPS). HTTP는 loopback 진단만 허용됩니다.
 - 서버 `Security:AgentToken`(32자 이상). PC `ApiToken`과 동일. 조회·정책 API는 `Security:AdminToken`을 씁니다. `AgentToken`/`AdminToken`이 비어 있으면 레거시 `Security:Token`이 모든 엔드포인트에 유효합니다.
-- 자체 패치를 쓸 때: 서버가 가리키는 Worker ZIP에 `SwLicenseWatcher.Agent.Worker.exe`가 정확히 하나, EXE/DLL이 신뢰된 Authenticode 서명
+- 자체 패치를 쓸 때: 서버가 가리키는 Worker ZIP(`SwLicenseWatcher.Agent.Worker-{version}.zip`)에 `SwLicenseWatcher.Agent.Worker.exe`가 정확히 하나. `RequireAuthenticode`가 `true`이면 EXE/DLL이 신뢰된 Authenticode 서명
 
-토큰은 저장소에 커밋하지 마세요.
+토큰과 서명용 PFX는 저장소에 커밋하지 마세요.
+
+### GitHub Release 서명 (선택)
+
+CD는 다음 시크릿이 있으면 publish 산출물의 EXE/DLL에 Authenticode 서명을 합니다. 없으면 바이너리는 서명되지 않습니다.
+
+| 시크릿 | 필수 | 설명 |
+| --- | --- | --- |
+| `SIGNING_CERTIFICATE_PFX_BASE64` | 서명할 때 | PFX의 Base64 |
+| `SIGNING_CERTIFICATE_PASSWORD` | 서명할 때 | PFX 암호 |
+| `SIGNING_TIMESTAMP_URL` | | 없으면 `http://timestamp.digicert.com` |
 
 ## 3. 서버 API
 
@@ -248,12 +258,20 @@ powershell.exe -ExecutionPolicy Bypass -File Uninstall-Agent.ps1
 
 ## 6. Worker 자체 패치 (클라이언트 동작)
 
-Watchdog이 서버 `GET /api/updates/worker/manifest`를 읽고 Worker만 교체합니다. 패키지 URL은 HTTPS여야 합니다.
+Watchdog이 서버 `GET /api/updates/worker/manifest`를 읽고 Worker만 교체합니다. 패키지 URL은 HTTPS여야 합니다. Release의 `SwLicenseWatcher.Agent.Worker-{version}.zip`은 ZIP 루트에 Worker 산출물(exe, `.version`, dll)이 있고, 실행 파일은 하나여야 합니다.
 
-운영자가 서버 API `appsettings.json`의 `Updates:Worker`(`Version`, `PackageUrl`, `Sha256`)를 갱신하면, PC의 Watchdog이 `CheckInterval`(+ Jitter) 후에 따라갑니다. ZIP 안에 `SwLicenseWatcher.Agent.Worker.exe`가 하나여야 합니다.
+운영 절차:
+
+1. GitHub Release의 `SHA256SUMS.txt` 또는 릴리스 노트의 `Updates:Worker` 스니펫에서 `Sha256`을 가져옵니다.
+2. Worker ZIP을 회사 HTTPS 서버에 올립니다. PC가 GitHub에 닿으면 릴리스 자산 URL(`https://github.com/<owner>/<repo>/releases/download/{version}/SwLicenseWatcher.Agent.Worker-{version}.zip`)을 그대로 쓸 수 있습니다.
+3. 서버 API `appsettings.json`의 `Updates:Worker`에 `Version`, `PackageUrl`, `Sha256`을 넣습니다. Watchdog은 `CheckInterval`(+ Jitter) 후에 따라갑니다.
+
+Watchdog은 설치 디렉터리를 패키지 내용으로 교체하기 전에 PC의 `appsettings.json`과 `appsettings.*.json`을 보존하고, 복사 후 다시 덮어씁니다. 패키지에 들어 있는 개발용 `appsettings.json`은 이미 설치된 PC에서는 쓰이지 않습니다.
+
+서명이 없는 릴리스(`SIGNING_CERTIFICATE_PFX_BASE64` 없음)는 ZIP 안의 EXE/DLL을 회사 인증서로 서명한 뒤 SHA-256을 다시 계산하거나, `Updates:Worker:RequireAuthenticode`를 `false`로 둡니다. 후자는 권장하지 않습니다.
 
 ```powershell
-(Get-FileHash -Algorithm SHA256 D:\packages\worker-1.0.2.zip).Hash
+(Get-FileHash -Algorithm SHA256 D:\packages\SwLicenseWatcher.Agent.Worker-1.0.2.zip).Hash
 ```
 
 실패 시 Watchdog은 백업에서 Worker를 롤백합니다. API 프로세스 자체는 PC에 없습니다.

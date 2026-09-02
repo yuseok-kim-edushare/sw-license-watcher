@@ -12,6 +12,9 @@
     <IsTransformWebConfigDisabled>true</IsTransformWebConfigDisabled>
   </PropertyGroup>
 
+  <!-- Non-AOT flavour (IIS publish, test references) gets its own bin/obj. See NonAotFlavour.props. -->
+  <Import Project="..\..\NonAotFlavour.props" Condition="'$(PublishAot)' != 'true'" />
+
   <ItemGroup>
     <PackageReference Include="Microsoft.Data.SqlClient" />
     <PackageReference Include="Microsoft.Extensions.Hosting.WindowsServices" />
