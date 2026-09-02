@@ -456,7 +456,7 @@ jobs:
           }
 
       - name: Upload Native AOT artifacts
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: native-aot-win-x64
           path: publish
@@ -465,7 +465,7 @@ jobs:
 
       - name: Upload IL warning logs
         if: always()
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: il-warnings
           path: ${{ runner.temp }}/il-warnings-*.txt
