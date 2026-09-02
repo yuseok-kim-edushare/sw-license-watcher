@@ -102,6 +102,25 @@ jobs:
         run: |
           $ErrorActionPreference = 'Stop'
 
+          function Test-ThirdPartyIlMember {
+            param([Parameter(Mandatory)][string]$Member)
+            $prefixes = @(
+              'Microsoft.Data.SqlClient.',
+              'Microsoft.SqlServer.',
+              'System.Configuration.',
+              'Microsoft.Identity',
+              'Microsoft.IdentityModel.',
+              'System.IdentityModel.',
+              'Azure.'
+            )
+            foreach ($prefix in $prefixes) {
+              if ($Member.StartsWith($prefix, [StringComparison]::Ordinal)) {
+                return $true
+              }
+            }
+            return $false
+          }
+
           function Publish-WithIlWarningGate {
             param(
               [Parameter(Mandatory)][string]$Project,
@@ -126,10 +145,82 @@ jobs:
               exit $LASTEXITCODE
             }
 
-            $warnings = @(Select-String -Path $log -Pattern 'warning IL\d{4}')
-            if ($warnings.Count -gt 0) {
-              Write-Host "::error::IL trim/AOT warnings detected for $Project"
-              $warnings | ForEach-Object { Write-Host $_.Line }
+            $thirdParty = New-Object System.Collections.Generic.List[object]
+            $firstParty = New-Object System.Collections.Generic.List[object]
+            $warningMatches = @(Select-String -Path $log -Pattern 'warning IL\d{4}')
+            foreach ($warningMatch in $warningMatches) {
+              $line = $warningMatch.Line
+              $code = $null
+              $member = $null
+              $isThirdParty = $false
+              if ($line -match 'warning (IL\d{4}): (.+?): ') {
+                $code = $Matches[1]
+                $member = $Matches[2]
+                $isThirdParty = Test-ThirdPartyIlMember -Member $member
+              }
+
+              $entry = [pscustomobject]@{
+                Line   = $line
+                Code   = $code
+                Member = $member
+              }
+              if ($isThirdParty) {
+                $thirdParty.Add($entry) | Out-Null
+              } else {
+                $firstParty.Add($entry) | Out-Null
+              }
+            }
+
+            if ($thirdParty.Count -gt 0) {
+              $warningFile = Join-Path $env:RUNNER_TEMP "il-warnings-$LogName.txt"
+              $thirdParty | ForEach-Object { $_.Line } | Set-Content -LiteralPath $warningFile -Encoding utf8
+
+              $codeCounts = @{}
+              $nsCounts = @{}
+              foreach ($entry in $thirdParty) {
+                $codeKey = $entry.Code
+                if ($codeCounts.ContainsKey($codeKey)) {
+                  $codeCounts[$codeKey] = $codeCounts[$codeKey] + 1
+                } else {
+                  $codeCounts[$codeKey] = 1
+                }
+
+                $dot = $entry.Member.IndexOf('.')
+                if ($dot -gt 0) {
+                  $nsKey = $entry.Member.Substring(0, $dot)
+                } else {
+                  $nsKey = $entry.Member
+                }
+                if ($nsCounts.ContainsKey($nsKey)) {
+                  $nsCounts[$nsKey] = $nsCounts[$nsKey] + 1
+                } else {
+                  $nsCounts[$nsKey] = 1
+                }
+              }
+
+              Write-Host '::group::Third-party IL warnings (informational)'
+              Write-Host ("Total: {0}" -f $thirdParty.Count)
+              Write-Host 'By warning code:'
+              foreach ($item in ($codeCounts.GetEnumerator() | Sort-Object Name)) {
+                Write-Host ("  {0}: {1}" -f $item.Name, $item.Value)
+              }
+              Write-Host 'By top-level namespace:'
+              foreach ($item in ($nsCounts.GetEnumerator() | Sort-Object Name)) {
+                Write-Host ("  {0}: {1}" -f $item.Name, $item.Value)
+              }
+              Write-Host 'Full lines:'
+              foreach ($entry in $thirdParty) {
+                Write-Host $entry.Line
+              }
+              Write-Host '::endgroup::'
+              Write-Host ("::warning::{0} third-party IL trim/AOT warning(s) in {1} (informational; not failing CI)" -f $thirdParty.Count, $Project)
+            }
+
+            if ($firstParty.Count -gt 0) {
+              foreach ($entry in $firstParty) {
+                Write-Host ("::error::{0}" -f $entry.Line)
+              }
+              Write-Host ("::error::{0} first-party IL trim/AOT warning(s) in {1}" -f $firstParty.Count, $Project)
               exit 1
             }
           }
@@ -363,6 +454,14 @@ jobs:
           path: publish
           retention-days: 7
           if-no-files-found: error
+
+      - name: Upload IL warning logs
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: il-warnings
+          path: ${{ runner.temp }}/il-warnings-*.txt
+          if-no-files-found: ignore
 
   trigger-auto-merge:
     runs-on: ubuntu-latest

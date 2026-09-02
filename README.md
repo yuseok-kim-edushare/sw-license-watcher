@@ -60,7 +60,7 @@
 
 ## CI/CD
 
-- **CI (`ci.yaml`)**: `main` 대상 push/PR에서 `windows-latest`로 솔루션 Restore/Build/Test를 검증합니다. 이와 병행해 win-x64 Native AOT publish를 수행하고, IL trim/AOT 경고가 있으면 실패합니다. 산출된 native 실행 파일을 smoke-run한 뒤 `native-aot-win-x64` 아티팩트를 업로드합니다. Dependabot PR이 두 job을 모두 통과하면 auto-merge 워크플로우를 트리거합니다.
+- **CI (`ci.yaml`)**: `main` 대상 push/PR에서 `windows-latest`로 솔루션 Restore/Build/Test를 검증합니다. 이와 병행해 win-x64 Native AOT publish를 수행합니다. IL trim/AOT 경고는 자체 코드(SwLicenseWatcher.*)에서 발생하면 실패하고, `Microsoft.Data.SqlClient` 등 서드파티 어셈블리 경고는 요약만 보고합니다. 산출된 native 실행 파일을 smoke-run한 뒤 `native-aot-win-x64` 아티팩트를 업로드합니다. Dependabot PR이 두 job을 모두 통과하면 auto-merge 워크플로우를 트리거합니다.
 - **CD (`cd.yaml`)**: `main`에서 CI가 성공하면 `Agent.Watchdog`, `Agent.Worker`를 win-x64 **Native AOT**로, API는 **Native AOT(Kestrel)** 와 **IIS in-process** 두 가지로 publish하고 `SwLicenseWatcher-{version}.zip`으로 GitHub Release를 생성합니다. 버전은 최신 태그의 patch 자동 증가이며, 커밋 메시지에 `Update Version To x.y.z`를 포함해 재정의할 수 있습니다.
 
 Release ZIP 구조:
