@@ -16,7 +16,7 @@
   - 수집 API: `/api/inventory/snapshots`, `/api/agents/heartbeats`
   - 조회 API: `/api/inventory/devices`, `/api/inventory/software` (JSON 및 `?format=csv`, `?classification=` 필터)
   - SQL Server 트랜잭션 기반 PC UPSERT 및 설치 소프트웨어 교체 저장(정책 매칭 분류 포함)
-  - Bearer 토큰 인증(에이전트/관리자 역할 분리) 및 원격 요청 HTTPS 강제
+  - Bearer 토큰 인증(에이전트/관리자 역할 분리), 원격 요청 HTTPS 강제, 수집 POST 본문 크기 제한(스냅샷 8 MiB, 하트비트 64 KiB)
   - 헬스체크: `/health`(인증 제외)는 SQL Server에 `SELECT 1`로 연결을 확인하고, 실패 시 503과 일반화된 사유만 반환
   - 설계/스키마 API: `/api/design`, `/api/schema/sql`
   - 업데이트 manifest API: `/api/updates/worker/manifest`
@@ -101,7 +101,7 @@ SwLicenseWatcher-{version}/
 
 서버 API는 [deploy/examples/appsettings.api.company.json](deploy/examples/appsettings.api.company.json)(Kestrel) 또는 [deploy/examples/appsettings.api.iis.company.json](deploy/examples/appsettings.api.iis.company.json)(IIS)으로 맞추고, 회사 PC에는 Worker·Watchdog만 설치합니다. 절차는 [docs/company-deployment.md](docs/company-deployment.md)를 참고하세요.
 
-Kestrel(Native AOT, `api/win-x64`)은 서버에서 [deploy/scripts/Install-ApiServer.ps1](deploy/scripts/Install-ApiServer.ps1)로 Windows Service(`SwLicenseWatcher.Api`)로 등록합니다. IIS in-process(`api/iis/win-x64`)는 Hosting Bundle과 사이트 바인딩을 쓰는 수동 절차입니다.
+Kestrel(Native AOT, `api/win-x64`)은 서버에서 [deploy/scripts/Install-ApiServer.ps1](deploy/scripts/Install-ApiServer.ps1)로 Windows Service(`SwLicenseWatcher.Api`)로 등록합니다. API는 `AddWindowsService`로 자신을 호스팅하므로 SCM에서 시작해도 콘텐츠 루트는 실행 파일 폴더이고, Application 이벤트 로그 원본은 `SwLicenseWatcher.Api`입니다. Native AOT slim builder에서도 `UseKestrelHttpsConfiguration`으로 `Kestrel:Endpoints:Https`가 적용됩니다. IIS in-process(`api/iis/win-x64`)는 Hosting Bundle과 사이트 바인딩을 쓰는 수동 절차입니다.
 
 ```powershell
 $agentToken = .\deploy\scripts\New-ApiToken.ps1
@@ -161,6 +161,8 @@ Watchdog__ApiToken=<shared-token>
 ```
 
 운영 SQL Server 연결에서는 서버 인증서를 검증하고 `TrustServerCertificate=False`를 유지하십시오.
+
+수집 POST 본문은 경로별로 상한을 둡니다. 스냅샷(`/api/inventory/snapshots`)은 8 MiB, 하트비트(`/api/agents/heartbeats`)는 64 KiB입니다. Native AOT slim builder는 MVC `RequestSizeLimit`를 쓰지 않으므로, 인증 미들웨어가 `IHttpMaxRequestBodySizeFeature`로 적용합니다. 한도를 넘기면 413입니다.
 
 스키마는 `GET /api/schema/sql`이 반환하는 idempotent DDL입니다. SSMS에서 손으로 실행하는 대신 [deploy/scripts/Apply-DbSchema.ps1](deploy/scripts/Apply-DbSchema.ps1)로 적용합니다. `-WhatIf`로 배치를 미리 볼 수 있습니다. API가 아직 기동 전이면 스크립트에 로컬 `.sql` 파일을 넘기거나, 기동 후 API에서 DDL을 받아 적용합니다.
 

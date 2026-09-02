@@ -1,12 +1,15 @@
+using Microsoft.AspNetCore.Http.Features;
 using Microsoft.Extensions.Options;
 using SwLicenseWatcher.Api;
 using SwLicenseWatcher.Core;
 
 #if NATIVE_AOT
 var builder = WebApplication.CreateSlimBuilder(args);
+builder.WebHost.UseKestrelHttpsConfiguration();
 #else
 var builder = WebApplication.CreateBuilder(args);
 #endif
+builder.Services.AddWindowsService(options => options.ServiceName = "SwLicenseWatcher.Api");
 builder.Services.ConfigureHttpJsonOptions(options =>
 {
     options.SerializerOptions.TypeInfoResolverChain.Insert(0, ApiJsonSerializerContext.Default);
@@ -130,6 +133,15 @@ app.Use(async (context, next) =>
 
 app.Use(async (context, next) =>
 {
+    if (RequestBodySizeLimits.Resolve(context.Request.Path) is { } maxRequestBodySize)
+    {
+        var feature = context.Features.Get<IHttpMaxRequestBodySizeFeature>();
+        if (feature is { IsReadOnly: false })
+        {
+            feature.MaxRequestBodySize = maxRequestBodySize;
+        }
+    }
+
     var security = context.RequestServices.GetRequiredService<IOptions<ApiSecurityOptions>>().Value;
     if (security.RequireHttps && !context.Request.IsHttps &&
         (context.Connection.RemoteIpAddress is null ||

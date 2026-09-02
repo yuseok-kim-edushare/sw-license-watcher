@@ -87,7 +87,7 @@ $adminToken = .\New-ApiToken.ps1
 
 ### Kestrel (Native AOT) Windows Service
 
-`Install-ApiServer.ps1`이 `api/win-x64`를 `C:\Program Files\SwLicenseWatcher\Api`에 복사하고, `SwLicenseWatcher.Api` 서비스를 자동 시작·실패 시 재시작으로 등록합니다. 회사 템플릿 [appsettings.api.company.json](../deploy/examples/appsettings.api.company.json)에 연결 문자열과 토큰을 넣습니다. 대상 서버에 .NET 런타임은 필요 없습니다.
+`Install-ApiServer.ps1`이 `api/win-x64`를 `C:\Program Files\SwLicenseWatcher\Api`에 복사하고, `SwLicenseWatcher.Api` 서비스를 자동 시작·실패 시 재시작으로 등록합니다. API는 `AddWindowsService`로 SCM에 상태를 보고하고, 서비스로 실행 중이면 Application 이벤트 로그(원본 `SwLicenseWatcher.Api`)에 기록합니다. 콘텐츠 루트는 실행 파일 폴더이므로 `appsettings.json`도 그 위치에서 읽습니다. Native AOT(`CreateSlimBuilder`)에서도 `UseKestrelHttpsConfiguration`이 켜져 있어 회사 템플릿의 `Kestrel:Endpoints:Https`가 적용됩니다. 회사 템플릿 [appsettings.api.company.json](../deploy/examples/appsettings.api.company.json)에 연결 문자열과 토큰을 넣습니다. 대상 서버에 .NET 런타임은 필요 없습니다.
 
 관리자 PowerShell에서:
 
@@ -271,6 +271,7 @@ Watchdog이 서버 `GET /api/updates/worker/manifest`를 읽고 Worker만 교체
 | IIS `500.30` / `500.31` | Hosting Bundle(.NET 10) 설치, 앱 풀 No Managed Code, `api/iis`를 쓰는지(AOT 폴더 아님) |
 | IIS에서 Kestrel 포트 충돌 | IIS용 JSON에 `Kestrel:Endpoints`가 있으면 제거. HTTPS는 사이트 바인딩만 사용 |
 | API 서비스가 바로 종료 | Event Log. 빈/짧은 토큰, AgentToken=AdminToken, 연결 문자열, `Kestrel` 인증서 Subject가 LocalMachine\My와 다른지 |
+| 서비스 시작 1053 오류 | Application 이벤트 로그(원본 `SwLicenseWatcher.Api`). `appsettings.json`이 실행 파일과 같은 폴더(`C:\Program Files\SwLicenseWatcher\Api`)에 있는지, 토큰·연결 문자열·Kestrel HTTPS 인증서를 확인 |
 | `Install-ApiServer.ps1`이 IIS 폴더를 거부 | `api\win-x64`(Native AOT)를 넘기세요. IIS는 위 IIS in-process 절을 따릅니다 |
 
 ```powershell
