@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>소프트웨어 라이선스 감시</title>
+  <link rel="stylesheet" href="/admin/admin.css">
+</head>
+<body>
+  <header class="top">
+    <div>
+      <h1>소프트웨어 라이선스 감시</h1>
+      <p id="status-line" class="status">API: -</p>
+    </div>
+    <button type="button" id="logout-btn" hidden>로그아웃</button>
+  </header>
+
+  <section id="token-panel" class="card" hidden>
+    <h2>관리자 토큰</h2>
+    <p id="token-error" class="error" hidden></p>
+    <form id="token-form">
+      <label>AdminToken
+        <input id="token-input" type="password" name="token" autocomplete="off" required>
+      </label>
+      <button type="submit">저장</button>
+    </form>
+    <p class="hint">토큰은 이 브라우저 탭의 sessionStorage에만 저장됩니다.</p>
+  </section>
+
+  <section id="app-panel" hidden>
+    <nav id="tabs" class="tabs">
+      <button type="button" class="tab is-active" data-tab="devices">PC 목록</button>
+      <button type="button" class="tab" data-tab="software">소프트웨어</button>
+      <button type="button" class="tab" data-tab="violations">위반</button>
+      <button type="button" class="tab" data-tab="policies">정책</button>
+    </nav>
+
+    <div class="toolbar">
+      <label>검색
+        <input id="search-input" type="search" maxlength="256">
+      </label>
+      <label id="stale-filter-wrap">지연(시간)
+        <input id="stale-input" type="number" min="1" step="1">
+      </label>
+      <label id="class-filter-wrap" hidden>분류
+        <select id="class-filter"></select>
+      </label>
+      <label id="since-filter-wrap" hidden>이후
+        <input id="since-input" type="date">
+      </label>
+      <button type="button" id="query-btn">조회</button>
+      <button type="button" id="csv-btn">CSV 다운로드</button>
+    </div>
+
+    <p id="list-error" class="error" hidden></p>
+    <p id="list-meta" class="meta"></p>
+    <div id="table-host"></div>
+    <div id="pager" class="pager">
+      <button type="button" id="prev-btn">이전</button>
+      <span id="page-label"></span>
+      <button type="button" id="next-btn">다음</button>
+    </div>
+
+    <section id="policy-form" class="card" hidden>
+      <h2 id="policy-form-title">정책 생성</h2>
+      <p id="policy-form-error" class="error" hidden></p>
+      <input id="policy-id" type="hidden">
+      <div class="form-grid">
+        <label>제품 이름
+          <input id="policy-product" maxlength="256" required>
+        </label>
+        <label>게시자
+          <input id="policy-publisher" maxlength="256">
+        </label>
+        <label>버전 패턴
+          <input id="policy-version" maxlength="64">
+        </label>
+        <label>분류
+          <select id="policy-classification">
+            <option value="white">white</option>
+            <option value="managed">managed</option>
+            <option value="black" selected>black</option>
+          </select>
+        </label>
+        <label class="wide">메모
+          <input id="policy-notes" maxlength="1024">
+        </label>
+        <label class="check">
+          <input id="policy-enabled" type="checkbox" checked>
+          사용
+        </label>
+      </div>
+      <div class="form-actions">
+        <button type="button" id="policy-save">저장</button>
+        <button type="button" id="policy-new">새로 만들기</button>
+        <button type="button" id="policy-delete" disabled>삭제</button>
+      </div>
+    </section>
+  </section>
+
+  <div id="backdrop" class="backdrop" hidden></div>
+  <aside id="drawer" class="drawer" hidden>
+    <div class="drawer-head">
+      <h2 id="drawer-title">상세</h2>
+      <button type="button" id="drawer-close">닫기</button>
+    </div>
+    <p id="drawer-error" class="error" hidden></p>
+    <label id="drawer-class-wrap" hidden>분류
+      <select id="drawer-class"></select>
+    </label>
+    <div id="drawer-body"></div>
+  </aside>
+
+  <script src="/admin/admin.js"></script>
+</body>
+</html>

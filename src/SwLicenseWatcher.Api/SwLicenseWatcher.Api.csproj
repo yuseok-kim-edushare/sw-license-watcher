@@ -25,6 +25,10 @@
     <InternalsVisibleTo Include="SwLicenseWatcher.Api.Tests" />
   </ItemGroup>
 
+  <ItemGroup>
+    <Content Update="wwwroot\admin\**" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+  </ItemGroup>
+
   <ItemGroup Condition="'$(PublishAot)' == 'true'">
     <Content Update="web.config" CopyToOutputDirectory="Never" CopyToPublishDirectory="Never" />
   </ItemGroup>

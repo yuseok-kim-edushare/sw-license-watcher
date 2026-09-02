@@ -6,6 +6,7 @@ using SwLicenseWatcher.Core;
 #if NATIVE_AOT
 var builder = WebApplication.CreateSlimBuilder(args);
 builder.WebHost.UseKestrelHttpsConfiguration();
+builder.WebHost.UseWebRoot("wwwroot");
 #else
 var builder = WebApplication.CreateBuilder(args);
 #endif
@@ -152,7 +153,7 @@ app.Use(async (context, next) =>
         return;
     }
 
-    if (context.Request.Path == "/health")
+    if (PublicPaths.IsAnonymous(context.Request.Path))
     {
         await next(context);
         return;
@@ -167,6 +168,8 @@ app.Use(async (context, next) =>
 
     await next(context);
 });
+
+app.UseAdminDashboard();
 
 app.MapGet("/", () => Results.Redirect("/api/design"));
 app.MapGet("/health", async (

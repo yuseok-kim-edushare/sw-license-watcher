@@ -120,6 +120,8 @@ Get-Service SwLicenseWatcher.Api
 Invoke-RestMethod -Uri "https://license-watcher.contoso.local/health"
 ```
 
+브라우저에서 `https://license-watcher.contoso.local/admin` 에 접속합니다. 데이터 조회에는 `AdminToken`이 필요합니다.
+
 `-ListenUrl`을 생략하면 템플릿의 `Kestrel:Endpoints:Https:Url`을 유지합니다. `-FirewallPort`를 주면 인바운드 TCP 허용 규칙(`SW License Watcher API`)을 만듭니다. `-ApplySchemaOnStartup`을 주면 기동 시 스키마를 적용합니다.
 
 HTTPS 인증서는 스크립트가 설치하지 않습니다. 서버 인증서를 `LocalMachine\My`에 넣고, `appsettings.json`의 `Kestrel:Endpoints:Https:Certificate:Subject`(예: `CN=license-watcher.contoso.local`)와 맞춥니다. LocalSystem이 개인 키를 읽을 수 있어야 합니다. 진단용으로 콘솔에서 직접 실행할 때만:
@@ -144,7 +146,7 @@ Native AOT는 IIS in-process를 지원하지 않습니다. `api/iis/win-x64`를 
 3. 사이트를 만들고 실제 경로를 `api/iis/win-x64` 폴더로 지정합니다. HTTPS 바인딩과 인증서는 IIS에서 설정합니다.
 4. [appsettings.api.iis.company.json](../deploy/examples/appsettings.api.iis.company.json)을 해당 폴더의 `appsettings.json`으로 복사하고 토큰·연결 문자열을 넣습니다. `Kestrel:Endpoints`는 넣지 않습니다.
 5. 게시 산출물의 `web.config`는 `hostingModel="InProcess"`, `processPath="dotnet"`, `arguments=".\SwLicenseWatcher.Api.dll"`입니다. stdout 로그를 쓰려면 `stdoutLogEnabled="true"`로 바꾸고 `logs` 폴더를 만듭니다.
-6. 풀을 재순환한 뒤 사이트 URL로 `/health`를 확인합니다.
+6. 풀을 재순환한 뒤 사이트 URL로 `/health`를 확인하고, 브라우저에서 `/admin` 대시보드가 열리는지 봅니다.
 
 IIS가 TLS를 종료하므로 에이전트의 `ServerBaseUrl`은 사이트 HTTPS 주소입니다.
 
