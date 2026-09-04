@@ -53,17 +53,7 @@ jobs:
         run: dotnet build src/SwLicenseWatcher.Api/SwLicenseWatcher.Api.csproj -c Release -p:PublishAot=false --no-restore
 
       - name: Test
-        shell: pwsh
-        run: |
-          $testProjects = Get-ChildItem -Path tests -Recurse -Filter "*.csproj" -ErrorAction SilentlyContinue
-          if ($testProjects) {
-            foreach ($proj in $testProjects) {
-              dotnet test $proj.FullName -c Release --no-restore --logger "console;verbosity=normal"
-              if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-            }
-          } else {
-            Write-Host "No test projects found. Skipping tests."
-          }
+        run: dotnet test SwLicenseWatcher.slnx -c Release --no-restore
 
   aot-publish:
     runs-on: windows-latest
