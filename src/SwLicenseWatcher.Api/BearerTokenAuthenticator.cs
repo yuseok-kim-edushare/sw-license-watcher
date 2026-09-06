@@ -34,7 +34,8 @@ public static class BearerTokenAuthenticator
     internal static bool IsAgentEndpoint(PathString path) =>
         path.Equals("/api/inventory/snapshots", StringComparison.OrdinalIgnoreCase) |
         path.Equals("/api/agents/heartbeats", StringComparison.OrdinalIgnoreCase) |
-        path.Equals("/api/updates/worker/manifest", StringComparison.OrdinalIgnoreCase);
+        path.Equals("/api/updates/worker/manifest", StringComparison.OrdinalIgnoreCase) |
+        path.StartsWithSegments("/api/agents/uninstall-requests", StringComparison.OrdinalIgnoreCase);
 
     private static bool MatchesConfiguredToken(byte[] suppliedHash, string expectedToken)
     {

@@ -94,6 +94,7 @@ SHA256SUMS.txt                                위 ZIP의 SHA-256
 - `SoftwarePolicyTable.ClassificationColumn`
 - `SoftwareViolationTable.TableName`
 - `StaleHeartbeatNotificationTable.TableName`
+- `UninstallRequestTable.TableName`
 
 현재 기본 예시는 다음처럼 커스텀되어 있습니다.
 
@@ -102,6 +103,7 @@ SHA256SUMS.txt                                위 ZIP의 SHA-256
 - 정책 테이블: `company_sw_policy`
 - 위반 테이블: `company_sw_violation`
 - 하트비트 두절 알림 상태 테이블: `company_stale_heartbeat_notification`
+- 제거 요청 테이블: `company_pc_uninstall_request`
 
 ## 회사 배포
 

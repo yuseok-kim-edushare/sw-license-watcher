@@ -254,6 +254,7 @@ app.MapPost("/api/agents/heartbeats", async (
 
 app.MapInventoryQuery();
 app.MapPolicyQuery();
+app.MapUninstallRequests();
 
 app.MapGet("/api/policies/{id:long}", async (long id, SqlServerInventoryRepository repository, CancellationToken cancellationToken) =>
 {

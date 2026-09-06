@@ -218,7 +218,11 @@ Watchdog은 설치 폴더의 `appsettings.json`을 패치 후에도 유지합니
 제거:
 
 ```powershell
-.\deploy\scripts\Uninstall-Agent.ps1 -RemoveState
+.\deploy\scripts\Uninstall-Agent.ps1 `
+  -ServerBaseUrl "http://127.0.0.1:5080" `
+  -ApiToken $agentToken `
+  -RemoveState
+# /admin 제거 요청을 승인한 뒤에만 서비스가 삭제됩니다.
 # IIS 사이트·앱 풀은 관리자에서 수동 삭제
 ```
 

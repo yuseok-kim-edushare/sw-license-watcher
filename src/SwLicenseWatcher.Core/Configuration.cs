@@ -162,6 +162,8 @@ public sealed class SqlServerStorageOptions
     public SoftwareViolationTableOptions SoftwareViolationTable { get; set; } = new();
 
     public StaleHeartbeatNotificationTableOptions StaleHeartbeatNotificationTable { get; set; } = new();
+
+    public UninstallRequestTableOptions UninstallRequestTable { get; set; } = new();
 }
 
 public sealed class PcTableOptions
@@ -261,6 +263,29 @@ public sealed class StaleHeartbeatNotificationTableOptions
     public string PcForeignKeyColumn { get; set; } = "pc_id";
 
     public string NotifiedAtUtcColumn { get; set; } = "notified_at_utc";
+}
+
+public sealed class UninstallRequestTableOptions
+{
+    public string TableName { get; set; } = "pc_uninstall_request";
+
+    public string PrimaryKeyColumn { get; set; } = "uninstall_request_id";
+
+    public string PcForeignKeyColumn { get; set; } = "pc_id";
+
+    public string StatusColumn { get; set; } = "status";
+
+    public string RequestedAtUtcColumn { get; set; } = "requested_at_utc";
+
+    public string ApprovedAtUtcColumn { get; set; } = "approved_at_utc";
+
+    public string ConsumedAtUtcColumn { get; set; } = "consumed_at_utc";
+
+    public string ExpiresAtUtcColumn { get; set; } = "expires_at_utc";
+
+    public string CodeHashColumn { get; set; } = "code_hash";
+
+    public string CodeColumn { get; set; } = "code";
 }
 
 public sealed class NotificationOptions

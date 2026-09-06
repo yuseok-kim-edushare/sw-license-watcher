@@ -16,6 +16,7 @@ public sealed class SqlServerSchemaScriptBuilder
         var policy = options.SoftwarePolicyTable;
         var violation = options.SoftwareViolationTable;
         var staleHeartbeat = options.StaleHeartbeatNotificationTable;
+        var uninstall = options.UninstallRequestTable;
 
         var sql = new StringBuilder();
         sql.AppendLine($"IF SCHEMA_ID(N'{schemaLiteral}') IS NULL EXEC(N'CREATE SCHEMA [{schemaCommandIdentifier}]');");
@@ -89,10 +90,27 @@ public sealed class SqlServerSchemaScriptBuilder
         sql.AppendLine(");");
         sql.AppendLine("END");
         sql.AppendLine();
+        AppendTableIfMissing(sql, schema, uninstall.TableName);
+        sql.AppendLine($"CREATE TABLE [{schema}].[{Escape(uninstall.TableName)}] (");
+        sql.AppendLine($"    [{Escape(uninstall.PrimaryKeyColumn)}] BIGINT IDENTITY(1,1) NOT NULL PRIMARY KEY,");
+        sql.AppendLine($"    [{Escape(uninstall.PcForeignKeyColumn)}] BIGINT NOT NULL,");
+        sql.AppendLine($"    [{Escape(uninstall.StatusColumn)}] NVARCHAR(16) NOT NULL,");
+        sql.AppendLine($"    [{Escape(uninstall.RequestedAtUtcColumn)}] DATETIMEOFFSET NOT NULL,");
+        sql.AppendLine($"    [{Escape(uninstall.ApprovedAtUtcColumn)}] DATETIMEOFFSET NULL,");
+        sql.AppendLine($"    [{Escape(uninstall.ConsumedAtUtcColumn)}] DATETIMEOFFSET NULL,");
+        sql.AppendLine($"    [{Escape(uninstall.ExpiresAtUtcColumn)}] DATETIMEOFFSET NULL,");
+        sql.AppendLine($"    [{Escape(uninstall.CodeHashColumn)}] NVARCHAR(64) NULL,");
+        sql.AppendLine($"    [{Escape(uninstall.CodeColumn)}] NVARCHAR(16) NULL,");
+        sql.AppendLine($"    CONSTRAINT [{Escape(BuildIdentifier("FK", uninstall.TableName, pc.TableName))}] FOREIGN KEY ([{Escape(uninstall.PcForeignKeyColumn)}]) REFERENCES [{schema}].[{Escape(pc.TableName)}]([{Escape(pc.PrimaryKeyColumn)}]) ON DELETE CASCADE");
+        sql.AppendLine(");");
+        sql.AppendLine("END");
+        sql.AppendLine();
         AppendIndexIfMissing(sql, schema, installedSoftware.TableName, installedSoftware.PcForeignKeyColumn);
         AppendIndexIfMissing(sql, schema, installedSoftware.TableName, installedSoftware.ClassificationColumn);
         AppendIndexIfMissing(sql, schema, policy.TableName, policy.ClassificationColumn);
         AppendIndexIfMissing(sql, schema, violation.TableName, violation.PolicyForeignKeyColumn);
+        AppendIndexIfMissing(sql, schema, uninstall.TableName, uninstall.PcForeignKeyColumn);
+        AppendIndexIfMissing(sql, schema, uninstall.TableName, uninstall.StatusColumn);
         return sql.ToString();
     }
 
@@ -162,7 +180,12 @@ public static class SqlIdentifierValidator
             options.SoftwareViolationTable.PublisherColumn, options.SoftwareViolationTable.DetectedAtUtcColumn,
             options.SoftwareViolationTable.LastSeenAtUtcColumn,
             options.StaleHeartbeatNotificationTable.TableName, options.StaleHeartbeatNotificationTable.PrimaryKeyColumn,
-            options.StaleHeartbeatNotificationTable.PcForeignKeyColumn, options.StaleHeartbeatNotificationTable.NotifiedAtUtcColumn
+            options.StaleHeartbeatNotificationTable.PcForeignKeyColumn, options.StaleHeartbeatNotificationTable.NotifiedAtUtcColumn,
+            options.UninstallRequestTable.TableName, options.UninstallRequestTable.PrimaryKeyColumn,
+            options.UninstallRequestTable.PcForeignKeyColumn, options.UninstallRequestTable.StatusColumn,
+            options.UninstallRequestTable.RequestedAtUtcColumn, options.UninstallRequestTable.ApprovedAtUtcColumn,
+            options.UninstallRequestTable.ConsumedAtUtcColumn, options.UninstallRequestTable.ExpiresAtUtcColumn,
+            options.UninstallRequestTable.CodeHashColumn, options.UninstallRequestTable.CodeColumn
         };
 
         if (identifiers.Any(identifier => !IsValid(identifier)))

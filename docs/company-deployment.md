@@ -78,7 +78,7 @@ API는 서버에서만 호스팅합니다. PC 에이전트 설치 대상이 아�
 | `Security:Token` | 레거시 | 32자 이상. Agent/Admin이 비어 있으면 모든 엔드포인트 |
 | `Security:RequireHttps` | | 운영은 `true`. 원격 HTTP는 거부, loopback HTTP는 허용 |
 | `Storage:SqlServer:ConnectionString` | 예 | `TrustServerCertificate=False` 권장 |
-| `Storage:SqlServer:SchemaName` 및 테이블/컬럼 | 예 | 기본 예시는 `inventory.company_pc`, `inventory.company_stale_heartbeat_notification` 등. 식별자는 영문·숫자·밑줄만 |
+| `Storage:SqlServer:SchemaName` 및 테이블/컬럼 | 예 | 기본 예시는 `inventory.company_pc`, `inventory.company_stale_heartbeat_notification`, `inventory.company_pc_uninstall_request` 등. 식별자는 영문·숫자·밑줄만 |
 | `Database:ApplySchemaOnStartup` | | 기본 `false`. `true`면 API 기동 시 idempotent DDL을 적용하고, 실패하면 기동하지 않음 |
 | `Updates:Worker:PackageUrl` | 예 | 절대 URI. Watchdog 다운로드는 **HTTPS**만 허용 |
 | `Updates:Worker:Sha256` | | 64자 hex. 첫 패키지 전까지 플레이스홀더라도 API는 기동함 |
@@ -250,13 +250,15 @@ MSI는 제공하지 않습니다. Win32 앱 설치 명령으로 스크립트를 
 powershell.exe -ExecutionPolicy Bypass -File Install-Agent.ps1 -SourcePath D:\SwLicenseWatcher-1.0.1 -ServerBaseUrl https://license-watcher.contoso.local -ApiToken <token>
 ```
 
-제거:
+제거 키는 설치본에 없습니다. PC가 `POST /api/agents/uninstall-requests`로 요청하면 `/admin`의 **제거 요청** 탭에서 승인한 뒤에야 서버가 일회용 코드를 그 PC에 발급합니다. `Uninstall-Agent.ps1`은 코드를 소비한 뒤에만 서비스를 지웁니다. 승인 없이 설정 앱에서 지우면 그대로 남습니다. `sc.exe delete`로 우회하면 서버에는 하트비트 두절로 남습니다.
 
 ```powershell
-powershell.exe -ExecutionPolicy Bypass -File Uninstall-Agent.ps1
+powershell.exe -ExecutionPolicy Bypass -File Uninstall-Agent.ps1 `
+  -ServerBaseUrl https://license-watcher.contoso.local `
+  -ApiToken <token>
 ```
 
-큐와 백업까지 지울 때만 `-RemoveState`를 붙입니다.
+`-DeviceCode`를 생략하면 컴퓨터 이름을 씁니다. 큐와 백업까지 지울 때만 `-RemoveState`를 붙입니다.
 
 ## 6. Worker 자체 패치 (클라이언트 동작)
 
@@ -297,8 +299,8 @@ Watchdog은 설치 디렉터리를 패키지 내용으로 교체하기 전에 PC
 ```powershell
 .\Uninstall-ApiServer.ps1                         # API 서비스만
 .\Uninstall-ApiServer.ps1 -RemoveFiles -RemoveFirewall
-.\Uninstall-Agent.ps1                             # 서비스와 Program Files 에이전트만
-.\Uninstall-Agent.ps1 -RemoveState                # 큐·헬스·staging·backup까지
+.\Uninstall-Agent.ps1 -ServerBaseUrl https://license-watcher.contoso.local -ApiToken $agentToken
+.\Uninstall-Agent.ps1 -ServerBaseUrl https://license-watcher.contoso.local -ApiToken $agentToken -RemoveState
 ```
 
 ## 설치 경로

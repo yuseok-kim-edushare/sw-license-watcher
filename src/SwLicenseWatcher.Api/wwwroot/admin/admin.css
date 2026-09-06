@@ -120,6 +120,9 @@ table.data th { background: #eef1f5; font-weight: 600; }
 table.data tbody tr:hover { background: var(--row); }
 .empty { padding: 16px; color: var(--muted); }
 
+.row-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+button.dangerish:hover:not(:disabled) { color: var(--danger); border-color: var(--danger); }
+
 .linkish {
   border: 0;
   padding: 0;

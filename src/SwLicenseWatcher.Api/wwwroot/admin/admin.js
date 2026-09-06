@@ -271,6 +271,8 @@ function applyTabFilters() {
   setHidden($("class-filter-wrap"), tab !== "software" && tab !== "policies");
   setHidden($("since-filter-wrap"), tab !== "violations");
   setHidden($("policy-form"), tab !== "policies");
+  setHidden($("uninstall-hint"), tab !== "uninstall");
+  setHidden($("csv-btn"), tab === "uninstall");
   fillSelect($("class-filter"), tab === "policies" ? POLICY_CLASSES : SOFTWARE_CLASSES, true);
 }
 
@@ -355,6 +357,8 @@ async function loadList() {
       await loadSoftware();
     } else if (state.tab === "violations") {
       await loadViolations();
+    } else if (state.tab === "uninstall") {
+      await loadUninstallRequests();
     } else {
       await loadPolicies();
     }
@@ -417,6 +421,61 @@ async function loadViolations() {
     { header: "분류", value: (row) => dash(field(row, "classification")) },
     { header: "최초 적발", value: (row) => formatTime(field(row, "detectedAtUtc")) },
     { header: "마지막 발견", value: (row) => formatTime(field(row, "lastSeenAtUtc")) }
+  ], items, field(data, "totalCount") || 0);
+}
+
+async function decideUninstallRequest(id, action) {
+  const response = await api("/api/uninstall-requests/" + encodeURIComponent(id) + "/" + action, {
+    method: "POST"
+  });
+  if (!response.ok && response.status !== 204) {
+    throw new Error(await readError(response));
+  }
+  await loadList();
+}
+
+function uninstallActions(row) {
+  const status = String(field(row, "status") || "");
+  if (status !== "pending") {
+    return "-";
+  }
+  const wrap = el("div", { className: "row-actions" });
+  wrap.appendChild(el("button", {
+    type: "button",
+    text: "승인",
+    onClick: () => decideUninstallRequest(field(row, "id"), "approve").catch((err) => {
+      if (err.status !== 401) {
+        showError($("list-error"), err.message || "승인하지 못했습니다.");
+      }
+    })
+  }));
+  wrap.appendChild(el("button", {
+    type: "button",
+    className: "dangerish",
+    text: "거절",
+    onClick: () => decideUninstallRequest(field(row, "id"), "deny").catch((err) => {
+      if (err.status !== 401) {
+        showError($("list-error"), err.message || "거절하지 못했습니다.");
+      }
+    })
+  }));
+  return wrap;
+}
+
+async function loadUninstallRequests() {
+  state.csvPath = "/api/uninstall-requests";
+  state.csvName = "uninstall-requests.csv";
+  const data = await loadJson("/api/uninstall-requests?" + listQuery().toString());
+  const items = field(data, "items") || [];
+  paintList($("table-host"), [
+    { header: "ID", value: (row) => dash(field(row, "id")) },
+    { header: "자산코드", value: (row) => dash(field(row, "deviceCode")) },
+    { header: "호스트", value: (row) => dash(field(row, "hostName")) },
+    { header: "상태", value: (row) => dash(field(row, "status")) },
+    { header: "요청", value: (row) => formatTime(field(row, "requestedAtUtc")) },
+    { header: "승인", value: (row) => formatTime(field(row, "approvedAtUtc")) },
+    { header: "만료", value: (row) => formatTime(field(row, "expiresAtUtc")) },
+    { header: "처리", value: (row) => uninstallActions(row) }
   ], items, field(data, "totalCount") || 0);
 }
 

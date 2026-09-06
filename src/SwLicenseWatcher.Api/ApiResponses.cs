@@ -102,3 +102,38 @@ public sealed record ViolationListResponse(
     int Take,
     int TotalCount,
     IReadOnlyList<SoftwareViolationEntry> Items);
+
+public sealed record UninstallRequestCreateRequest(string DeviceCode);
+
+public sealed record UninstallRequestCreatedResponse(
+    long Id,
+    string DeviceCode,
+    string Status,
+    DateTimeOffset RequestedAtUtc);
+
+public sealed record AgentUninstallRequestResponse(
+    long Id,
+    string DeviceCode,
+    string Status,
+    DateTimeOffset RequestedAtUtc,
+    DateTimeOffset? ApprovedAtUtc,
+    DateTimeOffset? ExpiresAtUtc,
+    string? Code);
+
+public sealed record UninstallRequestConsumeRequest(string DeviceCode, string Code);
+
+public sealed record AdminUninstallRequest(
+    long Id,
+    string DeviceCode,
+    string HostName,
+    string Status,
+    DateTimeOffset RequestedAtUtc,
+    DateTimeOffset? ApprovedAtUtc,
+    DateTimeOffset? ConsumedAtUtc,
+    DateTimeOffset? ExpiresAtUtc);
+
+public sealed record UninstallRequestListResponse(
+    int Skip,
+    int Take,
+    int TotalCount,
+    IReadOnlyList<AdminUninstallRequest> Items);

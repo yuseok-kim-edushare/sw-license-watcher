@@ -27,15 +27,22 @@ public class SqlServerSchemaScriptBuilderTests
         Assert.Contains("[notified_at_utc] DATETIMEOFFSET NOT NULL", sql);
         Assert.Contains("CONSTRAINT [FK_stale_heartbeat_notification_pc_entity] FOREIGN KEY ([pc_id]) REFERENCES [inventory].[pc_entity]([pc_id]) ON DELETE CASCADE", sql);
         Assert.Contains("CONSTRAINT [UX_stale_heartbeat_notification_pc_id] UNIQUE ([pc_id])", sql);
+        Assert.Contains("CREATE TABLE [inventory].[pc_uninstall_request]", sql);
+        Assert.Contains("[code_hash] NVARCHAR(64) NULL", sql);
+        Assert.Contains("[code] NVARCHAR(16) NULL", sql);
+        Assert.Contains("CONSTRAINT [FK_pc_uninstall_request_pc_entity] FOREIGN KEY ([pc_id]) REFERENCES [inventory].[pc_entity]([pc_id]) ON DELETE CASCADE", sql);
         Assert.Contains("CREATE INDEX [IX_pc_installed_sw_pc_id] ON [inventory].[pc_installed_sw]([pc_id]);", sql);
         Assert.Contains("CREATE INDEX [IX_pc_installed_sw_classification] ON [inventory].[pc_installed_sw]([classification]);", sql);
         Assert.Contains("CREATE INDEX [IX_software_policy_list_classification] ON [inventory].[software_policy_list]([classification]);", sql);
         Assert.Contains("CREATE INDEX [IX_software_violation_policy_id] ON [inventory].[software_violation]([policy_id]);", sql);
+        Assert.Contains("CREATE INDEX [IX_pc_uninstall_request_pc_id] ON [inventory].[pc_uninstall_request]([pc_id]);", sql);
+        Assert.Contains("CREATE INDEX [IX_pc_uninstall_request_status] ON [inventory].[pc_uninstall_request]([status]);", sql);
         Assert.Contains("IF OBJECT_ID(N'[inventory].[pc_entity]', N'U') IS NULL", sql);
         Assert.Contains("IF OBJECT_ID(N'[inventory].[pc_installed_sw]', N'U') IS NULL", sql);
         Assert.Contains("IF OBJECT_ID(N'[inventory].[software_policy_list]', N'U') IS NULL", sql);
         Assert.Contains("IF OBJECT_ID(N'[inventory].[software_violation]', N'U') IS NULL", sql);
         Assert.Contains("IF OBJECT_ID(N'[inventory].[stale_heartbeat_notification]', N'U') IS NULL", sql);
+        Assert.Contains("IF OBJECT_ID(N'[inventory].[pc_uninstall_request]', N'U') IS NULL", sql);
         Assert.Contains("IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_pc_installed_sw_pc_id' AND object_id = OBJECT_ID(N'[inventory].[pc_installed_sw]'))", sql);
         Assert.Contains("IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_pc_installed_sw_classification' AND object_id = OBJECT_ID(N'[inventory].[pc_installed_sw]'))", sql);
         Assert.Contains("IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_software_policy_list_classification' AND object_id = OBJECT_ID(N'[inventory].[software_policy_list]'))", sql);
@@ -58,6 +65,8 @@ public class SqlServerSchemaScriptBuilderTests
         Assert.Contains("REFERENCES [ops_inventory].[machines]([id])", sql);
         Assert.Contains("CREATE TABLE [ops_inventory].[stale_heartbeat_notification]", sql);
         Assert.Contains("CONSTRAINT [FK_stale_heartbeat_notification_machines] FOREIGN KEY ([pc_id]) REFERENCES [ops_inventory].[machines]([id]) ON DELETE CASCADE", sql);
+        Assert.Contains("CREATE TABLE [ops_inventory].[pc_uninstall_request]", sql);
+        Assert.Contains("CONSTRAINT [FK_pc_uninstall_request_machines] FOREIGN KEY ([pc_id]) REFERENCES [ops_inventory].[machines]([id]) ON DELETE CASCADE", sql);
     }
 
     [Fact]
@@ -167,6 +176,18 @@ public class SqlIdentifierValidatorTests
         var options = new SqlServerStorageOptions
         {
             StaleHeartbeatNotificationTable = new StaleHeartbeatNotificationTableOptions { TableName = "stale-heartbeat" }
+        };
+
+        var ex = Assert.Throws<ArgumentException>(() => SqlIdentifierValidator.Validate(options));
+        Assert.Contains("SQL identifiers must start with a letter or underscore", ex.Message);
+    }
+
+    [Fact]
+    public void Validate_rejects_invalid_uninstall_request_table()
+    {
+        var options = new SqlServerStorageOptions
+        {
+            UninstallRequestTable = new UninstallRequestTableOptions { TableName = "uninstall-request" }
         };
 
         var ex = Assert.Throws<ArgumentException>(() => SqlIdentifierValidator.Validate(options));

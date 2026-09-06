@@ -50,6 +50,7 @@ public class BearerTokenAuthenticatorTests
     [InlineData("/api/inventory/snapshots")]
     [InlineData("/api/agents/heartbeats")]
     [InlineData("/api/updates/worker/manifest")]
+    [InlineData("/api/agents/uninstall-requests")]
     [InlineData("/api/inventory/devices")]
     [InlineData("/api/policies")]
     [InlineData("/api/violations")]
@@ -66,6 +67,9 @@ public class BearerTokenAuthenticatorTests
     [InlineData("/api/inventory/snapshots")]
     [InlineData("/api/agents/heartbeats")]
     [InlineData("/api/updates/worker/manifest")]
+    [InlineData("/api/agents/uninstall-requests")]
+    [InlineData("/api/agents/uninstall-requests/12")]
+    [InlineData("/api/agents/uninstall-requests/12/consume")]
     public void IsAuthorized_agent_token_is_accepted_on_agent_endpoints(string path)
     {
         var security = RoleSeparated();
@@ -81,6 +85,9 @@ public class BearerTokenAuthenticatorTests
     [InlineData("/api/policies")]
     [InlineData("/api/policies/1")]
     [InlineData("/api/violations")]
+    [InlineData("/api/uninstall-requests")]
+    [InlineData("/api/uninstall-requests/12/approve")]
+    [InlineData("/api/uninstall-requests/12/deny")]
     [InlineData("/api/design")]
     [InlineData("/api/schema/sql")]
     public void IsAuthorized_agent_token_is_rejected_on_admin_endpoints(string path)
@@ -129,6 +136,8 @@ public class BearerTokenAuthenticatorTests
     [InlineData("/API/INVENTORY/SNAPSHOTS")]
     [InlineData("/api/agents/heartbeats")]
     [InlineData("/api/updates/worker/manifest")]
+    [InlineData("/api/agents/uninstall-requests")]
+    [InlineData("/API/AGENTS/UNINSTALL-REQUESTS/3/CONSUME")]
     public void IsAgentEndpoint_recognizes_agent_paths_case_insensitively(string path)
     {
         Assert.True(BearerTokenAuthenticator.IsAgentEndpoint(path));
@@ -137,6 +146,8 @@ public class BearerTokenAuthenticatorTests
     [Theory]
     [InlineData("/api/inventory/snapshots/PC-01")]
     [InlineData("/api/inventory/devices")]
+    [InlineData("/api/uninstall-requests")]
+    [InlineData("/api/uninstall-requests/3/approve")]
     [InlineData("/health")]
     public void IsAgentEndpoint_rejects_non_agent_paths(string path)
     {

@@ -185,4 +185,49 @@ public class SqlServerInventorySqlTests
         Assert.Contains("([pc]]fk], [notified]]at])", insert, StringComparison.Ordinal);
         Assert.Contains("p.[device]]code] = @deviceCode", insert, StringComparison.Ordinal);
     }
+
+    [Fact]
+    public void BuildListUninstallRequestsSql_pages_pending_first_and_omits_code()
+    {
+        var sql = new SqlServerInventoryRepository(new SqlServerStorageOptions()).BuildListUninstallRequestsSql();
+        Assert.Contains("COUNT(*) OVER() AS total_count", sql, StringComparison.Ordinal);
+        Assert.Contains("OFFSET @skip ROWS FETCH NEXT @take ROWS ONLY", sql, StringComparison.Ordinal);
+        Assert.Contains("p.[device_code] LIKE @search", sql, StringComparison.Ordinal);
+        Assert.Contains("CASE WHEN r.[status] = N'pending' THEN 0 ELSE 1 END", sql, StringComparison.Ordinal);
+        Assert.Contains("[inventory].[pc_uninstall_request]", sql, StringComparison.Ordinal);
+        Assert.DoesNotContain("r.[code]", sql, StringComparison.Ordinal);
+        Assert.DoesNotContain("code_hash", sql, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void BuildGetAgentUninstallRequestSql_binds_request_to_device_code()
+    {
+        var sql = new SqlServerInventoryRepository(new SqlServerStorageOptions()).BuildGetAgentUninstallRequestSql();
+        Assert.Contains("p.[device_code] = @deviceCode", sql, StringComparison.Ordinal);
+        Assert.Contains("r.[uninstall_request_id] = @id", sql, StringComparison.Ordinal);
+        Assert.Contains("r.[code]", sql, StringComparison.Ordinal);
+        Assert.Contains("r.[code_hash]", sql, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Uninstall_request_sql_quotes_identifiers_with_closing_brackets()
+    {
+        var options = new SqlServerStorageOptions { SchemaName = "inv]entory" };
+        options.PcTable.TableName = "pc]entity";
+        options.PcTable.PrimaryKeyColumn = "pc]id";
+        options.PcTable.DeviceCodeColumn = "device]code";
+        options.UninstallRequestTable.TableName = "un]req";
+        options.UninstallRequestTable.PrimaryKeyColumn = "req]id";
+        options.UninstallRequestTable.PcForeignKeyColumn = "pc]fk";
+        options.UninstallRequestTable.StatusColumn = "st]atus";
+        var repository = new SqlServerInventoryRepository(options);
+
+        var list = repository.BuildListUninstallRequestsSql();
+        Assert.Contains("[inv]]entory].[un]]req]", list, StringComparison.Ordinal);
+        Assert.Contains("p.[device]]code] LIKE @search", list, StringComparison.Ordinal);
+
+        var approve = repository.BuildApproveUninstallRequestSql();
+        Assert.Contains("[req]]id] = @id", approve, StringComparison.Ordinal);
+        Assert.Contains("[st]]atus] = @pending", approve, StringComparison.Ordinal);
+    }
 }
