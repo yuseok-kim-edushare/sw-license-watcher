@@ -1,0 +1,96 @@
+using SwLicenseWatcher.Core;
+
+namespace SwLicenseWatcher.Admin.Models;
+
+public sealed record HealthResponse(string Status, DateTimeOffset Utc, string? Reason = null);
+
+public sealed record ErrorResponse(string Error);
+
+public sealed record DeviceSummary(
+    string DeviceCode,
+    string HostName,
+    string DomainName,
+    string OperatingSystem,
+    string AgentVersion,
+    DateTimeOffset? LastHeartbeatUtc,
+    DateTimeOffset? LastInventoryUtc);
+
+public sealed record DeviceListResponse(
+    int Skip,
+    int Take,
+    int TotalCount,
+    IReadOnlyList<DeviceSummary> Items);
+
+public sealed record DeviceDetail(
+    string DeviceCode,
+    string HostName,
+    string DomainName,
+    string OperatingSystem,
+    string AgentVersion,
+    DateTimeOffset? LastHeartbeatUtc,
+    DateTimeOffset? LastInventoryUtc,
+    IReadOnlyList<InstalledSoftwareEntry> InstalledSoftware);
+
+public sealed record SoftwareAggregate(
+    string Name,
+    string? Version,
+    string Classification,
+    int DeviceCount,
+    int CompanyCount = 0,
+    int ByoCount = 0,
+    int UnassignedCount = 0);
+
+public sealed record SoftwareAggregateListResponse(
+    int Skip,
+    int Take,
+    int TotalCount,
+    IReadOnlyList<SoftwareAggregate> Items);
+
+public sealed record SoftwareDevice(
+    string DeviceCode,
+    string HostName,
+    string DomainName,
+    string OperatingSystem,
+    string AgentVersion,
+    DateTimeOffset? LastHeartbeatUtc,
+    DateTimeOffset? LastInventoryUtc,
+    string? Version,
+    string? Publisher,
+    string Classification,
+    string? LicenseSource = null,
+    string? LicenseSourceOverride = null);
+
+public sealed record SoftwareDeviceListResponse(
+    string Name,
+    int Skip,
+    int Take,
+    int TotalCount,
+    IReadOnlyList<SoftwareDevice> Items);
+
+public sealed record PolicyListResponse(
+    int Skip,
+    int Take,
+    int TotalCount,
+    IReadOnlyList<SoftwarePolicyEntry> Items);
+
+public sealed record ViolationListResponse(
+    int Skip,
+    int Take,
+    int TotalCount,
+    IReadOnlyList<SoftwareViolationEntry> Items);
+
+public sealed record AdminUninstallRequest(
+    long Id,
+    string DeviceCode,
+    string HostName,
+    string Status,
+    DateTimeOffset RequestedAtUtc,
+    DateTimeOffset? ApprovedAtUtc,
+    DateTimeOffset? ConsumedAtUtc,
+    DateTimeOffset? ExpiresAtUtc);
+
+public sealed record UninstallRequestListResponse(
+    int Skip,
+    int Take,
+    int TotalCount,
+    IReadOnlyList<AdminUninstallRequest> Items);

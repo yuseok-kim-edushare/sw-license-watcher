@@ -1,5 +1,6 @@
 <Solution>
   <Folder Name="/src/">
+    <Project Path="src/SwLicenseWatcher.Admin/SwLicenseWatcher.Admin.csproj" />
     <Project Path="src/SwLicenseWatcher.Agent.Watchdog/SwLicenseWatcher.Agent.Watchdog.csproj" />
     <Project Path="src/SwLicenseWatcher.Agent.Worker/SwLicenseWatcher.Agent.Worker.csproj" />
     <Project Path="src/SwLicenseWatcher.Api/SwLicenseWatcher.Api.csproj" />

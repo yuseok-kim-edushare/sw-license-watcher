@@ -120,7 +120,7 @@ Get-Service SwLicenseWatcher.Api
 Invoke-RestMethod -Uri "https://license-watcher.contoso.local/health"
 ```
 
-브라우저에서 `https://license-watcher.contoso.local/admin` 에 접속합니다. 데이터 조회에는 `AdminToken`이 필요합니다.
+브라우저에서 `https://license-watcher.contoso.local/admin` 에 접속합니다. 경로는 그대로이며 화면은 API가 같이 제공하는 Blazor WebAssembly입니다. 데이터 조회에는 `AdminToken`이 필요합니다.
 
 `-ListenUrl`을 생략하면 템플릿의 `Kestrel:Endpoints:Https:Url`을 유지합니다. `-FirewallPort`를 주면 인바운드 TCP 허용 규칙(`SW License Watcher API`)을 만듭니다. `-ApplySchemaOnStartup`을 주면 기동 시 스키마를 적용합니다.
 

@@ -25,9 +25,31 @@
     <InternalsVisibleTo Include="SwLicenseWatcher.Api.Tests" />
   </ItemGroup>
 
-  <ItemGroup>
-    <Content Update="wwwroot\admin\**" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
-  </ItemGroup>
+  <Target Name="PublishAdminWasmIntoWwwroot"
+          BeforeTargets="GetCopyToOutputDirectoryItems;AssignTargetPaths;PrepareForPublish"
+          Condition="'$(DesignTimeBuild)' != 'true'">
+    <PropertyGroup>
+      <_AdminPublishDir>$(MSBuildThisFileDirectory)obj\$(Configuration)\admin-wasm\</_AdminPublishDir>
+      <_ApiAdminDir>$(MSBuildThisFileDirectory)wwwroot\admin\</_ApiAdminDir>
+    </PropertyGroup>
+    <MSBuild Projects="..\SwLicenseWatcher.Admin\SwLicenseWatcher.Admin.csproj"
+             Targets="Publish"
+             Properties="Configuration=$(Configuration);PublishDir=$(_AdminPublishDir);PublishAot=false;PublishTrimmed=false;SelfContained=false;RuntimeIdentifier=;UseAppHost=false"
+             RemoveProperties="RuntimeIdentifier;SelfContained;PublishAot;PublishTrimmed" />
+    <ItemGroup>
+      <_AdminPublished Include="$(_AdminPublishDir)wwwroot\admin\**\*.*" />
+    </ItemGroup>
+    <MakeDir Directories="$(_ApiAdminDir)" />
+    <Copy SourceFiles="@(_AdminPublished)"
+          DestinationFiles="@(_AdminPublished->'$(_ApiAdminDir)%(RecursiveDir)%(Filename)%(Extension)')"
+          SkipUnchangedFiles="true" />
+    <ItemGroup>
+      <Content Include="wwwroot\admin\**\*"
+               Exclude="$(DefaultItemExcludes);$(DefaultExcludesInProjectFolder)"
+               CopyToOutputDirectory="PreserveNewest"
+               CopyToPublishDirectory="PreserveNewest" />
+    </ItemGroup>
+  </Target>
 
   <ItemGroup Condition="'$(PublishAot)' == 'true'">
     <Content Update="web.config" CopyToOutputDirectory="Never" CopyToPublishDirectory="Never" />

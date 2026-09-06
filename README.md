@@ -22,7 +22,7 @@
   - 업데이트 manifest API: `/api/updates/worker/manifest`
   - 소프트웨어 정책 CRUD: `/api/policies` (목록은 페이징·검색·분류 필터·CSV)
   - 블랙리스트 위반 목록: `/api/violations` (페이징·검색·기간 필터·CSV)
-  - 관리자 대시보드: `/admin` (정적 페이지, 외부 CDN/npm 없음). 페이지는 인증 없이 열리고, 데이터 API는 `AdminToken`이 필요
+  - 관리자 대시보드: `/admin` (Blazor WebAssembly, 외부 CDN/npm 없음). 페이지는 인증 없이 열리고, 데이터 API는 `AdminToken`이 필요. API가 `_framework`를 같이 제공합니다.
   - 스냅샷 수신 시 설치 SW를 정책과 매칭해 white/managed/black/unclassified로 분류하고, 분류 결과를 설치 SW 테이블에 저장하며, 블랙리스트 적발을 `company_sw_violation`에 기록
 - **서버 알림 (웹훅 + SMTP)**
   - Teams/Slack incoming webhook(`{ "text": "..." }`)과 SMTP로 운영 알림 전송
@@ -315,6 +315,7 @@ API 실행 후:
 | GET | `/api/inventory/software` | SW 이름/버전/분류별 설치 PC 수. `managed`는 `companyCount` / `byoCount` / `unassignedCount` | `skip`, `take`, `search`(이름), `classification`, `format=csv` |
 | GET | `/api/inventory/software/{name}/devices` | 해당 SW가 설치된 PC 목록. 항목별 유효 `licenseSource`와 PC 할당 `licenseSourceOverride` | `skip`, `take`, `classification`, `format=csv` |
 | PUT | `/api/inventory/software/{name}/classification` | 정확 일치 활성 정책을 만들거나 갱신한 뒤, 이미 모인 설치 행의 분류를 즉시 다시 칠함 | 본문 `classification`, `publisher?`, `defaultLicenseSource?` |
+| PUT | `/api/inventory/software/classifications` | 소프트웨어 분류를 한 번에 여러 개 지정(최대 100). 한 트랜잭션 | 본문 `items: [{ name, classification, publisher?, defaultLicenseSource? }]` |
 | PUT | `/api/inventory/devices/{deviceCode}/software/{name}/license-source` | PC별 회사/BYO 할당. `null`이면 할당을 지워 정책 기본값으로 복귀 | 본문 `licenseSource`: `company` \| `byo` \| `null` |
 
 페이징 기본값은 JSON `take=100`, CSV `take=10000`이며 최대 10000입니다. `staleAfterHours`는 마지막 heartbeat가 없거나 지정 시간보다 오래된 PC만 남깁니다. `search`는 SQL `LIKE` 와일드카드가 이스케이프된 부분 일치입니다. `classification`은 `white` | `managed` | `black` | `unclassified`이며, 설치 SW 행에 저장된 분류로 필터링합니다(예: `?classification=unclassified`).
@@ -323,11 +324,11 @@ API 실행 후:
 
 ## 관리자 대시보드
 
-브라우저에서 `https://<server>/admin` 으로 관리자 화면을 엽니다. curl이나 CSV 없이 PC 목록, 소프트웨어 집계, 위반, 정책을 조회하고 정책을 만들고 고칠 수 있습니다. 소프트웨어 목록에서 바로 `white` / `managed` / `black`으로 분류할 수 있고, `managed`는 정책 기본 라이선스(회사/BYO)와 PC별 덮어쓰기를 편집합니다.
+브라우저에서 `https://<server>/admin` 으로 관리자 화면을 엽니다. UI는 Blazor WebAssembly이며, Interactive Server/Auto 회로는 쓰지 않습니다. API가 같은 출처의 `/admin/_framework`를 제공하므로 외부 CDN이 없습니다. curl이나 CSV 없이 PC 목록, 소프트웨어 집계, 위반, 정책, 제거 요청을 조회하고 정책을 만들고 고칠 수 있습니다. 소프트웨어 목록에서 행을 체크한 뒤 `white` / `managed` / `black`을 현재 페이지 선택 항목에 일괄 지정할 수 있고, 서랍에서는 개별 분류와 `managed`의 정책 기본 라이선스(회사/BYO)·PC별 덮어쓰기를 편집합니다.
 
-정적 파일(`/admin`, `/admin/`, CSS/JS)은 인증 없이 내려갑니다. 비밀은 없고, 인벤토리·정책 데이터는 모두 `AdminToken`(또는 레거시 `Token`)이 있어야 합니다. 토큰은 브라우저 `sessionStorage`에만 두고, 탭을 닫으면 사라집니다. 쿠키와 `localStorage`는 쓰지 않습니다.
+정적 파일(`/admin`, `/admin/`, CSS, `_framework`)은 인증 없이 내려갑니다. 비밀은 없고, 인벤토리·정책 데이터는 모두 `AdminToken`(또는 레거시 `Token`)이 있어야 합니다. 토큰은 브라우저 `sessionStorage`에만 두고, 탭을 닫으면 사라집니다. 쿠키와 `localStorage`는 쓰지 않습니다.
 
-페이지는 외부 CDN·npm 없이 동작하므로 인터넷이 없는 사내망에서도 열립니다. `/admin` 응답에는 `Content-Security-Policy`(self만 허용, 인라인 스크립트/스타일 없음), `X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer`, `Cache-Control: no-store`를 붙입니다.
+페이지는 외부 CDN·npm 없이 동작하므로 인터넷이 없는 사내망에서도 열립니다. `/admin` 응답에는 `Content-Security-Policy`(`script-src 'self' 'wasm-unsafe-eval'`, 인라인 스크립트/스타일 없음), `X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer`, `Cache-Control: no-store`를 붙입니다.
 
 ## 소프트웨어 정책과 위반
 

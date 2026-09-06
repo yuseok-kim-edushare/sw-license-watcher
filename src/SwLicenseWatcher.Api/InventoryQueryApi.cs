@@ -157,13 +157,27 @@ internal static class InventoryQueryApi
             return Results.Ok(new SoftwareDeviceListResponse(name, normalizedSkip, normalizedTake, totalCount, items));
         });
 
+        app.MapPut("/api/inventory/software/classifications", async (
+            SoftwareClassificationBatchWriteRequest request,
+            SqlServerInventoryRepository repository,
+            CancellationToken cancellationToken) =>
+        {
+            if (!SoftwarePolicyValidator.TryValidateClassificationBatch(request, out var items, out var validationError))
+            {
+                return Results.BadRequest(validationError);
+            }
+
+            var saved = await repository.UpsertSoftwareClassificationsAsync(items, cancellationToken);
+            return Results.Ok(new SoftwareClassificationBatchResponse(saved.Count, saved));
+        });
+
         app.MapPut("/api/inventory/software/{name}/classification", async (
             string name,
             SoftwareClassificationWriteRequest request,
             SqlServerInventoryRepository repository,
             CancellationToken cancellationToken) =>
         {
-            if (!TryValidateSoftwareName(name, out var productName, out var nameError))
+            if (!SoftwarePolicyValidator.TryValidateSoftwareName(name, out var productName, out var nameError))
             {
                 return Results.BadRequest(nameError);
             }
@@ -189,7 +203,7 @@ internal static class InventoryQueryApi
                 return Results.BadRequest("deviceCode is required.");
             }
 
-            if (!TryValidateSoftwareName(name, out var softwareName, out var nameError))
+            if (!SoftwarePolicyValidator.TryValidateSoftwareName(name, out var softwareName, out var nameError))
             {
                 return Results.BadRequest(nameError);
             }
@@ -292,27 +306,6 @@ internal static class InventoryQueryApi
             return false;
         }
 
-        error = string.Empty;
-        return true;
-    }
-
-    internal static bool TryValidateSoftwareName(string? name, out string normalized, out string error)
-    {
-        if (string.IsNullOrWhiteSpace(name))
-        {
-            normalized = string.Empty;
-            error = "Software name is required.";
-            return false;
-        }
-
-        if (name.Length > MaxSearchLength)
-        {
-            normalized = string.Empty;
-            error = $"Software name must be at most {MaxSearchLength} characters.";
-            return false;
-        }
-
-        normalized = name.Trim();
         error = string.Empty;
         return true;
     }

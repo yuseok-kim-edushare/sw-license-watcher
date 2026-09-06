@@ -176,6 +176,62 @@ public class SoftwarePolicyValidatorTests
     }
 
     [Fact]
+    public void TryValidateClassificationBatch_rejects_empty_and_over_limit()
+    {
+        Assert.False(SoftwarePolicyValidator.TryValidateClassificationBatch(null, out _, out var error));
+        Assert.Equal("At least one software classification item is required.", error);
+        Assert.False(SoftwarePolicyValidator.TryValidateClassificationBatch(
+            new SoftwareClassificationBatchWriteRequest([]), out _, out error));
+        Assert.Equal("At least one software classification item is required.", error);
+
+        var tooMany = Enumerable.Range(0, SoftwarePolicyValidator.MaxClassificationBatchItems + 1)
+            .Select(i => new SoftwareClassificationItemWriteRequest($"App-{i}", SoftwarePolicyClassification.Whitelist))
+            .ToList();
+        Assert.False(SoftwarePolicyValidator.TryValidateClassificationBatch(
+            new SoftwareClassificationBatchWriteRequest(tooMany), out _, out error));
+        Assert.Equal($"At most {SoftwarePolicyValidator.MaxClassificationBatchItems} software classification items are allowed.", error);
+    }
+
+    [Fact]
+    public void TryValidateClassificationBatch_rejects_missing_name_and_unknown_source()
+    {
+        Assert.False(SoftwarePolicyValidator.TryValidateClassificationBatch(
+            new SoftwareClassificationBatchWriteRequest(
+            [
+                new SoftwareClassificationItemWriteRequest(" ", SoftwarePolicyClassification.Managed)
+            ]),
+            out _,
+            out var error));
+        Assert.Equal("Software name is required.", error);
+
+        Assert.False(SoftwarePolicyValidator.TryValidateClassificationBatch(
+            new SoftwareClassificationBatchWriteRequest(
+            [
+                new SoftwareClassificationItemWriteRequest("Chrome", SoftwarePolicyClassification.Managed, null, "personal")
+            ]),
+            out _,
+            out error));
+        Assert.Equal("The policy default license source must be company or byo.", error);
+    }
+
+    [Fact]
+    public void TryValidateClassificationBatch_accepts_valid_items()
+    {
+        Assert.True(SoftwarePolicyValidator.TryValidateClassificationBatch(
+            new SoftwareClassificationBatchWriteRequest(
+            [
+                new SoftwareClassificationItemWriteRequest("Chrome", SoftwarePolicyClassification.Managed, "Google", "company"),
+                new SoftwareClassificationItemWriteRequest("uTorrent", SoftwarePolicyClassification.Blacklist)
+            ]),
+            out var items,
+            out var error));
+        Assert.Equal(string.Empty, error);
+        Assert.Equal(2, items.Count);
+        Assert.Equal("Chrome", items[0].Name);
+        Assert.Equal(SoftwarePolicyClassification.Managed, items[0].Write.Classification);
+    }
+
+    [Fact]
     public void TryValidate_allows_default_license_source_on_non_managed_but_storage_clears_it()
     {
         Assert.True(SoftwarePolicyValidator.TryValidate(

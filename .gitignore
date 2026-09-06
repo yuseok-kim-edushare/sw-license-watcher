@@ -3,6 +3,9 @@
 ##
 ## Get latest from https://github.com/github/gitignore/blob/main/VisualStudio.gitignore
 
+# Generated Blazor WASM copied into the API host
+src/SwLicenseWatcher.Api/wwwroot/admin/
+
 # User-specific files
 *.rsuser
 *.suo

@@ -429,7 +429,16 @@ jobs:
             if ($admin.Headers['Content-Security-Policy'] -notmatch "default-src 'self'") {
               throw '/admin response is missing the Content-Security-Policy header.'
             }
+            if ($admin.Headers['Content-Security-Policy'] -notmatch "wasm-unsafe-eval") {
+              throw '/admin response is missing wasm-unsafe-eval in Content-Security-Policy.'
+            }
             Write-Host 'API admin dashboard returned 200 with CSP (no token).'
+
+            $framework = Invoke-WebRequest -Uri "$base/admin/_framework/blazor.webassembly.js" -UseBasicParsing -SkipHttpErrorCheck -TimeoutSec 15
+            if ($framework.StatusCode -ne 200) {
+              throw "/admin/_framework/blazor.webassembly.js returned $($framework.StatusCode), expected 200 (WASM publish missing from AOT output?)."
+            }
+            Write-Host 'API admin WASM framework script returned 200.'
 
             if ($apiProc.HasExited) {
               Write-Host '=== api stdout ==='

@@ -3,7 +3,7 @@ namespace SwLicenseWatcher.Api;
 internal static class AdminStaticFiles
 {
     internal const string ContentSecurityPolicy =
-        "default-src 'self'; img-src 'self' data:; style-src 'self'; script-src 'self'; connect-src 'self'; frame-ancestors 'none'";
+        "default-src 'self'; img-src 'self' data:; style-src 'self'; script-src 'self' 'wasm-unsafe-eval'; connect-src 'self'; frame-ancestors 'none'";
 
     internal static void UseAdminDashboard(this WebApplication app)
     {

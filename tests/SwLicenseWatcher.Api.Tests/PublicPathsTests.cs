@@ -13,6 +13,8 @@ public class PublicPathsTests
     [InlineData("/ADMIN/index.html")]
     [InlineData("/admin/admin.js")]
     [InlineData("/admin/admin.css")]
+    [InlineData("/admin/_framework/blazor.webassembly.js")]
+    [InlineData("/admin/css/admin.css")]
     public void IsAnonymous_allows_health_and_admin_assets(string path)
     {
         Assert.True(PublicPaths.IsAnonymous(path));
@@ -72,7 +74,7 @@ public class PublicPathsTests
         Assert.Equal("nosniff", headers["X-Content-Type-Options"]);
         Assert.Equal("no-referrer", headers["Referrer-Policy"]);
         Assert.Equal("no-store", headers["Cache-Control"]);
-        Assert.Contains("script-src 'self'", headers["Content-Security-Policy"].ToString(), StringComparison.Ordinal);
+        Assert.Contains("script-src 'self' 'wasm-unsafe-eval'", headers["Content-Security-Policy"].ToString(), StringComparison.Ordinal);
         Assert.DoesNotContain("unsafe-inline", headers["Content-Security-Policy"].ToString(), StringComparison.Ordinal);
     }
 }

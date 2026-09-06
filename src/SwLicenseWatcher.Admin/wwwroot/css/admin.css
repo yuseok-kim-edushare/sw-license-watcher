@@ -37,9 +37,10 @@ h1 { font-size: 20px; }
 h2 { font-size: 16px; }
 
 .status, .meta, .hint { color: var(--muted); margin: 0; }
+.loading-msg { margin: 16px 20px; }
 .hint { margin-top: 8px; font-size: 13px; }
 
-.card, #app-panel {
+.card, .app-panel {
   margin: 16px 20px;
 }
 
@@ -52,7 +53,7 @@ h2 { font-size: 16px; }
 
 .tabs { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
 
-.toolbar, .form-grid, .form-actions, .pager, .drawer-head {
+.toolbar, .form-grid, .form-actions, .pager, .drawer-head, .bulk-bar {
   display: flex;
   flex-wrap: wrap;
   gap: 12px;
@@ -60,6 +61,14 @@ h2 { font-size: 16px; }
 }
 
 .toolbar, .pager { margin: 8px 0 12px; }
+
+.bulk-bar {
+  margin: 0 0 12px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #f8fafc;
+}
 
 label { display: flex; flex-direction: column; gap: 4px; color: var(--muted); font-size: 12px; }
 label.check { flex-direction: row; align-items: center; gap: 8px; font-size: 14px; color: var(--text); }
@@ -74,6 +83,9 @@ input, select {
   border-radius: 4px;
   background: #fff;
 }
+input[type="checkbox"] {
+  min-width: 0;
+}
 button {
   padding: 7px 12px;
   border: 1px solid var(--line);
@@ -83,16 +95,16 @@ button {
 }
 button:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
 button:disabled { opacity: 0.5; cursor: default; }
-button.tab.is-active, #query-btn, #policy-save {
+button.tab.is-active, button.primary {
   background: var(--accent);
   border-color: var(--accent);
   color: #fff;
 }
-button.tab.is-active:hover, #query-btn:hover, #policy-save:hover {
+button.tab.is-active:hover, button.primary:hover:not(:disabled) {
   background: var(--accent-hover);
   color: #fff;
 }
-#policy-delete:hover:not(:disabled), #logout-btn:hover { color: var(--danger); border-color: var(--danger); }
+button.danger:hover:not(:disabled), button.logout:hover { color: var(--danger); border-color: var(--danger); }
 
 .error { color: var(--danger); margin: 8px 0; }
 .ok { color: var(--ok); }
@@ -117,6 +129,11 @@ table.data th, table.data td {
   text-overflow: ellipsis;
 }
 table.data th { background: #eef1f5; font-weight: 600; }
+table.data th.check, table.data td.check {
+  width: 36px;
+  max-width: 36px;
+  text-align: center;
+}
 table.data tbody tr:hover { background: var(--row); }
 .empty { padding: 16px; color: var(--muted); }
 
@@ -155,7 +172,7 @@ button.dangerish:hover:not(:disabled) { color: var(--danger); border-color: var(
 
 .drawer-head { justify-content: space-between; align-items: center; margin-bottom: 12px; }
 
-#drawer-class-wrap { margin-bottom: 12px; }
+.drawer-class-wrap { margin-bottom: 12px; }
 
 .drawer-form {
   display: flex;
@@ -175,5 +192,5 @@ select.license-source { min-width: 120px; }
 
 @media (max-width: 700px) {
   input, select { min-width: 120px; }
-  .top, .card, #app-panel { padding-left: 12px; padding-right: 12px; margin-left: 12px; margin-right: 12px; }
+  .top, .card, .app-panel { padding-left: 12px; padding-right: 12px; margin-left: 12px; margin-right: 12px; }
 }

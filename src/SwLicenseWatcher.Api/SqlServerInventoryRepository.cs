@@ -625,6 +625,46 @@ public sealed class SqlServerInventoryRepository(SqlServerStorageOptions options
         SoftwareClassificationWriteRequest request,
         CancellationToken cancellationToken)
     {
+        var saved = await UpsertSoftwareClassificationsAsync([(productName, request)], cancellationToken);
+        return saved[0];
+    }
+
+    public async Task<IReadOnlyList<SoftwarePolicyEntry>> UpsertSoftwareClassificationsAsync(
+        IReadOnlyList<(string Name, SoftwareClassificationWriteRequest Request)> items,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(items);
+
+        await using var connection = new SqlConnection(options.ConnectionString);
+        await connection.OpenAsync(cancellationToken);
+        await using var transaction = (SqlTransaction)await connection.BeginTransactionAsync(cancellationToken);
+        var saved = new List<SoftwarePolicyEntry>(items.Count);
+        try
+        {
+            foreach (var (productName, request) in items)
+            {
+                saved.Add(await UpsertSoftwareClassificationInTransactionAsync(
+                    connection, transaction, productName, request, cancellationToken));
+            }
+
+            await transaction.CommitAsync(cancellationToken);
+        }
+        catch
+        {
+            await transaction.RollbackAsync(cancellationToken);
+            throw;
+        }
+
+        return saved;
+    }
+
+    private async Task<SoftwarePolicyEntry> UpsertSoftwareClassificationInTransactionAsync(
+        SqlConnection connection,
+        SqlTransaction transaction,
+        string productName,
+        SoftwareClassificationWriteRequest request,
+        CancellationToken cancellationToken)
+    {
         LicenseSourceNames.TryParse(request.DefaultLicenseSource, out var defaultLicenseSource);
         var write = new SoftwarePolicyWriteRequest(
             productName.Trim(),
@@ -634,10 +674,6 @@ public sealed class SqlServerInventoryRepository(SqlServerStorageOptions options
             Notes: null,
             Enabled: true,
             defaultLicenseSource);
-
-        await using var connection = new SqlConnection(options.ConnectionString);
-        await connection.OpenAsync(cancellationToken);
-        await using var transaction = (SqlTransaction)await connection.BeginTransactionAsync(cancellationToken);
 
         var existing = await FindEnabledExactNamePolicyAsync(connection, transaction, write.ProductName, cancellationToken);
         SoftwarePolicyEntry saved;
@@ -653,7 +689,6 @@ public sealed class SqlServerInventoryRepository(SqlServerStorageOptions options
         }
 
         await RecolorInstalledSoftwareAsync(connection, transaction, write.ProductName, cancellationToken);
-        await transaction.CommitAsync(cancellationToken);
         return saved;
     }
 

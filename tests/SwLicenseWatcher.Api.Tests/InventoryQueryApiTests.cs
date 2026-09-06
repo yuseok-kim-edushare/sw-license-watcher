@@ -1,5 +1,6 @@
 using System.Text.Json;
 using SwLicenseWatcher.Api;
+using SwLicenseWatcher.Core;
 
 namespace SwLicenseWatcher.Api.Tests;
 
@@ -68,6 +69,28 @@ public class InventoryQueryApiTests
         Assert.True(InventoryQueryApi.TryNormalizeLicenseSource(value, out var normalized, out var error));
         Assert.Equal(expected, normalized);
         Assert.Equal(string.Empty, error);
+    }
+
+    [Fact]
+    public void Classification_batch_dtos_serialize_without_tokens()
+    {
+        var request = new SoftwareClassificationBatchWriteRequest(
+        [
+            new SoftwareClassificationItemWriteRequest("Chrome", SoftwarePolicyClassification.Managed, "Google", "company")
+        ]);
+        var requestJson = JsonSerializer.Serialize(request, ApiJsonSerializerContext.Default.SoftwareClassificationBatchWriteRequest);
+        Assert.Contains("\"Name\":\"Chrome\"", requestJson, StringComparison.Ordinal);
+        Assert.Contains("\"Classification\":\"managed\"", requestJson, StringComparison.Ordinal);
+        Assert.DoesNotContain("Token", requestJson, StringComparison.Ordinal);
+
+        var response = new SoftwareClassificationBatchResponse(
+            1,
+            [
+                new SoftwarePolicyEntry(1, "Chrome", "Google", null, SoftwarePolicyClassification.Managed, null, true, DateTimeOffset.UnixEpoch, "company")
+            ]);
+        var responseJson = JsonSerializer.Serialize(response, ApiJsonSerializerContext.Default.SoftwareClassificationBatchResponse);
+        Assert.Contains("\"UpdatedCount\":1", responseJson, StringComparison.Ordinal);
+        Assert.DoesNotContain("Token", responseJson, StringComparison.Ordinal);
     }
 
     [Fact]

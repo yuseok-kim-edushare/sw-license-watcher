@@ -72,6 +72,19 @@ public sealed record SoftwareClassificationWriteRequest(
     string? Publisher = null,
     string? DefaultLicenseSource = null);
 
+public sealed record SoftwareClassificationItemWriteRequest(
+    string? Name,
+    SoftwarePolicyClassification? Classification,
+    string? Publisher = null,
+    string? DefaultLicenseSource = null);
+
+public sealed record SoftwareClassificationBatchWriteRequest(
+    IReadOnlyList<SoftwareClassificationItemWriteRequest>? Items);
+
+public sealed record SoftwareClassificationBatchResponse(
+    int UpdatedCount,
+    IReadOnlyList<SoftwarePolicyEntry> Items);
+
 public sealed record DeviceSoftwareLicenseSourceWriteRequest(string? LicenseSource);
 
 public sealed record SoftwarePolicyMatch(
