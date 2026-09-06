@@ -135,4 +135,53 @@ public class SoftwarePolicyValidatorTests
         Assert.True(SoftwarePolicyValidator.TryValidate(new SoftwarePolicyWriteRequest("uTorrent", null, null, SoftwarePolicyClassification.Blacklist, null), out var error));
         Assert.Equal(string.Empty, error);
     }
+
+    [Fact]
+    public void TryValidate_rejects_unknown_default_license_source()
+    {
+        Assert.False(SoftwarePolicyValidator.TryValidate(
+            new SoftwarePolicyWriteRequest("Office", null, null, SoftwarePolicyClassification.Managed, null, true, "personal"),
+            out var error));
+        Assert.Equal("The policy default license source must be company or byo.", error);
+    }
+
+    [Theory]
+    [InlineData("company")]
+    [InlineData("BYO")]
+    [InlineData(null)]
+    [InlineData("")]
+    public void TryValidate_accepts_company_byo_or_blank_default_license_source(string? source)
+    {
+        Assert.True(SoftwarePolicyValidator.TryValidate(
+            new SoftwarePolicyWriteRequest("Office", null, null, SoftwarePolicyClassification.Managed, null, true, source),
+            out var error));
+        Assert.Equal(string.Empty, error);
+    }
+
+    [Fact]
+    public void TryValidateClassification_requires_known_classification()
+    {
+        Assert.False(SoftwarePolicyValidator.TryValidateClassification(null, out _));
+        Assert.False(SoftwarePolicyValidator.TryValidateClassification(
+            new SoftwareClassificationWriteRequest(null), out var error));
+        Assert.Equal("The policy classification must be white, managed, or black.", error);
+        Assert.True(SoftwarePolicyValidator.TryValidateClassification(
+            new SoftwareClassificationWriteRequest(SoftwarePolicyClassification.Managed, "Microsoft", "company"),
+            out error));
+        Assert.Equal(string.Empty, error);
+        Assert.False(SoftwarePolicyValidator.TryValidateClassification(
+            new SoftwareClassificationWriteRequest(SoftwarePolicyClassification.Managed, null, "personal"),
+            out error));
+        Assert.Equal("The policy default license source must be company or byo.", error);
+    }
+
+    [Fact]
+    public void TryValidate_allows_default_license_source_on_non_managed_but_storage_clears_it()
+    {
+        Assert.True(SoftwarePolicyValidator.TryValidate(
+            new SoftwarePolicyWriteRequest("Office", null, null, SoftwarePolicyClassification.Whitelist, null, true, "company"),
+            out var error));
+        Assert.Equal(string.Empty, error);
+        Assert.Null(LicenseSourceNames.ForManagedPolicy(SoftwarePolicyClassification.Whitelist, "company"));
+    }
 }

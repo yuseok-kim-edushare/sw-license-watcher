@@ -17,7 +17,11 @@ public sealed record InstalledSoftwareEntry(
     string DiscoveryScope,
     string DiscoverySource,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    string? Classification = null);
+    string? Classification = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    string? LicenseSource = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    string? LicenseSourceOverride = null);
 
 public sealed record InventoryIngestionRequest(
     PcIdentity Pc,
@@ -51,7 +55,8 @@ public sealed record SoftwarePolicyEntry(
     SoftwarePolicyClassification Classification,
     string? Notes,
     bool Enabled,
-    DateTimeOffset UpdatedAtUtc);
+    DateTimeOffset UpdatedAtUtc,
+    string? DefaultLicenseSource = null);
 
 public sealed record SoftwarePolicyWriteRequest(
     string ProductName,
@@ -59,7 +64,15 @@ public sealed record SoftwarePolicyWriteRequest(
     string? VersionPattern,
     SoftwarePolicyClassification? Classification,
     string? Notes,
-    bool Enabled = true);
+    bool Enabled = true,
+    string? DefaultLicenseSource = null);
+
+public sealed record SoftwareClassificationWriteRequest(
+    SoftwarePolicyClassification? Classification,
+    string? Publisher = null,
+    string? DefaultLicenseSource = null);
+
+public sealed record DeviceSoftwareLicenseSourceWriteRequest(string? LicenseSource);
 
 public sealed record SoftwarePolicyMatch(
     InstalledSoftwareEntry Software,

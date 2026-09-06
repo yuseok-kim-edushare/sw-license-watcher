@@ -86,13 +86,16 @@ internal static class InventoryQueryApi
             {
                 return InventoryCsv.File(
                     "software.csv",
-                    ["Name", "Version", "Classification", "DeviceCount"],
+                    ["Name", "Version", "Classification", "DeviceCount", "CompanyCount", "ByoCount", "UnassignedCount"],
                     items.Select(entry => new[]
                     {
                         entry.Name,
                         entry.Version,
                         entry.Classification,
-                        entry.DeviceCount.ToString(System.Globalization.CultureInfo.InvariantCulture)
+                        entry.DeviceCount.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                        entry.CompanyCount.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                        entry.ByoCount.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                        entry.UnassignedCount.ToString(System.Globalization.CultureInfo.InvariantCulture)
                     }));
             }
 
@@ -132,7 +135,7 @@ internal static class InventoryQueryApi
             {
                 return InventoryCsv.File(
                     $"software-{InventoryCsv.SafeFileName(name)}-devices.csv",
-                    ["Name", "DeviceCode", "HostName", "DomainName", "OperatingSystem", "AgentVersion", "LastHeartbeatUtc", "LastInventoryUtc", "Version", "Publisher", "Classification"],
+                    ["Name", "DeviceCode", "HostName", "DomainName", "OperatingSystem", "AgentVersion", "LastHeartbeatUtc", "LastInventoryUtc", "Version", "Publisher", "Classification", "LicenseSource", "LicenseSourceOverride"],
                     items.Select(device => new[]
                     {
                         name,
@@ -145,11 +148,61 @@ internal static class InventoryQueryApi
                         InventoryCsv.Format(device.LastInventoryUtc),
                         device.Version,
                         device.Publisher,
-                        device.Classification
+                        device.Classification,
+                        device.LicenseSource,
+                        device.LicenseSourceOverride
                     }));
             }
 
             return Results.Ok(new SoftwareDeviceListResponse(name, normalizedSkip, normalizedTake, totalCount, items));
+        });
+
+        app.MapPut("/api/inventory/software/{name}/classification", async (
+            string name,
+            SoftwareClassificationWriteRequest request,
+            SqlServerInventoryRepository repository,
+            CancellationToken cancellationToken) =>
+        {
+            if (!TryValidateSoftwareName(name, out var productName, out var nameError))
+            {
+                return Results.BadRequest(nameError);
+            }
+
+            if (!SoftwarePolicyValidator.TryValidateClassification(request, out var validationError))
+            {
+                return Results.BadRequest(validationError);
+            }
+
+            var saved = await repository.UpsertSoftwareClassificationAsync(productName, request, cancellationToken);
+            return Results.Ok(saved);
+        });
+
+        app.MapPut("/api/inventory/devices/{deviceCode}/software/{name}/license-source", async (
+            string deviceCode,
+            string name,
+            DeviceSoftwareLicenseSourceWriteRequest request,
+            SqlServerInventoryRepository repository,
+            CancellationToken cancellationToken) =>
+        {
+            if (string.IsNullOrWhiteSpace(deviceCode))
+            {
+                return Results.BadRequest("deviceCode is required.");
+            }
+
+            if (!TryValidateSoftwareName(name, out var softwareName, out var nameError))
+            {
+                return Results.BadRequest(nameError);
+            }
+
+            if (!TryNormalizeLicenseSource(request.LicenseSource, out var licenseSource, out var sourceError))
+            {
+                return Results.BadRequest(sourceError);
+            }
+
+            return await repository.SetDeviceSoftwareLicenseSourceAsync(
+                deviceCode, softwareName, licenseSource, cancellationToken)
+                ? Results.NoContent()
+                : Results.NotFound();
         });
     }
 
@@ -183,7 +236,7 @@ internal static class InventoryQueryApi
                 : detail.InstalledSoftware.Select(entry => DeviceSoftwareRow(detail, entry));
             return InventoryCsv.File(
                 $"device-{InventoryCsv.SafeFileName(detail.DeviceCode)}.csv",
-                ["DeviceCode", "HostName", "DomainName", "OperatingSystem", "AgentVersion", "LastHeartbeatUtc", "LastInventoryUtc", "Name", "Version", "Publisher", "InstallLocation", "DiscoveryScope", "DiscoverySource", "Classification"],
+                ["DeviceCode", "HostName", "DomainName", "OperatingSystem", "AgentVersion", "LastHeartbeatUtc", "LastInventoryUtc", "Name", "Version", "Publisher", "InstallLocation", "DiscoveryScope", "DiscoverySource", "Classification", "LicenseSource", "LicenseSourceOverride"],
                 rows);
         }
 
@@ -205,7 +258,9 @@ internal static class InventoryQueryApi
         entry?.InstallLocation,
         entry?.DiscoveryScope,
         entry?.DiscoverySource,
-        entry?.Classification
+        entry?.Classification,
+        entry?.LicenseSource,
+        entry?.LicenseSourceOverride
     ];
 
     internal static bool TryNormalizeClassification(string? classification, out string? normalized, out string error)
@@ -225,6 +280,39 @@ internal static class InventoryQueryApi
         }
 
         normalized = storage;
+        error = string.Empty;
+        return true;
+    }
+
+    internal static bool TryNormalizeLicenseSource(string? licenseSource, out string? normalized, out string error)
+    {
+        if (!LicenseSourceNames.TryParse(licenseSource, out normalized))
+        {
+            error = "licenseSource must be company or byo.";
+            return false;
+        }
+
+        error = string.Empty;
+        return true;
+    }
+
+    internal static bool TryValidateSoftwareName(string? name, out string normalized, out string error)
+    {
+        if (string.IsNullOrWhiteSpace(name))
+        {
+            normalized = string.Empty;
+            error = "Software name is required.";
+            return false;
+        }
+
+        if (name.Length > MaxSearchLength)
+        {
+            normalized = string.Empty;
+            error = $"Software name must be at most {MaxSearchLength} characters.";
+            return false;
+        }
+
+        normalized = name.Trim();
         error = string.Empty;
         return true;
     }

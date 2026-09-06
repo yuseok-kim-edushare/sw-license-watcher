@@ -97,6 +97,14 @@ public class PolicyQueryApiTests
         Assert.Contains("\"TotalCount\":1", policyJson, StringComparison.Ordinal);
         Assert.Contains("\"Classification\":\"black\"", policyJson, StringComparison.Ordinal);
         Assert.Contains("*Torrent*", policyJson, StringComparison.Ordinal);
+        Assert.DoesNotContain("Token", policyJson, StringComparison.Ordinal);
+
+        var managed = new SoftwarePolicyEntry(
+            8, "Office", "Microsoft", null, SoftwarePolicyClassification.Managed, null, true,
+            new DateTimeOffset(2026, 1, 15, 0, 0, 0, TimeSpan.Zero), "company");
+        var managedJson = JsonSerializer.Serialize(managed, ApiJsonSerializerContext.Default.SoftwarePolicyEntry);
+        Assert.Contains("\"DefaultLicenseSource\":\"company\"", managedJson, StringComparison.Ordinal);
+        Assert.DoesNotContain("Token", managedJson, StringComparison.Ordinal);
 
         var violation = new SoftwareViolationEntry(
             9, "PC-01", "host", "uTorrent", "3.5", "BitTorrent", 7, "*Torrent*",
@@ -125,6 +133,7 @@ public class PolicyQueryApiTests
         Assert.Equal("\"a,b\"", escaped[5]);
         Assert.Equal("false", escaped[6]);
         Assert.Equal("2026-01-15T12:00:00.0000000+00:00", escaped[7]);
+        Assert.Equal("", escaped[8]);
     }
 
     [Fact]

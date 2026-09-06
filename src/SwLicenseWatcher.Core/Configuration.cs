@@ -164,6 +164,8 @@ public sealed class SqlServerStorageOptions
     public StaleHeartbeatNotificationTableOptions StaleHeartbeatNotificationTable { get; set; } = new();
 
     public UninstallRequestTableOptions UninstallRequestTable { get; set; } = new();
+
+    public SoftwareLicenseTableOptions SoftwareLicenseTable { get; set; } = new();
 }
 
 public sealed class PcTableOptions
@@ -231,6 +233,8 @@ public sealed class SoftwarePolicyTableOptions
     public string EnabledColumn { get; set; } = "enabled";
 
     public string UpdatedAtUtcColumn { get; set; } = "updated_at_utc";
+
+    public string DefaultLicenseSourceColumn { get; set; } = "default_license_source";
 }
 
 public sealed class SoftwareViolationTableOptions
@@ -286,6 +290,19 @@ public sealed class UninstallRequestTableOptions
     public string CodeHashColumn { get; set; } = "code_hash";
 
     public string CodeColumn { get; set; } = "code";
+}
+
+public sealed class SoftwareLicenseTableOptions
+{
+    public string TableName { get; set; } = "pc_sw_license";
+
+    public string PcForeignKeyColumn { get; set; } = "pc_id";
+
+    public string SoftwareNameColumn { get; set; } = "sw_name";
+
+    public string LicenseSourceColumn { get; set; } = "license_source";
+
+    public string UpdatedAtUtcColumn { get; set; } = "updated_at_utc";
 }
 
 public sealed class NotificationOptions

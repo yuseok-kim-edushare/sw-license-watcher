@@ -64,7 +64,10 @@ public sealed record SoftwareAggregate(
     string Name,
     string? Version,
     string Classification,
-    int DeviceCount);
+    int DeviceCount,
+    int CompanyCount = 0,
+    int ByoCount = 0,
+    int UnassignedCount = 0);
 
 public sealed record SoftwareAggregateListResponse(
     int Skip,
@@ -82,7 +85,9 @@ public sealed record SoftwareDevice(
     DateTimeOffset? LastInventoryUtc,
     string? Version,
     string? Publisher,
-    string Classification);
+    string Classification,
+    string? LicenseSource = null,
+    string? LicenseSourceOverride = null);
 
 public sealed record SoftwareDeviceListResponse(
     string Name,

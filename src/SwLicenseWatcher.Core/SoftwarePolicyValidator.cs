@@ -25,6 +25,36 @@ public static class SoftwarePolicyValidator
             return false;
         }
 
+        if (!LicenseSourceNames.TryParse(request.DefaultLicenseSource, out _))
+        {
+            error = "The policy default license source must be company or byo.";
+            return false;
+        }
+
+        error = string.Empty;
+        return true;
+    }
+
+    public static bool TryValidateClassification(SoftwareClassificationWriteRequest? request, out string error)
+    {
+        if (request is null || request.Classification is null || !Enum.IsDefined(request.Classification.Value))
+        {
+            error = "The policy classification must be white, managed, or black.";
+            return false;
+        }
+
+        if ((request.Publisher?.Length ?? 0) > 256)
+        {
+            error = "The policy exceeds persisted field limits.";
+            return false;
+        }
+
+        if (!LicenseSourceNames.TryParse(request.DefaultLicenseSource, out _))
+        {
+            error = "The policy default license source must be company or byo.";
+            return false;
+        }
+
         error = string.Empty;
         return true;
     }

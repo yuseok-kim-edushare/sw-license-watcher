@@ -157,6 +157,22 @@ button.dangerish:hover:not(:disabled) { color: var(--danger); border-color: var(
 
 #drawer-class-wrap { margin-bottom: 12px; }
 
+.drawer-form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: flex-end;
+  margin: 0 0 16px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #f8fafc;
+}
+
+.drawer-form button { min-width: 72px; }
+
+select.license-source { min-width: 120px; }
+
 @media (max-width: 700px) {
   input, select { min-width: 120px; }
   .top, .card, #app-panel { padding-left: 12px; padding-right: 12px; margin-left: 12px; margin-right: 12px; }

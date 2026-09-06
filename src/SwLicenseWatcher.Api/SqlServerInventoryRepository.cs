@@ -31,7 +31,7 @@ public sealed class SqlServerInventoryRepository(SqlServerStorageOptions options
         var previous = await ReadInstalledSoftwareAsync(connection, transaction, pcId, classification: null, cancellationToken);
         var software = options.InstalledSoftwareTable;
         await ExecuteAsync(connection, transaction,
-            $"DELETE FROM {Name(options.SchemaName, software.TableName)} WHERE {Name(software.PcForeignKeyColumn)} = @pcId",
+            BuildDeleteInstalledSoftwareSql(),
             [new("@pcId", pcId)], cancellationToken);
 
         var policies = await ListEnabledPoliciesAsync(connection, transaction, cancellationToken);
@@ -402,7 +402,9 @@ public sealed class SqlServerInventoryRepository(SqlServerStorageOptions options
         await reader.CloseAsync();
 
         var installed = await ReadInstalledSoftwareAsync(connection, transaction: null, pcId, classification, cancellationToken);
-        return detail with { InstalledSoftware = installed };
+        var assignments = await ReadLicenseAssignmentsAsync(connection, transaction: null, pcId, cancellationToken);
+        var policies = await ListEnabledPoliciesAsync(connection, transaction: null, cancellationToken);
+        return detail with { InstalledSoftware = ApplyLicenseSources(installed, assignments, policies) };
     }
 
     public async Task<(int TotalCount, List<SoftwareAggregate> Items)> ListSoftwareAsync(
@@ -450,6 +452,12 @@ public sealed class SqlServerInventoryRepository(SqlServerStorageOptions options
                 reader.GetInt32(reader.GetOrdinal("device_count"))));
         }
 
+        await reader.CloseAsync();
+        if (items.Exists(item => item.Classification == SoftwarePolicyClassificationNames.Managed))
+        {
+            items = await FillSoftwareLicenseCountsAsync(connection, items, cancellationToken);
+        }
+
         return (totalCount, items);
     }
 
@@ -464,6 +472,7 @@ public sealed class SqlServerInventoryRepository(SqlServerStorageOptions options
         await connection.OpenAsync(cancellationToken);
         var software = options.InstalledSoftwareTable;
         var pc = options.PcTable;
+        var license = options.SoftwareLicenseTable;
         var sql = $"""
             SELECT
                 COUNT(*) OVER() AS total_count,
@@ -471,10 +480,14 @@ public sealed class SqlServerInventoryRepository(SqlServerStorageOptions options
                 p.{Name(pc.OperatingSystemColumn)}, p.{Name(pc.AgentVersionColumn)},
                 p.{Name(pc.LastHeartbeatUtcColumn)}, p.{Name(pc.LastInventoryUtcColumn)},
                 s.{Name(software.DisplayVersionColumn)}, s.{Name(software.PublisherColumn)},
-                s.{Name(software.ClassificationColumn)}
+                s.{Name(software.ClassificationColumn)},
+                l.{Name(license.LicenseSourceColumn)} AS license_source_override
             FROM {Name(options.SchemaName, software.TableName)} AS s
             INNER JOIN {Name(options.SchemaName, pc.TableName)} AS p
                 ON p.{Name(pc.PrimaryKeyColumn)} = s.{Name(software.PcForeignKeyColumn)}
+            LEFT JOIN {Name(options.SchemaName, license.TableName)} AS l
+                ON l.{Name(license.PcForeignKeyColumn)} = s.{Name(software.PcForeignKeyColumn)}
+               AND l.{Name(license.SoftwareNameColumn)} = s.{Name(software.DisplayNameColumn)}
             WHERE s.{Name(software.DisplayNameColumn)} = @name
               AND (@classification IS NULL OR s.{Name(software.ClassificationColumn)} = @classification)
             ORDER BY p.{Name(pc.HostNameColumn)}, p.{Name(pc.DeviceCodeColumn)}
@@ -495,6 +508,8 @@ public sealed class SqlServerInventoryRepository(SqlServerStorageOptions options
                 totalCount = reader.GetInt32(reader.GetOrdinal("total_count"));
             }
 
+            var storedClassification = ReadClassification(reader, software.ClassificationColumn);
+            var overrideSource = ReadNullableString(reader, "license_source_override");
             items.Add(new SoftwareDevice(
                 reader.GetString(reader.GetOrdinal(pc.DeviceCodeColumn)),
                 reader.GetString(reader.GetOrdinal(pc.HostNameColumn)),
@@ -505,7 +520,16 @@ public sealed class SqlServerInventoryRepository(SqlServerStorageOptions options
                 ReadNullableDateTimeOffset(reader, pc.LastInventoryUtcColumn),
                 ReadNullableString(reader, software.DisplayVersionColumn),
                 ReadNullableString(reader, software.PublisherColumn),
-                ReadClassification(reader, software.ClassificationColumn)));
+                storedClassification,
+                LicenseSource: null,
+                LicenseSourceOverride: overrideSource));
+        }
+
+        await reader.CloseAsync();
+        if (items.Count > 0)
+        {
+            var policies = await ListEnabledPoliciesAsync(connection, transaction: null, cancellationToken);
+            items = ApplySoftwareDeviceLicenseSources(name, items, policies);
         }
 
         return (totalCount, items);
@@ -558,25 +582,7 @@ public sealed class SqlServerInventoryRepository(SqlServerStorageOptions options
     {
         await using var connection = new SqlConnection(options.ConnectionString);
         await connection.OpenAsync(cancellationToken);
-        var table = options.SoftwarePolicyTable;
-        var updatedAt = DateTimeOffset.UtcNow;
-        var sql = $"""
-            INSERT INTO {Name(options.SchemaName, table.TableName)}
-            ({Name(table.ClassificationColumn)}, {Name(table.ProductNameColumn)}, {Name(table.PublisherColumn)},
-             {Name(table.VersionPatternColumn)}, {Name(table.NotesColumn)}, {Name(table.EnabledColumn)},
-             {Name(table.UpdatedAtUtcColumn)})
-            OUTPUT {PolicySelectList("INSERTED")}
-            VALUES (@classification, @productName, @publisher, @versionPattern, @notes, @enabled, @updatedAt);
-            """;
-        await using var command = new SqlCommand(sql, connection);
-        AddPolicyWriteParameters(command, request, updatedAt);
-        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
-        if (!await reader.ReadAsync(cancellationToken))
-        {
-            throw new InvalidOperationException("The software policy insert did not return a row.");
-        }
-
-        return ReadPolicy(reader) ?? throw new InvalidOperationException("The software policy insert returned an invalid classification.");
+        return await InsertPolicyAsync(connection, transaction: null, request, cancellationToken);
     }
 
     public async Task<SoftwarePolicyEntry?> UpdatePolicyAsync(long id, SoftwarePolicyWriteRequest request, CancellationToken cancellationToken)
@@ -592,44 +598,11 @@ public sealed class SqlServerInventoryRepository(SqlServerStorageOptions options
             return null;
         }
 
-        var table = options.SoftwarePolicyTable;
-        var updatedAt = DateTimeOffset.UtcNow;
-        var sql = $"""
-            UPDATE {Name(options.SchemaName, table.TableName)}
-            SET {Name(table.ClassificationColumn)} = @classification,
-                {Name(table.ProductNameColumn)} = @productName,
-                {Name(table.PublisherColumn)} = @publisher,
-                {Name(table.VersionPatternColumn)} = @versionPattern,
-                {Name(table.NotesColumn)} = @notes,
-                {Name(table.EnabledColumn)} = @enabled,
-                {Name(table.UpdatedAtUtcColumn)} = @updatedAt
-            OUTPUT {PolicySelectList("INSERTED")}
-            WHERE {Name(table.PrimaryKeyColumn)} = @id;
-            """;
-        await using var command = new SqlCommand(sql, connection, transaction);
-        command.Parameters.Add(new SqlParameter("@id", id));
-        AddPolicyWriteParameters(command, request, updatedAt);
-        SoftwarePolicyEntry? updated;
-        await using (var reader = await command.ExecuteReaderAsync(cancellationToken))
-        {
-            if (!await reader.ReadAsync(cancellationToken))
-            {
-                await transaction.RollbackAsync(cancellationToken);
-                return null;
-            }
-
-            updated = ReadPolicy(reader);
-        }
-
+        var updated = await UpdatePolicyRowAsync(connection, transaction, id, existing, request, cancellationToken);
         if (updated is null)
         {
             await transaction.RollbackAsync(cancellationToken);
-            throw new InvalidOperationException("The software policy update returned an invalid classification.");
-        }
-
-        if (ShouldClearViolations(existing, updated))
-        {
-            await DeleteViolationsForPolicyAsync(connection, transaction, id, cancellationToken);
+            return null;
         }
 
         await transaction.CommitAsync(cancellationToken);
@@ -645,6 +618,89 @@ public sealed class SqlServerInventoryRepository(SqlServerStorageOptions options
         await using var command = new SqlCommand(sql, connection);
         command.Parameters.Add(new SqlParameter("@id", id));
         return await command.ExecuteNonQueryAsync(cancellationToken) > 0;
+    }
+
+    public async Task<SoftwarePolicyEntry> UpsertSoftwareClassificationAsync(
+        string productName,
+        SoftwareClassificationWriteRequest request,
+        CancellationToken cancellationToken)
+    {
+        LicenseSourceNames.TryParse(request.DefaultLicenseSource, out var defaultLicenseSource);
+        var write = new SoftwarePolicyWriteRequest(
+            productName.Trim(),
+            request.Publisher,
+            VersionPattern: null,
+            request.Classification,
+            Notes: null,
+            Enabled: true,
+            defaultLicenseSource);
+
+        await using var connection = new SqlConnection(options.ConnectionString);
+        await connection.OpenAsync(cancellationToken);
+        await using var transaction = (SqlTransaction)await connection.BeginTransactionAsync(cancellationToken);
+
+        var existing = await FindEnabledExactNamePolicyAsync(connection, transaction, write.ProductName, cancellationToken);
+        SoftwarePolicyEntry saved;
+        if (existing is null)
+        {
+            saved = await InsertPolicyAsync(connection, transaction, write, cancellationToken);
+        }
+        else
+        {
+            write = write with { Notes = existing.Notes, VersionPattern = existing.VersionPattern };
+            saved = await UpdatePolicyRowAsync(connection, transaction, existing.Id, existing, write, cancellationToken)
+                ?? throw new InvalidOperationException("The software classification update did not return a row.");
+        }
+
+        await RecolorInstalledSoftwareAsync(connection, transaction, write.ProductName, cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+        return saved;
+    }
+
+    public async Task<bool> SetDeviceSoftwareLicenseSourceAsync(
+        string deviceCode,
+        string softwareName,
+        string? licenseSource,
+        CancellationToken cancellationToken)
+    {
+        await using var connection = new SqlConnection(options.ConnectionString);
+        await connection.OpenAsync(cancellationToken);
+        await using var transaction = (SqlTransaction)await connection.BeginTransactionAsync(cancellationToken);
+
+        var pcId = await FindPcIdAsync(connection, transaction, deviceCode, cancellationToken);
+        if (pcId is null)
+        {
+            await transaction.RollbackAsync(cancellationToken);
+            return false;
+        }
+
+        var name = Truncate(softwareName.Trim(), 256)!;
+        if (licenseSource is null)
+        {
+            await ExecuteAsync(
+                connection,
+                transaction,
+                BuildDeleteSoftwareLicenseSql(),
+                [new("@pcId", pcId.Value), new("@name", name)],
+                cancellationToken);
+        }
+        else
+        {
+            await ExecuteAsync(
+                connection,
+                transaction,
+                BuildUpsertSoftwareLicenseSql(),
+                [
+                    new("@pcId", pcId.Value),
+                    new("@name", name),
+                    new("@licenseSource", licenseSource),
+                    new("@updatedAt", DateTimeOffset.UtcNow)
+                ],
+                cancellationToken);
+        }
+
+        await transaction.CommitAsync(cancellationToken);
+        return true;
     }
 
     public async Task<(int TotalCount, List<SoftwareViolationEntry> Items)> ListViolationsAsync(
@@ -924,6 +980,366 @@ public sealed class SqlServerInventoryRepository(SqlServerStorageOptions options
         return value is null or DBNull ? null : Convert.ToInt64(value);
     }
 
+    private async Task<SoftwarePolicyEntry> InsertPolicyAsync(
+        SqlConnection connection,
+        SqlTransaction? transaction,
+        SoftwarePolicyWriteRequest request,
+        CancellationToken cancellationToken)
+    {
+        var updatedAt = DateTimeOffset.UtcNow;
+        await using var command = CreateCommand(connection, transaction, BuildInsertPolicySql());
+        AddPolicyWriteParameters(command, request, updatedAt);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        if (!await reader.ReadAsync(cancellationToken))
+        {
+            throw new InvalidOperationException("The software policy insert did not return a row.");
+        }
+
+        return ReadPolicy(reader) ?? throw new InvalidOperationException("The software policy insert returned an invalid classification.");
+    }
+
+    private async Task<SoftwarePolicyEntry?> UpdatePolicyRowAsync(
+        SqlConnection connection,
+        SqlTransaction transaction,
+        long id,
+        SoftwarePolicyEntry existing,
+        SoftwarePolicyWriteRequest request,
+        CancellationToken cancellationToken)
+    {
+        var updatedAt = DateTimeOffset.UtcNow;
+        await using var command = new SqlCommand(BuildUpdatePolicySql(), connection, transaction);
+        command.Parameters.Add(new SqlParameter("@id", id));
+        AddPolicyWriteParameters(command, request, updatedAt);
+        SoftwarePolicyEntry? updated;
+        await using (var reader = await command.ExecuteReaderAsync(cancellationToken))
+        {
+            if (!await reader.ReadAsync(cancellationToken))
+            {
+                return null;
+            }
+
+            updated = ReadPolicy(reader);
+        }
+
+        if (updated is null)
+        {
+            throw new InvalidOperationException("The software policy update returned an invalid classification.");
+        }
+
+        if (ShouldClearViolations(existing, updated))
+        {
+            await DeleteViolationsForPolicyAsync(connection, transaction, id, cancellationToken);
+        }
+
+        return updated;
+    }
+
+    private async Task<SoftwarePolicyEntry?> FindEnabledExactNamePolicyAsync(
+        SqlConnection connection,
+        SqlTransaction transaction,
+        string productName,
+        CancellationToken cancellationToken)
+    {
+        await using var command = new SqlCommand(BuildFindEnabledExactNamePolicySql(), connection, transaction);
+        command.Parameters.Add(new SqlParameter("@productName", productName));
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        return await reader.ReadAsync(cancellationToken) ? ReadPolicy(reader) : null;
+    }
+
+    private async Task RecolorInstalledSoftwareAsync(
+        SqlConnection connection,
+        SqlTransaction transaction,
+        string productName,
+        CancellationToken cancellationToken)
+    {
+        var policies = await ListEnabledPoliciesAsync(connection, transaction, cancellationToken);
+        var software = options.InstalledSoftwareTable;
+        var sql = $"""
+            SELECT {Name(software.PrimaryKeyColumn)}, {Name(software.DisplayNameColumn)}, {Name(software.DisplayVersionColumn)},
+                   {Name(software.PublisherColumn)}, {Name(software.InstallLocationColumn)},
+                   {Name(software.DiscoveryScopeColumn)}, {Name(software.DiscoverySourceColumn)}
+            FROM {Name(options.SchemaName, software.TableName)}
+            WHERE {Name(software.DisplayNameColumn)} = @name;
+            """;
+        var rows = new List<(long Id, InstalledSoftwareEntry Entry)>();
+        await using (var command = new SqlCommand(sql, connection, transaction))
+        {
+            command.Parameters.Add(new SqlParameter("@name", productName));
+            await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+            while (await reader.ReadAsync(cancellationToken))
+            {
+                rows.Add((
+                    reader.GetInt64(reader.GetOrdinal(software.PrimaryKeyColumn)),
+                    new InstalledSoftwareEntry(
+                        reader.GetString(reader.GetOrdinal(software.DisplayNameColumn)),
+                        ReadNullableString(reader, software.DisplayVersionColumn),
+                        ReadNullableString(reader, software.PublisherColumn),
+                        ReadNullableString(reader, software.InstallLocationColumn),
+                        reader.GetString(reader.GetOrdinal(software.DiscoveryScopeColumn)),
+                        reader.GetString(reader.GetOrdinal(software.DiscoverySourceColumn)))));
+            }
+        }
+
+        foreach (var (id, entry) in rows)
+        {
+            var match = SoftwarePolicyMatcher.Match(entry, policies);
+            await ExecuteAsync(
+                connection,
+                transaction,
+                BuildUpdateInstalledClassificationSql(),
+                [new("@id", id), new("@classification", Truncate(match.StoredClassification, 32)!)],
+                cancellationToken);
+        }
+    }
+
+    private async Task<List<SoftwareAggregate>> FillSoftwareLicenseCountsAsync(
+        SqlConnection connection,
+        List<SoftwareAggregate> items,
+        CancellationToken cancellationToken)
+    {
+        var managedNames = items
+            .Where(item => item.Classification == SoftwarePolicyClassificationNames.Managed)
+            .Select(item => item.Name)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        if (managedNames.Count == 0)
+        {
+            return items;
+        }
+
+        var policies = await ListEnabledPoliciesAsync(connection, transaction: null, cancellationToken);
+        var software = options.InstalledSoftwareTable;
+        var license = options.SoftwareLicenseTable;
+        var parameters = new List<SqlParameter>();
+        var nameParams = new List<string>();
+        for (var i = 0; i < managedNames.Count; i++)
+        {
+            var parameterName = "@name" + i.ToString(System.Globalization.CultureInfo.InvariantCulture);
+            nameParams.Add(parameterName);
+            parameters.Add(new SqlParameter(parameterName, managedNames[i]));
+        }
+
+        var sql = $"""
+            SELECT s.{Name(software.DisplayNameColumn)}, s.{Name(software.DisplayVersionColumn)},
+                   s.{Name(software.PublisherColumn)}, s.{Name(software.PcForeignKeyColumn)},
+                   l.{Name(license.LicenseSourceColumn)}
+            FROM {Name(options.SchemaName, software.TableName)} AS s
+            LEFT JOIN {Name(options.SchemaName, license.TableName)} AS l
+                ON l.{Name(license.PcForeignKeyColumn)} = s.{Name(software.PcForeignKeyColumn)}
+               AND l.{Name(license.SoftwareNameColumn)} = s.{Name(software.DisplayNameColumn)}
+            WHERE s.{Name(software.ClassificationColumn)} = N'{SoftwarePolicyClassificationNames.Managed}'
+              AND s.{Name(software.DisplayNameColumn)} IN ({string.Join(", ", nameParams)});
+            """;
+        var counts = new Dictionary<(string Name, string? Version), (int Company, int Byo, int Unassigned)>(
+            SoftwareAggregateKeyComparer.Instance);
+        await using var command = new SqlCommand(sql, connection);
+        command.Parameters.AddRange(parameters.ToArray());
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            var name = reader.GetString(0);
+            var version = reader.IsDBNull(1) ? null : reader.GetString(1);
+            var publisher = reader.IsDBNull(2) ? null : reader.GetString(2);
+            var assignment = reader.IsDBNull(4) ? null : reader.GetString(4);
+            LicenseSourceNames.TryParse(assignment, out assignment);
+            var match = SoftwarePolicyMatcher.Match(
+                new InstalledSoftwareEntry(name, version, publisher, null, "query", "query"),
+                policies);
+            var policyDefault = match.Classification == SoftwarePolicyClassification.Managed
+                ? match.Policy?.DefaultLicenseSource
+                : null;
+            var effective = LicenseSourceNames.ResolveEffective(
+                assignment,
+                SoftwarePolicyClassificationNames.Managed,
+                policyDefault);
+            var key = (name, version);
+            counts.TryGetValue(key, out var current);
+            counts[key] = effective switch
+            {
+                LicenseSourceNames.Company => (current.Company + 1, current.Byo, current.Unassigned),
+                LicenseSourceNames.Byo => (current.Company, current.Byo + 1, current.Unassigned),
+                _ => (current.Company, current.Byo, current.Unassigned + 1)
+            };
+        }
+
+        return items.Select(item =>
+        {
+            if (item.Classification != SoftwarePolicyClassificationNames.Managed)
+            {
+                return item;
+            }
+
+            counts.TryGetValue((item.Name, item.Version), out var value);
+            return item with { CompanyCount = value.Company, ByoCount = value.Byo, UnassignedCount = value.Unassigned };
+        }).ToList();
+    }
+
+    private async Task<Dictionary<string, string>> ReadLicenseAssignmentsAsync(
+        SqlConnection connection,
+        SqlTransaction? transaction,
+        long pcId,
+        CancellationToken cancellationToken)
+    {
+        var license = options.SoftwareLicenseTable;
+        var sql = $"""
+            SELECT {Name(license.SoftwareNameColumn)}, {Name(license.LicenseSourceColumn)}
+            FROM {Name(options.SchemaName, license.TableName)}
+            WHERE {Name(license.PcForeignKeyColumn)} = @pcId;
+            """;
+        await using var command = CreateCommand(connection, transaction, sql);
+        command.Parameters.Add(new SqlParameter("@pcId", pcId));
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        var assignments = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            var name = reader.GetString(0);
+            LicenseSourceNames.TryParse(reader.GetString(1), out var source);
+            if (source is not null)
+            {
+                assignments[name] = source;
+            }
+        }
+
+        return assignments;
+    }
+
+    private static List<InstalledSoftwareEntry> ApplyLicenseSources(
+        IReadOnlyList<InstalledSoftwareEntry> installed,
+        IReadOnlyDictionary<string, string> assignments,
+        IReadOnlyList<SoftwarePolicyEntry> policies)
+    {
+        var result = new List<InstalledSoftwareEntry>(installed.Count);
+        foreach (var entry in installed)
+        {
+            assignments.TryGetValue(entry.Name, out var assignment);
+            var match = SoftwarePolicyMatcher.Match(entry, policies);
+            var policyDefault = match.Classification == SoftwarePolicyClassification.Managed
+                ? match.Policy?.DefaultLicenseSource
+                : null;
+            var classification = entry.Classification ?? match.StoredClassification;
+            result.Add(entry with
+            {
+                LicenseSource = LicenseSourceNames.ResolveEffective(assignment, classification, policyDefault),
+                LicenseSourceOverride = assignment
+            });
+        }
+
+        return result;
+    }
+
+    private static List<SoftwareDevice> ApplySoftwareDeviceLicenseSources(
+        string softwareName,
+        List<SoftwareDevice> items,
+        IReadOnlyList<SoftwarePolicyEntry> policies)
+    {
+        var result = new List<SoftwareDevice>(items.Count);
+        foreach (var item in items)
+        {
+            var match = SoftwarePolicyMatcher.Match(
+                new InstalledSoftwareEntry(softwareName, item.Version, item.Publisher, null, "query", "query", item.Classification),
+                policies);
+            var policyDefault = match.Classification == SoftwarePolicyClassification.Managed
+                ? match.Policy?.DefaultLicenseSource
+                : null;
+            LicenseSourceNames.TryParse(item.LicenseSourceOverride, out var assignment);
+            result.Add(item with
+            {
+                LicenseSource = LicenseSourceNames.ResolveEffective(assignment, item.Classification, policyDefault),
+                LicenseSourceOverride = assignment
+            });
+        }
+
+        return result;
+    }
+
+    internal string BuildDeleteInstalledSoftwareSql()
+    {
+        var software = options.InstalledSoftwareTable;
+        return $"DELETE FROM {Name(options.SchemaName, software.TableName)} WHERE {Name(software.PcForeignKeyColumn)} = @pcId";
+    }
+
+    internal string BuildInsertPolicySql()
+    {
+        var table = options.SoftwarePolicyTable;
+        return $"""
+            INSERT INTO {Name(options.SchemaName, table.TableName)}
+            ({Name(table.ClassificationColumn)}, {Name(table.ProductNameColumn)}, {Name(table.PublisherColumn)},
+             {Name(table.VersionPatternColumn)}, {Name(table.NotesColumn)}, {Name(table.EnabledColumn)},
+             {Name(table.UpdatedAtUtcColumn)}, {Name(table.DefaultLicenseSourceColumn)})
+            OUTPUT {PolicySelectList("INSERTED")}
+            VALUES (@classification, @productName, @publisher, @versionPattern, @notes, @enabled, @updatedAt, @defaultLicenseSource);
+            """;
+    }
+
+    internal string BuildUpdatePolicySql()
+    {
+        var table = options.SoftwarePolicyTable;
+        return $"""
+            UPDATE {Name(options.SchemaName, table.TableName)}
+            SET {Name(table.ClassificationColumn)} = @classification,
+                {Name(table.ProductNameColumn)} = @productName,
+                {Name(table.PublisherColumn)} = @publisher,
+                {Name(table.VersionPatternColumn)} = @versionPattern,
+                {Name(table.NotesColumn)} = @notes,
+                {Name(table.EnabledColumn)} = @enabled,
+                {Name(table.UpdatedAtUtcColumn)} = @updatedAt,
+                {Name(table.DefaultLicenseSourceColumn)} = @defaultLicenseSource
+            OUTPUT {PolicySelectList("INSERTED")}
+            WHERE {Name(table.PrimaryKeyColumn)} = @id;
+            """;
+    }
+
+    internal string BuildFindEnabledExactNamePolicySql()
+    {
+        var table = options.SoftwarePolicyTable;
+        return $"""
+            SELECT {PolicySelectList()}
+            FROM {Name(options.SchemaName, table.TableName)}
+            WHERE {Name(table.EnabledColumn)} = 1
+              AND {Name(table.ProductNameColumn)} = @productName
+            ORDER BY {Name(table.PrimaryKeyColumn)};
+            """;
+    }
+
+    internal string BuildUpdateInstalledClassificationSql()
+    {
+        var software = options.InstalledSoftwareTable;
+        return $"""
+            UPDATE {Name(options.SchemaName, software.TableName)}
+            SET {Name(software.ClassificationColumn)} = @classification
+            WHERE {Name(software.PrimaryKeyColumn)} = @id;
+            """;
+    }
+
+    internal string BuildUpsertSoftwareLicenseSql()
+    {
+        var license = options.SoftwareLicenseTable;
+        return $"""
+            UPDATE {Name(options.SchemaName, license.TableName)}
+            SET {Name(license.LicenseSourceColumn)} = @licenseSource,
+                {Name(license.UpdatedAtUtcColumn)} = @updatedAt
+            WHERE {Name(license.PcForeignKeyColumn)} = @pcId
+              AND {Name(license.SoftwareNameColumn)} = @name;
+            IF @@ROWCOUNT = 0
+            BEGIN
+                INSERT INTO {Name(options.SchemaName, license.TableName)}
+                ({Name(license.PcForeignKeyColumn)}, {Name(license.SoftwareNameColumn)},
+                 {Name(license.LicenseSourceColumn)}, {Name(license.UpdatedAtUtcColumn)})
+                VALUES (@pcId, @name, @licenseSource, @updatedAt);
+            END;
+            """;
+    }
+
+    internal string BuildDeleteSoftwareLicenseSql()
+    {
+        var license = options.SoftwareLicenseTable;
+        return $"""
+            DELETE FROM {Name(options.SchemaName, license.TableName)}
+            WHERE {Name(license.PcForeignKeyColumn)} = @pcId
+              AND {Name(license.SoftwareNameColumn)} = @name;
+            """;
+    }
+
     internal string BuildDeletePendingUninstallRequestsSql()
     {
         var table = options.UninstallRequestTable;
@@ -1201,7 +1617,7 @@ public sealed class SqlServerInventoryRepository(SqlServerStorageOptions options
         return $"""
             {Column(table.PrimaryKeyColumn)}, {Column(table.ProductNameColumn)}, {Column(table.PublisherColumn)},
             {Column(table.VersionPatternColumn)}, {Column(table.ClassificationColumn)}, {Column(table.NotesColumn)},
-            {Column(table.EnabledColumn)}, {Column(table.UpdatedAtUtcColumn)}
+            {Column(table.EnabledColumn)}, {Column(table.UpdatedAtUtcColumn)}, {Column(table.DefaultLicenseSourceColumn)}
             """;
     }
 
@@ -1213,6 +1629,7 @@ public sealed class SqlServerInventoryRepository(SqlServerStorageOptions options
             return null;
         }
 
+        LicenseSourceNames.TryParse(ReadNullableString(reader, table.DefaultLicenseSourceColumn), out var defaultLicenseSource);
         return new SoftwarePolicyEntry(
             reader.GetInt64(reader.GetOrdinal(table.PrimaryKeyColumn)),
             reader.GetString(reader.GetOrdinal(table.ProductNameColumn)),
@@ -1221,11 +1638,13 @@ public sealed class SqlServerInventoryRepository(SqlServerStorageOptions options
             classification,
             ReadNullableString(reader, table.NotesColumn),
             reader.GetBoolean(reader.GetOrdinal(table.EnabledColumn)),
-            reader.GetFieldValue<DateTimeOffset>(reader.GetOrdinal(table.UpdatedAtUtcColumn)));
+            reader.GetFieldValue<DateTimeOffset>(reader.GetOrdinal(table.UpdatedAtUtcColumn)),
+            LicenseSourceNames.ForManagedPolicy(classification, defaultLicenseSource));
     }
 
     private static void AddPolicyWriteParameters(SqlCommand command, SoftwarePolicyWriteRequest request, DateTimeOffset updatedAt)
     {
+        LicenseSourceNames.TryParse(request.DefaultLicenseSource, out var defaultLicenseSource);
         command.Parameters.Add(new SqlParameter("@classification", SoftwarePolicyClassificationNames.ToStorage(request.Classification!.Value)));
         command.Parameters.Add(new SqlParameter("@productName", Truncate(request.ProductName.Trim(), 256)));
         command.Parameters.Add(new SqlParameter("@publisher", DbValue(Truncate(NullIfWhiteSpace(request.Publisher), 256))));
@@ -1233,6 +1652,9 @@ public sealed class SqlServerInventoryRepository(SqlServerStorageOptions options
         command.Parameters.Add(new SqlParameter("@notes", DbValue(Truncate(NullIfWhiteSpace(request.Notes), 1024))));
         command.Parameters.Add(new SqlParameter("@enabled", request.Enabled));
         command.Parameters.Add(new SqlParameter("@updatedAt", updatedAt));
+        command.Parameters.Add(new SqlParameter(
+            "@defaultLicenseSource",
+            DbValue(LicenseSourceNames.ForManagedPolicy(request.Classification.Value, defaultLicenseSource))));
     }
 
     private async Task<List<InstalledSoftwareEntry>> ReadInstalledSoftwareAsync(
@@ -1396,4 +1818,18 @@ public sealed class SqlServerInventoryRepository(SqlServerStorageOptions options
 
     internal static string Name(params string[] parts) =>
         string.Join('.', parts.Select(part => $"[{part.Replace("]", "]]", StringComparison.Ordinal)}]"));
+}
+
+file sealed class SoftwareAggregateKeyComparer : IEqualityComparer<(string Name, string? Version)>
+{
+    public static SoftwareAggregateKeyComparer Instance { get; } = new();
+
+    public bool Equals((string Name, string? Version) left, (string Name, string? Version) right) =>
+        string.Equals(left.Name, right.Name, StringComparison.OrdinalIgnoreCase) &&
+        string.Equals(left.Version, right.Version, StringComparison.OrdinalIgnoreCase);
+
+    public int GetHashCode((string Name, string? Version) value) =>
+        HashCode.Combine(
+            StringComparer.OrdinalIgnoreCase.GetHashCode(value.Name),
+            value.Version is null ? 0 : StringComparer.OrdinalIgnoreCase.GetHashCode(value.Version));
 }

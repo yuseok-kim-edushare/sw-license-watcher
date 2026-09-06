@@ -20,7 +20,15 @@ public class SqlServerSchemaScriptBuilderTests
         Assert.Contains("[classification] NVARCHAR(32) NOT NULL", sql);
         Assert.Contains("CONSTRAINT [FK_pc_installed_sw_pc_entity] FOREIGN KEY ([pc_id]) REFERENCES [inventory].[pc_entity]([pc_id])", sql);
         Assert.Contains("CREATE TABLE [inventory].[software_policy_list]", sql);
+        Assert.Contains("[default_license_source] NVARCHAR(16) NULL", sql);
         Assert.Contains("CONSTRAINT [DF_software_policy_list_enabled] DEFAULT(1)", sql);
+        Assert.Contains("CREATE TABLE [inventory].[pc_sw_license]", sql);
+        Assert.Contains("[sw_name] NVARCHAR(256) NOT NULL", sql);
+        Assert.Contains("[license_source] NVARCHAR(16) NOT NULL", sql);
+        Assert.Contains("CONSTRAINT [UX_pc_sw_license_pc_id_sw_name] UNIQUE ([pc_id], [sw_name])", sql);
+        Assert.Contains("CONSTRAINT [FK_pc_sw_license_pc_entity] FOREIGN KEY ([pc_id]) REFERENCES [inventory].[pc_entity]([pc_id]) ON DELETE CASCADE", sql);
+        Assert.Contains("IF COL_LENGTH(N'[inventory].[software_policy_list]', N'default_license_source') IS NULL", sql);
+        Assert.Contains("ALTER TABLE [inventory].[software_policy_list] ADD [default_license_source] NVARCHAR(16) NULL;", sql);
         Assert.Contains("CREATE TABLE [inventory].[software_violation]", sql);
         Assert.Contains("CONSTRAINT [UX_software_violation_pc_id_display_name] UNIQUE ([pc_id], [display_name])", sql);
         Assert.Contains("CREATE TABLE [inventory].[stale_heartbeat_notification]", sql);
@@ -37,12 +45,14 @@ public class SqlServerSchemaScriptBuilderTests
         Assert.Contains("CREATE INDEX [IX_software_violation_policy_id] ON [inventory].[software_violation]([policy_id]);", sql);
         Assert.Contains("CREATE INDEX [IX_pc_uninstall_request_pc_id] ON [inventory].[pc_uninstall_request]([pc_id]);", sql);
         Assert.Contains("CREATE INDEX [IX_pc_uninstall_request_status] ON [inventory].[pc_uninstall_request]([status]);", sql);
+        Assert.Contains("CREATE INDEX [IX_pc_sw_license_pc_id] ON [inventory].[pc_sw_license]([pc_id]);", sql);
         Assert.Contains("IF OBJECT_ID(N'[inventory].[pc_entity]', N'U') IS NULL", sql);
         Assert.Contains("IF OBJECT_ID(N'[inventory].[pc_installed_sw]', N'U') IS NULL", sql);
         Assert.Contains("IF OBJECT_ID(N'[inventory].[software_policy_list]', N'U') IS NULL", sql);
         Assert.Contains("IF OBJECT_ID(N'[inventory].[software_violation]', N'U') IS NULL", sql);
         Assert.Contains("IF OBJECT_ID(N'[inventory].[stale_heartbeat_notification]', N'U') IS NULL", sql);
         Assert.Contains("IF OBJECT_ID(N'[inventory].[pc_uninstall_request]', N'U') IS NULL", sql);
+        Assert.Contains("IF OBJECT_ID(N'[inventory].[pc_sw_license]', N'U') IS NULL", sql);
         Assert.Contains("IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_pc_installed_sw_pc_id' AND object_id = OBJECT_ID(N'[inventory].[pc_installed_sw]'))", sql);
         Assert.Contains("IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_pc_installed_sw_classification' AND object_id = OBJECT_ID(N'[inventory].[pc_installed_sw]'))", sql);
         Assert.Contains("IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_software_policy_list_classification' AND object_id = OBJECT_ID(N'[inventory].[software_policy_list]'))", sql);
@@ -67,6 +77,8 @@ public class SqlServerSchemaScriptBuilderTests
         Assert.Contains("CONSTRAINT [FK_stale_heartbeat_notification_machines] FOREIGN KEY ([pc_id]) REFERENCES [ops_inventory].[machines]([id]) ON DELETE CASCADE", sql);
         Assert.Contains("CREATE TABLE [ops_inventory].[pc_uninstall_request]", sql);
         Assert.Contains("CONSTRAINT [FK_pc_uninstall_request_machines] FOREIGN KEY ([pc_id]) REFERENCES [ops_inventory].[machines]([id]) ON DELETE CASCADE", sql);
+        Assert.Contains("CREATE TABLE [ops_inventory].[pc_sw_license]", sql);
+        Assert.Contains("CONSTRAINT [FK_pc_sw_license_machines] FOREIGN KEY ([pc_id]) REFERENCES [ops_inventory].[machines]([id]) ON DELETE CASCADE", sql);
     }
 
     [Fact]
@@ -188,6 +200,30 @@ public class SqlIdentifierValidatorTests
         var options = new SqlServerStorageOptions
         {
             UninstallRequestTable = new UninstallRequestTableOptions { TableName = "uninstall-request" }
+        };
+
+        var ex = Assert.Throws<ArgumentException>(() => SqlIdentifierValidator.Validate(options));
+        Assert.Contains("SQL identifiers must start with a letter or underscore", ex.Message);
+    }
+
+    [Fact]
+    public void Validate_rejects_invalid_software_license_table()
+    {
+        var options = new SqlServerStorageOptions
+        {
+            SoftwareLicenseTable = new SoftwareLicenseTableOptions { TableName = "pc-sw-license" }
+        };
+
+        var ex = Assert.Throws<ArgumentException>(() => SqlIdentifierValidator.Validate(options));
+        Assert.Contains("SQL identifiers must start with a letter or underscore", ex.Message);
+    }
+
+    [Fact]
+    public void Validate_rejects_invalid_default_license_source_column()
+    {
+        var options = new SqlServerStorageOptions
+        {
+            SoftwarePolicyTable = new SoftwarePolicyTableOptions { DefaultLicenseSourceColumn = "default-source" }
         };
 
         var ex = Assert.Throws<ArgumentException>(() => SqlIdentifierValidator.Validate(options));

@@ -17,6 +17,7 @@ public sealed class SqlServerSchemaScriptBuilder
         var violation = options.SoftwareViolationTable;
         var staleHeartbeat = options.StaleHeartbeatNotificationTable;
         var uninstall = options.UninstallRequestTable;
+        var license = options.SoftwareLicenseTable;
 
         var sql = new StringBuilder();
         sql.AppendLine($"IF SCHEMA_ID(N'{schemaLiteral}') IS NULL EXEC(N'CREATE SCHEMA [{schemaCommandIdentifier}]');");
@@ -60,7 +61,8 @@ public sealed class SqlServerSchemaScriptBuilder
         sql.AppendLine($"    [{Escape(policy.VersionPatternColumn)}] NVARCHAR(64) NULL,");
         sql.AppendLine($"    [{Escape(policy.NotesColumn)}] NVARCHAR(1024) NULL,");
         sql.AppendLine($"    [{Escape(policy.EnabledColumn)}] BIT NOT NULL CONSTRAINT [{Escape(BuildIdentifier("DF", policy.TableName, policy.EnabledColumn))}] DEFAULT(1),");
-        sql.AppendLine($"    [{Escape(policy.UpdatedAtUtcColumn)}] DATETIMEOFFSET NOT NULL");
+        sql.AppendLine($"    [{Escape(policy.UpdatedAtUtcColumn)}] DATETIMEOFFSET NOT NULL,");
+        sql.AppendLine($"    [{Escape(policy.DefaultLicenseSourceColumn)}] NVARCHAR(16) NULL");
         sql.AppendLine(");");
         sql.AppendLine("END");
         sql.AppendLine();
@@ -105,12 +107,26 @@ public sealed class SqlServerSchemaScriptBuilder
         sql.AppendLine(");");
         sql.AppendLine("END");
         sql.AppendLine();
+        AppendTableIfMissing(sql, schema, license.TableName);
+        sql.AppendLine($"CREATE TABLE [{schema}].[{Escape(license.TableName)}] (");
+        sql.AppendLine($"    [{Escape(license.PcForeignKeyColumn)}] BIGINT NOT NULL,");
+        sql.AppendLine($"    [{Escape(license.SoftwareNameColumn)}] NVARCHAR(256) NOT NULL,");
+        sql.AppendLine($"    [{Escape(license.LicenseSourceColumn)}] NVARCHAR(16) NOT NULL,");
+        sql.AppendLine($"    [{Escape(license.UpdatedAtUtcColumn)}] DATETIMEOFFSET NOT NULL,");
+        sql.AppendLine($"    CONSTRAINT [{Escape(BuildIdentifier("UX", license.TableName, license.PcForeignKeyColumn, license.SoftwareNameColumn))}] UNIQUE ([{Escape(license.PcForeignKeyColumn)}], [{Escape(license.SoftwareNameColumn)}]),");
+        sql.AppendLine($"    CONSTRAINT [{Escape(BuildIdentifier("FK", license.TableName, pc.TableName))}] FOREIGN KEY ([{Escape(license.PcForeignKeyColumn)}]) REFERENCES [{schema}].[{Escape(pc.TableName)}]([{Escape(pc.PrimaryKeyColumn)}]) ON DELETE CASCADE");
+        sql.AppendLine(");");
+        sql.AppendLine("END");
+        sql.AppendLine();
+        AppendColumnIfMissing(sql, schema, policy.TableName, policy.DefaultLicenseSourceColumn, "NVARCHAR(16) NULL");
+        sql.AppendLine();
         AppendIndexIfMissing(sql, schema, installedSoftware.TableName, installedSoftware.PcForeignKeyColumn);
         AppendIndexIfMissing(sql, schema, installedSoftware.TableName, installedSoftware.ClassificationColumn);
         AppendIndexIfMissing(sql, schema, policy.TableName, policy.ClassificationColumn);
         AppendIndexIfMissing(sql, schema, violation.TableName, violation.PolicyForeignKeyColumn);
         AppendIndexIfMissing(sql, schema, uninstall.TableName, uninstall.PcForeignKeyColumn);
         AppendIndexIfMissing(sql, schema, uninstall.TableName, uninstall.StatusColumn);
+        AppendIndexIfMissing(sql, schema, license.TableName, license.PcForeignKeyColumn);
         return sql.ToString();
     }
 
@@ -119,6 +135,19 @@ public sealed class SqlServerSchemaScriptBuilder
         var objectId = EscapeSqlLiteral($"[{escapedSchema}].[{Escape(tableName)}]");
         sql.AppendLine($"IF OBJECT_ID(N'{objectId}', N'U') IS NULL");
         sql.AppendLine("BEGIN");
+    }
+
+    private static void AppendColumnIfMissing(
+        StringBuilder sql,
+        string escapedSchema,
+        string tableName,
+        string columnName,
+        string definition)
+    {
+        var objectId = EscapeSqlLiteral($"[{escapedSchema}].[{Escape(tableName)}]");
+        var columnLiteral = EscapeSqlLiteral(columnName);
+        sql.AppendLine($"IF COL_LENGTH(N'{objectId}', N'{columnLiteral}') IS NULL");
+        sql.AppendLine($"ALTER TABLE [{escapedSchema}].[{Escape(tableName)}] ADD [{Escape(columnName)}] {definition};");
     }
 
     private static void AppendIndexIfMissing(StringBuilder sql, string escapedSchema, string tableName, string columnName)
@@ -173,7 +202,7 @@ public static class SqlIdentifierValidator
             options.SoftwarePolicyTable.ClassificationColumn, options.SoftwarePolicyTable.ProductNameColumn,
             options.SoftwarePolicyTable.PublisherColumn, options.SoftwarePolicyTable.VersionPatternColumn,
             options.SoftwarePolicyTable.NotesColumn, options.SoftwarePolicyTable.EnabledColumn,
-            options.SoftwarePolicyTable.UpdatedAtUtcColumn,
+            options.SoftwarePolicyTable.UpdatedAtUtcColumn, options.SoftwarePolicyTable.DefaultLicenseSourceColumn,
             options.SoftwareViolationTable.TableName, options.SoftwareViolationTable.PrimaryKeyColumn,
             options.SoftwareViolationTable.PcForeignKeyColumn, options.SoftwareViolationTable.PolicyForeignKeyColumn,
             options.SoftwareViolationTable.DisplayNameColumn, options.SoftwareViolationTable.DisplayVersionColumn,
@@ -185,7 +214,10 @@ public static class SqlIdentifierValidator
             options.UninstallRequestTable.PcForeignKeyColumn, options.UninstallRequestTable.StatusColumn,
             options.UninstallRequestTable.RequestedAtUtcColumn, options.UninstallRequestTable.ApprovedAtUtcColumn,
             options.UninstallRequestTable.ConsumedAtUtcColumn, options.UninstallRequestTable.ExpiresAtUtcColumn,
-            options.UninstallRequestTable.CodeHashColumn, options.UninstallRequestTable.CodeColumn
+            options.UninstallRequestTable.CodeHashColumn, options.UninstallRequestTable.CodeColumn,
+            options.SoftwareLicenseTable.TableName, options.SoftwareLicenseTable.PcForeignKeyColumn,
+            options.SoftwareLicenseTable.SoftwareNameColumn, options.SoftwareLicenseTable.LicenseSourceColumn,
+            options.SoftwareLicenseTable.UpdatedAtUtcColumn
         };
 
         if (identifiers.Any(identifier => !IsValid(identifier)))

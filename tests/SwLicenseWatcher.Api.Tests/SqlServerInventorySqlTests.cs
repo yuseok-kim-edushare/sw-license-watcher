@@ -230,4 +230,78 @@ public class SqlServerInventorySqlTests
         Assert.Contains("[req]]id] = @id", approve, StringComparison.Ordinal);
         Assert.Contains("[st]]atus] = @pending", approve, StringComparison.Ordinal);
     }
+
+    [Fact]
+    public void BuildDeleteInstalledSoftwareSql_targets_only_the_installed_table()
+    {
+        var sql = new SqlServerInventoryRepository(new SqlServerStorageOptions()).BuildDeleteInstalledSoftwareSql();
+        Assert.Contains("DELETE FROM [inventory].[pc_installed_sw]", sql, StringComparison.Ordinal);
+        Assert.Contains("[pc_id] = @pcId", sql, StringComparison.Ordinal);
+        Assert.DoesNotContain("pc_sw_license", sql, StringComparison.Ordinal);
+        Assert.DoesNotContain("license_source", sql, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void BuildInsertPolicySql_includes_default_license_source()
+    {
+        var sql = new SqlServerInventoryRepository(new SqlServerStorageOptions()).BuildInsertPolicySql();
+        Assert.Contains("[default_license_source]", sql, StringComparison.Ordinal);
+        Assert.Contains("@defaultLicenseSource", sql, StringComparison.Ordinal);
+        Assert.DoesNotContain("Token", sql, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void BuildFindEnabledExactNamePolicySql_matches_enabled_product_name()
+    {
+        var sql = new SqlServerInventoryRepository(new SqlServerStorageOptions()).BuildFindEnabledExactNamePolicySql();
+        Assert.Contains("[enabled] = 1", sql, StringComparison.Ordinal);
+        Assert.Contains("[product_name] = @productName", sql, StringComparison.Ordinal);
+        Assert.Contains("[default_license_source]", sql, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void BuildUpdateInstalledClassificationSql_updates_by_installed_row_id()
+    {
+        var sql = new SqlServerInventoryRepository(new SqlServerStorageOptions()).BuildUpdateInstalledClassificationSql();
+        Assert.Contains("UPDATE [inventory].[pc_installed_sw]", sql, StringComparison.Ordinal);
+        Assert.Contains("SET [classification] = @classification", sql, StringComparison.Ordinal);
+        Assert.Contains("[installed_sw_id] = @id", sql, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void BuildUpsertSoftwareLicenseSql_updates_or_inserts_assignment()
+    {
+        var sql = new SqlServerInventoryRepository(new SqlServerStorageOptions()).BuildUpsertSoftwareLicenseSql();
+        Assert.Contains("UPDATE [inventory].[pc_sw_license]", sql, StringComparison.Ordinal);
+        Assert.Contains("INSERT INTO [inventory].[pc_sw_license]", sql, StringComparison.Ordinal);
+        Assert.Contains("[license_source] = @licenseSource", sql, StringComparison.Ordinal);
+        Assert.Contains("[sw_name] = @name", sql, StringComparison.Ordinal);
+        Assert.DoesNotContain("Token", sql, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void BuildDeleteSoftwareLicenseSql_removes_assignment_for_pc_and_name()
+    {
+        var sql = new SqlServerInventoryRepository(new SqlServerStorageOptions()).BuildDeleteSoftwareLicenseSql();
+        Assert.Contains("DELETE FROM [inventory].[pc_sw_license]", sql, StringComparison.Ordinal);
+        Assert.Contains("[pc_id] = @pcId", sql, StringComparison.Ordinal);
+        Assert.Contains("[sw_name] = @name", sql, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Software_license_sql_quotes_identifiers_with_closing_brackets()
+    {
+        var options = new SqlServerStorageOptions { SchemaName = "inv]entory" };
+        options.SoftwareLicenseTable.TableName = "lic]ense";
+        options.SoftwareLicenseTable.PcForeignKeyColumn = "pc]fk";
+        options.SoftwareLicenseTable.SoftwareNameColumn = "sw]name";
+        options.SoftwareLicenseTable.LicenseSourceColumn = "src]col";
+        var repository = new SqlServerInventoryRepository(options);
+
+        var upsert = repository.BuildUpsertSoftwareLicenseSql();
+        Assert.Contains("[inv]]entory].[lic]]ense]", upsert, StringComparison.Ordinal);
+        Assert.Contains("[pc]]fk] = @pcId", upsert, StringComparison.Ordinal);
+        Assert.Contains("[sw]]name] = @name", upsert, StringComparison.Ordinal);
+        Assert.Contains("[src]]col] = @licenseSource", upsert, StringComparison.Ordinal);
+    }
 }

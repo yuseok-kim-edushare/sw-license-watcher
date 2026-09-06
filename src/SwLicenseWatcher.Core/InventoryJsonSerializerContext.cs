@@ -13,6 +13,8 @@ namespace SwLicenseWatcher.Core;
 [JsonSerializable(typeof(SoftwarePolicyEntry[]))]
 [JsonSerializable(typeof(List<SoftwarePolicyEntry>))]
 [JsonSerializable(typeof(SoftwarePolicyWriteRequest))]
+[JsonSerializable(typeof(SoftwareClassificationWriteRequest))]
+[JsonSerializable(typeof(DeviceSoftwareLicenseSourceWriteRequest))]
 [JsonSerializable(typeof(SoftwareViolationEntry))]
 [JsonSerializable(typeof(SoftwareViolationEntry[]))]
 [JsonSerializable(typeof(List<SoftwareViolationEntry>))]

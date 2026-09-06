@@ -35,7 +35,7 @@ internal static class PolicyQueryApi
             {
                 return InventoryCsv.File(
                     "policies.csv",
-                    ["Id", "ProductName", "Publisher", "VersionPattern", "Classification", "Notes", "Enabled", "UpdatedAtUtc"],
+                    ["Id", "ProductName", "Publisher", "VersionPattern", "Classification", "Notes", "Enabled", "UpdatedAtUtc", "DefaultLicenseSource"],
                     items.Select(PolicyCsvRow));
             }
 
@@ -108,7 +108,8 @@ internal static class PolicyQueryApi
         SoftwarePolicyClassificationNames.ToStorage(policy.Classification),
         policy.Notes,
         policy.Enabled ? "true" : "false",
-        InventoryCsv.Format(policy.UpdatedAtUtc)
+        InventoryCsv.Format(policy.UpdatedAtUtc),
+        policy.DefaultLicenseSource
     ];
 
     internal static string?[] ViolationCsvRow(SoftwareViolationEntry violation) =>

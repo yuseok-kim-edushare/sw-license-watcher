@@ -95,6 +95,8 @@ SHA256SUMS.txt                                위 ZIP의 SHA-256
 - `SoftwareViolationTable.TableName`
 - `StaleHeartbeatNotificationTable.TableName`
 - `UninstallRequestTable.TableName`
+- `SoftwareLicenseTable.TableName`
+- `SoftwarePolicyTable.DefaultLicenseSourceColumn`
 
 현재 기본 예시는 다음처럼 커스텀되어 있습니다.
 
@@ -104,6 +106,8 @@ SHA256SUMS.txt                                위 ZIP의 SHA-256
 - 위반 테이블: `company_sw_violation`
 - 하트비트 두절 알림 상태 테이블: `company_stale_heartbeat_notification`
 - 제거 요청 테이블: `company_pc_uninstall_request`
+- PC별 SW 라이선스 할당 테이블: `company_pc_sw_license`
+- 정책 테이블 기본 라이선스 컬럼: `default_license_source` (`managed`만)
 
 ## 회사 배포
 
@@ -308,8 +312,10 @@ API 실행 후:
 | --- | --- | --- | --- |
 | GET | `/api/inventory/devices` | PC 목록 (자산코드, 호스트명, 도메인, OS, 에이전트 버전, 마지막 heartbeat/inventory 시각) | `skip`, `take`, `search`(호스트명 또는 자산코드), `staleAfterHours`, `format=csv` |
 | GET | `/api/inventory/devices/{deviceCode}` | 단일 PC 상세와 설치 소프트웨어 전체(항목별 `classification`) | `classification`, `format=csv` |
-| GET | `/api/inventory/software` | SW 이름/버전/분류별 설치 PC 수 | `skip`, `take`, `search`(이름), `classification`, `format=csv` |
-| GET | `/api/inventory/software/{name}/devices` | 해당 SW가 설치된 PC 목록 | `skip`, `take`, `classification`, `format=csv` |
+| GET | `/api/inventory/software` | SW 이름/버전/분류별 설치 PC 수. `managed`는 `companyCount` / `byoCount` / `unassignedCount` | `skip`, `take`, `search`(이름), `classification`, `format=csv` |
+| GET | `/api/inventory/software/{name}/devices` | 해당 SW가 설치된 PC 목록. 항목별 유효 `licenseSource`와 PC 할당 `licenseSourceOverride` | `skip`, `take`, `classification`, `format=csv` |
+| PUT | `/api/inventory/software/{name}/classification` | 정확 일치 활성 정책을 만들거나 갱신한 뒤, 이미 모인 설치 행의 분류를 즉시 다시 칠함 | 본문 `classification`, `publisher?`, `defaultLicenseSource?` |
+| PUT | `/api/inventory/devices/{deviceCode}/software/{name}/license-source` | PC별 회사/BYO 할당. `null`이면 할당을 지워 정책 기본값으로 복귀 | 본문 `licenseSource`: `company` \| `byo` \| `null` |
 
 페이징 기본값은 JSON `take=100`, CSV `take=10000`이며 최대 10000입니다. `staleAfterHours`는 마지막 heartbeat가 없거나 지정 시간보다 오래된 PC만 남깁니다. `search`는 SQL `LIKE` 와일드카드가 이스케이프된 부분 일치입니다. `classification`은 `white` | `managed` | `black` | `unclassified`이며, 설치 SW 행에 저장된 분류로 필터링합니다(예: `?classification=unclassified`).
 
@@ -317,7 +323,7 @@ API 실행 후:
 
 ## 관리자 대시보드
 
-브라우저에서 `https://<server>/admin` 으로 관리자 화면을 엽니다. curl이나 CSV 없이 PC 목록, 소프트웨어 집계, 위반, 정책을 조회하고 정책을 만들고 고칠 수 있습니다.
+브라우저에서 `https://<server>/admin` 으로 관리자 화면을 엽니다. curl이나 CSV 없이 PC 목록, 소프트웨어 집계, 위반, 정책을 조회하고 정책을 만들고 고칠 수 있습니다. 소프트웨어 목록에서 바로 `white` / `managed` / `black`으로 분류할 수 있고, `managed`는 정책 기본 라이선스(회사/BYO)와 PC별 덮어쓰기를 편집합니다.
 
 정적 파일(`/admin`, `/admin/`, CSS/JS)은 인증 없이 내려갑니다. 비밀은 없고, 인벤토리·정책 데이터는 모두 `AdminToken`(또는 레거시 `Token`)이 있어야 합니다. 토큰은 브라우저 `sessionStorage`에만 두고, 탭을 닫으면 사라집니다. 쿠키와 `localStorage`는 쓰지 않습니다.
 
@@ -351,11 +357,12 @@ API 실행 후:
   "versionPattern": null,
   "classification": "black",
   "notes": "P2P 금지",
-  "enabled": true
+  "enabled": true,
+  "defaultLicenseSource": null
 }
 ```
 
-`classification`은 `white` | `managed` | `black` 입니다. 기존 DB에는 `Apply-DbSchema.ps1` 또는 `GET /api/schema/sql`의 위반 테이블 `CREATE` 문을 적용하세요.
+`classification`은 `white` | `managed` | `black` 입니다. `defaultLicenseSource`는 `managed`일 때만 `company` | `byo` | `null`입니다. 같은 이름 SW라도 PC마다 `company_pc_sw_license` 할당으로 덮어쓸 수 있습니다. 스냅샷은 설치 행만 갈아끼우므로 할당은 그대로 남습니다. 기존 DB에는 `Apply-DbSchema.ps1` 또는 `GET /api/schema/sql`의 정책 컬럼 `ALTER`와 `company_pc_sw_license` `CREATE`를 적용하세요.
 
 ```powershell
 $token = $env:Security__AdminToken

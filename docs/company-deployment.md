@@ -78,7 +78,7 @@ API는 서버에서만 호스팅합니다. PC 에이전트 설치 대상이 아�
 | `Security:Token` | 레거시 | 32자 이상. Agent/Admin이 비어 있으면 모든 엔드포인트 |
 | `Security:RequireHttps` | | 운영은 `true`. 원격 HTTP는 거부, loopback HTTP는 허용 |
 | `Storage:SqlServer:ConnectionString` | 예 | `TrustServerCertificate=False` 권장 |
-| `Storage:SqlServer:SchemaName` 및 테이블/컬럼 | 예 | 기본 예시는 `inventory.company_pc`, `inventory.company_stale_heartbeat_notification`, `inventory.company_pc_uninstall_request` 등. 식별자는 영문·숫자·밑줄만 |
+| `Storage:SqlServer:SchemaName` 및 테이블/컬럼 | 예 | 기본 예시는 `inventory.company_pc`, `inventory.company_stale_heartbeat_notification`, `inventory.company_pc_uninstall_request`, `inventory.company_pc_sw_license` 등. 정책 테이블에는 `default_license_source` 컬럼이 있습니다. 식별자는 영문·숫자·밑줄만 |
 | `Database:ApplySchemaOnStartup` | | 기본 `false`. `true`면 API 기동 시 idempotent DDL을 적용하고, 실패하면 기동하지 않음 |
 | `Updates:Worker:PackageUrl` | 예 | 절대 URI. Watchdog 다운로드는 **HTTPS**만 허용 |
 | `Updates:Worker:Sha256` | | 64자 hex. 첫 패키지 전까지 플레이스홀더라도 API는 기동함 |

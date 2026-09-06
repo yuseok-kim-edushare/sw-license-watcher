@@ -43,12 +43,38 @@ public class InventoryQueryApiTests
     [Fact]
     public void Software_query_dtos_serialize_classification_with_source_generator()
     {
-        var aggregate = new SoftwareAggregate("Chrome", "120.0", "unclassified", 3);
+        var aggregate = new SoftwareAggregate("Chrome", "120.0", "managed", 3, 1, 1, 1);
         var aggregateJson = JsonSerializer.Serialize(aggregate, ApiJsonSerializerContext.Default.SoftwareAggregate);
-        Assert.Contains("\"Classification\":\"unclassified\"", aggregateJson, StringComparison.Ordinal);
+        Assert.Contains("\"Classification\":\"managed\"", aggregateJson, StringComparison.Ordinal);
+        Assert.Contains("\"CompanyCount\":1", aggregateJson, StringComparison.Ordinal);
+        Assert.Contains("\"ByoCount\":1", aggregateJson, StringComparison.Ordinal);
+        Assert.Contains("\"UnassignedCount\":1", aggregateJson, StringComparison.Ordinal);
+        Assert.DoesNotContain("Token", aggregateJson, StringComparison.Ordinal);
 
-        var device = new SoftwareDevice("PC-01", "host", "WORKGROUP", "Windows", "1.0.0", null, null, "120.0", "Google", "black");
+        var device = new SoftwareDevice("PC-01", "host", "WORKGROUP", "Windows", "1.0.0", null, null, "120.0", "Google", "managed", "company", null);
         var deviceJson = JsonSerializer.Serialize(device, ApiJsonSerializerContext.Default.SoftwareDevice);
-        Assert.Contains("\"Classification\":\"black\"", deviceJson, StringComparison.Ordinal);
+        Assert.Contains("\"Classification\":\"managed\"", deviceJson, StringComparison.Ordinal);
+        Assert.Contains("\"LicenseSource\":\"company\"", deviceJson, StringComparison.Ordinal);
+        Assert.DoesNotContain("Token", deviceJson, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData(null, null)]
+    [InlineData("", null)]
+    [InlineData("company", "company")]
+    [InlineData("BYO", "byo")]
+    public void TryNormalizeLicenseSource_accepts_company_byo_or_blank(string? value, string? expected)
+    {
+        Assert.True(InventoryQueryApi.TryNormalizeLicenseSource(value, out var normalized, out var error));
+        Assert.Equal(expected, normalized);
+        Assert.Equal(string.Empty, error);
+    }
+
+    [Fact]
+    public void TryNormalizeLicenseSource_rejects_unknown_values()
+    {
+        Assert.False(InventoryQueryApi.TryNormalizeLicenseSource("personal", out var normalized, out var error));
+        Assert.Null(normalized);
+        Assert.Equal("licenseSource must be company or byo.", error);
     }
 }

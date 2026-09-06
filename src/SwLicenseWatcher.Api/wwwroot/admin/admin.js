@@ -4,6 +4,11 @@ const TOKEN_KEY = "swlw.adminToken";
 const PAGE_SIZE = 50;
 const SOFTWARE_CLASSES = ["", "white", "managed", "black", "unclassified"];
 const POLICY_CLASSES = ["", "white", "managed", "black"];
+const LICENSE_SOURCES = [
+  { value: "", label: "기본값" },
+  { value: "company", label: "회사" },
+  { value: "byo", label: "BYO" }
+];
 
 const state = {
   tab: "devices",
@@ -13,7 +18,9 @@ const state = {
   csvName: "export.csv",
   csvPath: "/api/inventory/devices",
   drawerKind: null,
-  drawerKey: ""
+  drawerKey: "",
+  drawerClassification: "",
+  drawerPublisher: ""
 };
 
 function $(id) {
@@ -253,6 +260,8 @@ function showApp() {
 function closeDrawer() {
   state.drawerKind = null;
   state.drawerKey = "";
+  state.drawerClassification = "";
+  state.drawerPublisher = "";
   setHidden($("drawer"), true);
   setHidden($("backdrop"), true);
   empty($("drawer-body"));
@@ -400,10 +409,13 @@ async function loadSoftware() {
   const data = await loadJson("/api/inventory/software?" + listQuery(addTabFilters).toString());
   const items = field(data, "items") || [];
   paintList($("table-host"), [
-    { header: "이름", value: (row) => linkButton(dash(field(row, "name")), () => openSoftware(field(row, "name"))) },
+    { header: "이름", value: (row) => linkButton(dash(field(row, "name")), () => openSoftware(field(row, "name"), field(row, "classification"), field(row, "publisher"))) },
     { header: "버전", value: (row) => dash(field(row, "version")) },
     { header: "분류", value: (row) => dash(field(row, "classification")) },
-    { header: "PC 수", value: (row) => dash(field(row, "deviceCount")) }
+    { header: "PC 수", value: (row) => dash(field(row, "deviceCount")) },
+    { header: "회사", value: (row) => dash(field(row, "companyCount")) },
+    { header: "BYO", value: (row) => dash(field(row, "byoCount")) },
+    { header: "미지정", value: (row) => dash(field(row, "unassignedCount")) }
   ], items, field(data, "totalCount") || 0);
 }
 
@@ -490,6 +502,7 @@ async function loadPolicies() {
     { header: "게시자", value: (row) => dash(field(row, "publisher")) },
     { header: "버전 패턴", value: (row) => dash(field(row, "versionPattern")) },
     { header: "분류", value: (row) => dash(field(row, "classification")) },
+    { header: "기본 라이선스", value: (row) => licenseLabel(field(row, "defaultLicenseSource")) },
     { header: "사용", value: (row) => field(row, "enabled") ? "사용" : "중지" },
     { header: "수정 시각", value: (row) => formatTime(field(row, "updatedAtUtc")) }
   ], items, field(data, "totalCount") || 0);
@@ -515,12 +528,14 @@ async function openDevice(deviceCode) {
   await loadDrawer();
 }
 
-async function openSoftware(name) {
+async function openSoftware(name, classification, publisher) {
   if (!name) {
     return;
   }
   state.drawerKind = "software";
   state.drawerKey = String(name);
+  state.drawerClassification = classification ? String(classification) : "";
+  state.drawerPublisher = publisher ? String(publisher) : "";
   fillSelect($("drawer-class"), SOFTWARE_CLASSES, true);
   setHidden($("drawer-class-wrap"), false);
   openDrawer(String(name));
@@ -543,6 +558,7 @@ async function loadDrawer() {
         { header: "버전", value: (row) => dash(field(row, "version")) },
         { header: "게시자", value: (row) => dash(field(row, "publisher")) },
         { header: "분류", value: (row) => dash(field(row, "classification")) },
+        { header: "라이선스", value: (row) => deviceLicenseEditor(state.drawerKey, row) },
         { header: "범위", value: (row) => dash(field(row, "discoveryScope")) }
       ], software));
     } else if (state.drawerKind === "software") {
@@ -553,6 +569,8 @@ async function loadDrawer() {
       }
       const data = await loadJson("/api/inventory/software/" + encodeURIComponent(state.drawerKey) + "/devices?" + query.toString());
       const items = field(data, "items") || [];
+      const publisher = state.drawerPublisher || (items.length ? field(items[0], "publisher") : "");
+      body.appendChild(softwareClassifyForm(state.drawerKey, state.drawerClassification, publisher));
       body.appendChild(el("p", { className: "meta", text: "설치 PC " + (field(data, "totalCount") || items.length) + "대" }));
       body.appendChild(renderTable([
         { header: "자산코드", value: (row) => dash(field(row, "deviceCode")) },
@@ -560,12 +578,146 @@ async function loadDrawer() {
         { header: "OS", value: (row) => dash(field(row, "operatingSystem")) },
         { header: "버전", value: (row) => dash(field(row, "version")) },
         { header: "게시자", value: (row) => dash(field(row, "publisher")) },
-        { header: "분류", value: (row) => dash(field(row, "classification")) }
+        { header: "분류", value: (row) => dash(field(row, "classification")) },
+        { header: "라이선스", value: (row) => softwareDeviceLicenseEditor(state.drawerKey, row) }
       ], items));
     }
   } catch (err) {
     if (err.status !== 401) {
       showError($("drawer-error"), err.message || "상세를 불러오지 못했습니다.");
+    }
+  }
+}
+
+function licenseLabel(value) {
+  if (value === "company") {
+    return "회사";
+  }
+  if (value === "byo") {
+    return "BYO";
+  }
+  return "-";
+}
+
+function syncPolicyLicenseField() {
+  setHidden($("policy-license-wrap"), $("policy-classification").value !== "managed");
+}
+
+function licenseSelect(selected, onChange) {
+  const select = el("select", { className: "license-source" });
+  for (const option of LICENSE_SOURCES) {
+    select.appendChild(el("option", { value: option.value, text: option.label }));
+  }
+  select.value = selected || "";
+  select.addEventListener("change", () => onChange(emptyToNull(select.value)));
+  return select;
+}
+
+function softwareClassifyForm(name, classification, publisher) {
+  const wrap = el("div", { className: "drawer-form" });
+  const classSelect = el("select", { id: "software-class-input" });
+  for (const value of ["white", "managed", "black"]) {
+    classSelect.appendChild(el("option", { value: value, text: value }));
+  }
+  const current = classification && classification !== "unclassified" ? classification : "managed";
+  classSelect.value = current;
+  const licenseSelectEl = el("select", { id: "software-license-input", className: "license-source" });
+  licenseSelectEl.appendChild(el("option", { value: "", text: "미지정" }));
+  licenseSelectEl.appendChild(el("option", { value: "company", text: "회사" }));
+  licenseSelectEl.appendChild(el("option", { value: "byo", text: "BYO" }));
+  const licenseWrap = el("label", { id: "software-license-wrap" }, ["기본 라이선스", licenseSelectEl]);
+  const syncLicense = () => setHidden(licenseWrap, classSelect.value !== "managed");
+  classSelect.addEventListener("change", syncLicense);
+  wrap.appendChild(el("label", null, ["분류", classSelect]));
+  wrap.appendChild(licenseWrap);
+  wrap.appendChild(el("button", {
+    type: "button",
+    text: "분류 저장",
+    onClick: () => saveSoftwareClassification(name, classSelect.value, publisher, emptyToNull(licenseSelectEl.value))
+  }));
+  syncLicense();
+  loadSoftwarePolicyDefault(name, licenseSelectEl);
+  return wrap;
+}
+
+async function loadSoftwarePolicyDefault(name, select) {
+  try {
+    const query = new URLSearchParams();
+    query.set("search", name);
+    query.set("take", "20");
+    const data = await loadJson("/api/policies?" + query.toString());
+    const items = field(data, "items") || [];
+    const match = items.find((row) => String(field(row, "productName") || "").toLowerCase() === String(name).toLowerCase());
+    if (match) {
+      select.value = field(match, "defaultLicenseSource") || "";
+    }
+  } catch {
+    /* keep unset default */
+  }
+}
+
+async function saveSoftwareClassification(name, classification, publisher, defaultLicenseSource) {
+  showError($("drawer-error"), "");
+  try {
+    const response = await api("/api/inventory/software/" + encodeURIComponent(name) + "/classification", {
+      method: "PUT",
+      body: JSON.stringify({
+        classification: classification,
+        publisher: emptyToNull(publisher || ""),
+        defaultLicenseSource: classification === "managed" ? defaultLicenseSource : null
+      })
+    });
+    if (!response.ok) {
+      showError($("drawer-error"), await readError(response));
+      return;
+    }
+    state.drawerClassification = classification;
+    await loadList();
+    await loadDrawer();
+  } catch (err) {
+    if (err.status !== 401) {
+      showError($("drawer-error"), err.message || "분류를 저장하지 못했습니다.");
+    }
+  }
+}
+
+function deviceLicenseEditor(deviceCode, row) {
+  if (field(row, "classification") !== "managed") {
+    return licenseLabel(field(row, "licenseSource"));
+  }
+  return licenseSelect(field(row, "licenseSourceOverride"), (value) => {
+    saveDeviceLicenseSource(deviceCode, field(row, "name"), value);
+  });
+}
+
+function softwareDeviceLicenseEditor(softwareName, row) {
+  if (field(row, "classification") !== "managed") {
+    return licenseLabel(field(row, "licenseSource"));
+  }
+  return licenseSelect(field(row, "licenseSourceOverride"), (value) => {
+    saveDeviceLicenseSource(field(row, "deviceCode"), softwareName, value);
+  });
+}
+
+async function saveDeviceLicenseSource(deviceCode, softwareName, licenseSource) {
+  showError($("drawer-error"), "");
+  try {
+    const response = await api(
+      "/api/inventory/devices/" + encodeURIComponent(deviceCode) + "/software/" + encodeURIComponent(softwareName) + "/license-source",
+      {
+        method: "PUT",
+        body: JSON.stringify({ licenseSource: licenseSource })
+      }
+    );
+    if (!response.ok && response.status !== 204) {
+      showError($("drawer-error"), await readError(response));
+      return;
+    }
+    await loadList();
+    await loadDrawer();
+  } catch (err) {
+    if (err.status !== 401) {
+      showError($("drawer-error"), err.message || "라이선스 출처를 저장하지 못했습니다.");
     }
   }
 }
@@ -578,10 +730,12 @@ function fillPolicyForm(row) {
     $("policy-publisher").value = "";
     $("policy-version").value = "";
     $("policy-classification").value = "black";
+    $("policy-license").value = "";
     $("policy-notes").value = "";
     $("policy-enabled").checked = true;
     $("policy-form-title").textContent = "정책 생성";
     $("policy-delete").disabled = true;
+    syncPolicyLicenseField();
     return;
   }
   $("policy-id").value = String(field(row, "id") || "");
@@ -589,10 +743,12 @@ function fillPolicyForm(row) {
   $("policy-publisher").value = field(row, "publisher") || "";
   $("policy-version").value = field(row, "versionPattern") || "";
   $("policy-classification").value = field(row, "classification") || "managed";
+  $("policy-license").value = field(row, "defaultLicenseSource") || "";
   $("policy-notes").value = field(row, "notes") || "";
   $("policy-enabled").checked = Boolean(field(row, "enabled"));
   $("policy-form-title").textContent = "정책 수정";
   $("policy-delete").disabled = false;
+  syncPolicyLicenseField();
 }
 
 async function savePolicy() {
@@ -604,7 +760,10 @@ async function savePolicy() {
     versionPattern: emptyToNull($("policy-version").value),
     classification: $("policy-classification").value,
     notes: emptyToNull($("policy-notes").value),
-    enabled: $("policy-enabled").checked
+    enabled: $("policy-enabled").checked,
+    defaultLicenseSource: $("policy-classification").value === "managed"
+      ? emptyToNull($("policy-license").value)
+      : null
   });
   try {
     const response = await api(id ? "/api/policies/" + encodeURIComponent(id) : "/api/policies", {
@@ -717,6 +876,8 @@ function init() {
   $("policy-save").addEventListener("click", savePolicy);
   $("policy-new").addEventListener("click", () => fillPolicyForm(null));
   $("policy-delete").addEventListener("click", deletePolicy);
+  $("policy-classification").addEventListener("change", syncPolicyLicenseField);
+  syncPolicyLicenseField();
 
   applyTabFilters();
   if (getToken()) {
