@@ -91,6 +91,7 @@ builder.Services.AddSingleton<SqlServerSchemaApplicator>();
 builder.Services.AddSingleton<InventoryMemoryStore>();
 builder.Services.AddSingleton(sp => sp.GetRequiredService<IOptions<SqlServerStorageOptions>>().Value);
 builder.Services.AddSingleton<SqlServerInventoryRepository>();
+builder.Services.AddSingleton<WorkerUpdatePinService>();
 builder.Services.AddSingleton<IStaleHeartbeatNotificationStore>(sp => sp.GetRequiredService<SqlServerInventoryRepository>());
 builder.Services.AddHttpClient(WebhookNotificationSender.HttpClientName, (sp, client) =>
 {
@@ -160,7 +161,7 @@ app.Use(async (context, next) =>
     }
 
     var supplied = context.Request.Headers.Authorization.ToString();
-    if (!BearerTokenAuthenticator.IsAuthorized(supplied, security, context.Request.Path))
+    if (!BearerTokenAuthenticator.IsAuthorized(supplied, security, context.Request.Path, context.Request.Method))
     {
         context.Response.StatusCode = StatusCodes.Status401Unauthorized;
         return;
@@ -197,11 +198,12 @@ app.MapGet("/health", async (
 });
 app.MapGet("/api/schema/sql", (IOptions<SqlServerStorageOptions> options, SqlServerSchemaScriptBuilder schemaBuilder) =>
     Results.Text(schemaBuilder.Build(options.Value), "text/plain"));
-app.MapGet("/api/design", (
+app.MapGet("/api/design", async (
     IOptions<SqlServerStorageOptions> sqlOptions,
-    IOptions<UpdateManifestOptions> updateOptions,
+    WorkerUpdatePinService workerPin,
     SqlServerSchemaScriptBuilder schemaBuilder,
-    InventoryMemoryStore store) =>
+    InventoryMemoryStore store,
+    CancellationToken cancellationToken) =>
     Results.Ok(new DesignResponse(
         new DesignArchitecture(
             Agent: "Worker + Watchdog two-process Windows service architecture",
@@ -213,8 +215,25 @@ app.MapGet("/api/design", (
             SchemaName: sqlOptions.Value.SchemaName,
             SchemaScript: schemaBuilder.Build(sqlOptions.Value)),
         new DesignCounts(store.SnapshotCount, store.HeartbeatCount),
-        updateOptions.Value.ToManifest())));
-app.MapGet("/api/updates/worker/manifest", (IOptions<UpdateManifestOptions> options) => Results.Ok(options.Value.ToManifest()));
+        await workerPin.GetEffectiveAsync(cancellationToken))));
+app.MapGet("/api/updates/worker/manifest", async (
+    WorkerUpdatePinService workerPin,
+    CancellationToken cancellationToken) =>
+    Results.Ok(await workerPin.GetEffectiveAsync(cancellationToken)));
+app.MapPut("/api/updates/worker/manifest", async (
+    UpdateManifest request,
+    WorkerUpdatePinService workerPin,
+    CancellationToken cancellationToken) =>
+{
+    var pin = request with { TargetServiceName = workerPin.Configured.TargetServiceName };
+    if (!UpdateManifestValidator.TryValidate(pin, out var validationError))
+    {
+        return Results.BadRequest(validationError);
+    }
+
+    var saved = await workerPin.SaveAsync(pin, cancellationToken);
+    return Results.Ok(saved);
+});
 app.MapPost("/api/inventory/snapshots", async (
     InventoryIngestionRequest request,
     InventoryMemoryStore store,
@@ -293,5 +312,7 @@ app.MapDelete("/api/policies/{id:long}", async (long id, SqlServerInventoryRepos
 
 await app.Services.GetRequiredService<SqlServerSchemaApplicator>()
     .ApplyIfEnabledAsync(CancellationToken.None);
+await app.Services.GetRequiredService<WorkerUpdatePinService>()
+    .SeedIfEmptyAsync(CancellationToken.None);
 
 app.Run();

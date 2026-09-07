@@ -128,7 +128,7 @@ jobs:
             echo "HAS_SIGNING_CERT=true" >> $env:GITHUB_ENV
           } else {
             echo "HAS_SIGNING_CERT=false" >> $env:GITHUB_ENV
-            Write-Host "No SIGNING_CERTIFICATE_PFX_BASE64 secret. Published binaries are unsigned. Set Updates:Worker:RequireAuthenticode to false, or sign the Worker ZIP contents with a company certificate and re-hash."
+            Write-Host "No SIGNING_CERTIFICATE_PFX_BASE64 secret. Published binaries are unsigned. Set the Worker update pin RequireAuthenticode to false, or sign the Worker ZIP contents with a company certificate and re-hash."
           }
 
       - name: Sign published binaries
@@ -308,7 +308,7 @@ jobs:
           $releaseNotes += "`n`n### Worker self-update package`n`n"
           $releaseNotes += "- Asset: $workerZipName`n"
           $releaseNotes += "- SHA-256: $workerSha`n"
-          $releaseNotes += "`nReady-to-paste ``Updates:Worker``:`n`n"
+          $releaseNotes += "`nReady-to-paste Worker update pin (`/admin` 업데이트 or ``PUT /api/updates/worker/manifest``):`n`n"
           $releaseNotes += "``````json`n"
           $releaseNotes += "{`n"
           $releaseNotes += "  `"Version`": `"$newVersionString`",`n"

@@ -29,6 +29,7 @@ public class SqlServerSchemaApplicatorTests
         Assert.Contains("CREATE TABLE [inventory].[pc_entity]", sql, StringComparison.Ordinal);
         Assert.Contains("CREATE TABLE [inventory].[stale_heartbeat_notification]", sql, StringComparison.Ordinal);
         Assert.Contains("CREATE TABLE [inventory].[pc_sw_license]", sql, StringComparison.Ordinal);
+        Assert.Contains("CREATE TABLE [inventory].[worker_update_pin]", sql, StringComparison.Ordinal);
         Assert.Contains("IF COL_LENGTH(N'[inventory].[software_policy_list]', N'default_license_source') IS NULL", sql, StringComparison.Ordinal);
         Assert.Contains("IF OBJECT_ID(N'[inventory].[stale_heartbeat_notification]', N'U') IS NULL", sql, StringComparison.Ordinal);
         Assert.Contains("IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_pc_installed_sw_pc_id'", sql, StringComparison.Ordinal);

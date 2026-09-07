@@ -99,6 +99,12 @@ public sealed class AdminApiClient(HttpClient http, IJSRuntime js)
     public Task DenyUninstallAsync(long id, CancellationToken cancellationToken = default) =>
         SendAsync(HttpMethod.Post, $"/api/uninstall-requests/{id}/deny", body: null, cancellationToken);
 
+    public Task<UpdateManifest> GetWorkerUpdatePinAsync(CancellationToken cancellationToken = default) =>
+        GetAsync<UpdateManifest>("/api/updates/worker/manifest", cancellationToken);
+
+    public Task<UpdateManifest> PutWorkerUpdatePinAsync(UpdateManifest request, CancellationToken cancellationToken = default) =>
+        SendJsonAsync<UpdateManifest>(HttpMethod.Put, "/api/updates/worker/manifest", request, cancellationToken);
+
     public async Task DownloadCsvAsync(string path, string fileName, CancellationToken cancellationToken = default)
     {
         using var response = await http.GetAsync(path, cancellationToken);

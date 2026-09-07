@@ -82,12 +82,12 @@ API는 서버에서만 호스팅합니다. PC 에이전트 설치 대상이 아�
 | `Security:Token` | 레거시 | 32자 이상. Agent/Admin이 비어 있으면 모든 엔드포인트 |
 | `Security:RequireHttps` | | 운영은 `true`. 원격 HTTP는 거부, loopback HTTP는 허용 |
 | `Storage:SqlServer:ConnectionString` | 예 | `TrustServerCertificate=False` 권장 |
-| `Storage:SqlServer:SchemaName` 및 테이블/컬럼 | 예 | 기본 예시는 `inventory.company_pc`, `inventory.company_stale_heartbeat_notification`, `inventory.company_pc_uninstall_request`, `inventory.company_pc_sw_license` 등. 정책 테이블에는 `default_license_source` 컬럼이 있습니다. 식별자는 영문·숫자·밑줄만 |
+| `Storage:SqlServer:SchemaName` 및 테이블/컬럼 | 예 | 기본 예시는 `inventory.company_pc`, `inventory.company_stale_heartbeat_notification`, `inventory.company_pc_uninstall_request`, `inventory.company_pc_sw_license`, `inventory.company_worker_update_pin` 등. 정책 테이블에는 `default_license_source` 컬럼이 있습니다. 식별자는 영문·숫자·밑줄만 |
 | `Database:ApplySchemaOnStartup` | | 기본 `false`. `true`면 API 기동 시 idempotent DDL을 적용하고, 실패하면 기동하지 않음 |
-| `Updates:Worker:PackageUrl` | 예 | 절대 URI. Watchdog 다운로드는 **HTTPS**만 허용 |
-| `Updates:Worker:Sha256` | | 64자 hex. 첫 패키지 전까지 플레이스홀더라도 API는 기동함 |
-| `Updates:Worker:Version` | | Worker `.version`과 비교 |
-| `Updates:Worker:RequireAuthenticode` | | 운영은 `true` |
+| `Updates:Worker:PackageUrl` | 예 | 기동 시드용 절대 HTTPS URI. 살아 있는 핀은 DB이며 `/admin` **업데이트** 또는 `PUT /api/updates/worker/manifest`로 바꿈 |
+| `Updates:Worker:Sha256` | | 시드용. 64자 hex 또는 플레이스홀더. 첫 패키지 전까지 플레이스홀더라도 API는 기동함 |
+| `Updates:Worker:Version` | | 시드용. Watchdog는 DB 핀의 Version을 Worker `.version`과 비교 |
+| `Updates:Worker:RequireAuthenticode` | | 시드용. 운영 핀은 `true` |
 | `Kestrel:Endpoints` | AOT만 | Kestrel 단독 호스트의 HTTPS 바인딩. **IIS에서는 넣지 않습니다.** 인증서와 포트는 IIS 사이트 바인딩으로 엽니다. |
 
 환경 변수 예: `Security__AgentToken`, `Security__AdminToken`, `Storage__SqlServer__ConnectionString`, `Database__ApplySchemaOnStartup`.
@@ -292,15 +292,17 @@ powershell.exe -ExecutionPolicy Bypass -File Uninstall-Agent.ps1 `
 
 Watchdog이 서버 `GET /api/updates/worker/manifest`를 읽고 Worker만 교체합니다. 패키지 URL은 HTTPS여야 합니다. Release의 `SwLicenseWatcher.Agent.Worker-{version}.zip`은 ZIP 루트에 Worker 산출물(exe, `.version`, dll)이 있고, 실행 파일은 하나여야 합니다.
 
+appsettings `Updates:Worker`는 **기동 시드**입니다. 테이블에 행이 없을 때만 복사되고, 이후 핀은 DB가 권위입니다. 파일을 고쳐도 이미 시드된 핀은 바뀌지 않습니다.
+
 운영 절차:
 
-1. GitHub Release의 `SHA256SUMS.txt` 또는 릴리스 노트의 `Updates:Worker` 스니펫에서 `Sha256`을 가져옵니다.
+1. GitHub Release의 `SHA256SUMS.txt` 또는 릴리스 노트의 Worker 스니펫에서 `Sha256`을 가져옵니다.
 2. Worker ZIP을 회사 HTTPS 서버에 올립니다. PC가 GitHub에 닿으면 릴리스 자산 URL(`https://github.com/<owner>/<repo>/releases/download/{version}/SwLicenseWatcher.Agent.Worker-{version}.zip`)을 그대로 쓸 수 있습니다.
-3. 서버 API `appsettings.json`의 `Updates:Worker`에 `Version`, `PackageUrl`, `Sha256`을 넣습니다. Watchdog은 `CheckInterval`(+ Jitter) 후에 따라갑니다.
+3. `/admin` **업데이트** 탭(또는 관리자 `PUT /api/updates/worker/manifest`)에 `Version`, `PackageUrl`, `Sha256`을 넣습니다. Watchdog은 `CheckInterval`(+ Jitter) 후에 따라갑니다. API를 재시작할 필요는 없습니다.
 
 Watchdog은 설치 디렉터리를 패키지 내용으로 교체하기 전에 PC의 `appsettings.json`과 `appsettings.*.json`을 보존하고, 복사 후 다시 덮어씁니다. 패키지에 들어 있는 개발용 `appsettings.json`은 이미 설치된 PC에서는 쓰이지 않습니다.
 
-서명이 없는 릴리스(`SIGNING_CERTIFICATE_PFX_BASE64` 없음)는 ZIP 안의 EXE/DLL을 회사 인증서로 서명한 뒤 SHA-256을 다시 계산하거나, `Updates:Worker:RequireAuthenticode`를 `false`로 둡니다. 후자는 권장하지 않습니다.
+서명이 없는 릴리스(`SIGNING_CERTIFICATE_PFX_BASE64` 없음)는 ZIP 안의 EXE/DLL을 회사 인증서로 서명한 뒤 SHA-256을 다시 계산하거나, 핀의 `RequireAuthenticode`를 `false`로 둡니다. 후자는 권장하지 않습니다.
 
 ```powershell
 (Get-FileHash -Algorithm SHA256 D:\packages\SwLicenseWatcher.Agent.Worker-1.0.2.zip).Hash
@@ -316,7 +318,7 @@ Watchdog은 설치 디렉터리를 패키지 내용으로 교체하기 전에 PC
 | `401` | PC `ApiToken`과 서버 `Security:AgentToken`(또는 레거시 `Security:Token`)이 다름 |
 | 스냅샷이 한 PC로만 보임 | 모든 에이전트가 같은 `DeviceCode`(예: 개발용 `pc-demo-001`) |
 | Watchdog이 Worker 서비스에 Access Denied | Watchdog이 LocalSystem이 아님. `Install-Agent.ps1`을 다시 실행하거나 `sc.exe config SwLicenseWatcher.Agent.Watchdog obj= LocalSystem` |
-| Watchdog이 업데이트를 안 함 | 서버 manifest `Version`이 이미 `.version`과 같음, `PackageUrl`이 HTTP, SHA-256 불일치 |
+| Watchdog이 업데이트를 안 함 | `/admin` 업데이트 핀 `Version`이 이미 `.version`과 같음, `PackageUrl`이 HTTP, SHA-256 불일치, 또는 DB 핀이 아직 플레이스홀더 |
 | Authenticode 실패 | ZIP 안의 EXE/DLL이 회사 신뢰 루트로 서명되지 않음 |
 | 업데이트 후 롤백 | Worker가 `HealthFilePath`에 버전을 못 씀. 경로가 Worker/Watchdog JSON에서 같은지 |
 | IIS `500.30` / `500.31` | Hosting Bundle(.NET 10) 설치, 앱 풀 No Managed Code, `api/iis`를 쓰는지(AOT 폴더 아님) |
@@ -341,6 +343,7 @@ Watchdog은 설치 디렉터리를 패키지 내용으로 교체하기 전에 PC
 | Worker | `C:\Program Files\SwLicenseWatcher\Agent.Worker` |
 | Watchdog | `C:\Program Files\SwLicenseWatcher\Agent.Watchdog` |
 | 에이전트 서비스 계정 | LocalSystem (`SwLicenseWatcher.Agent.Worker`, `SwLicenseWatcher.Agent.Watchdog`) |
+| Worker 업데이트 핀 | `inventory.company_worker_update_pin` (기본 예시 이름) |
 | 헬스 파일 | `C:\ProgramData\SwLicenseWatcher\state\worker-health.json` |
 | 스냅샷 큐 | `C:\ProgramData\SwLicenseWatcher\state\queue` |
 | 업데이트 staging / backup | `C:\ProgramData\SwLicenseWatcher\staging`, `backup` |

@@ -101,7 +101,7 @@ IT 확인: `/admin`에서 해당 PC가 보이는지. 기본 수집 주기는 30�
 
 직원은 새 Setup.exe를 다시 실행합니다. 서비스를 멈춘 뒤 파일만 갈아끼웁니다. **제거 승인은 필요 없습니다.**
 
-Watchdog 자체 패치(Worker ZIP만 교체)는 이 설치기와 별개입니다. 회사 HTTPS에 Worker 패키지를 올리고 서버 `Updates:Worker`를 바꾸는 절차는 [company-deployment.md](company-deployment.md) 7절입니다.
+Watchdog 자체 패치(Worker ZIP만 교체)는 이 설치기와 별개입니다. 회사 HTTPS에 Worker 패키지를 올리고 `/admin` **업데이트**에서 핀을 바꾸는 절차는 [company-deployment.md](company-deployment.md) 7절입니다.
 
 ## 6. 제거
 

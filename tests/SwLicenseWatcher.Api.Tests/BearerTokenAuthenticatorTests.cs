@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Http;
 using SwLicenseWatcher.Api;
 using SwLicenseWatcher.Core;
 
@@ -99,6 +100,17 @@ public class BearerTokenAuthenticatorTests
     }
 
     [Fact]
+    public void IsAuthorized_agent_token_cannot_change_the_worker_update_pin()
+    {
+        var security = RoleSeparated();
+        const string path = "/api/updates/worker/manifest";
+
+        Assert.True(BearerTokenAuthenticator.IsAuthorized("Bearer " + AgentToken, security, path, HttpMethods.Get));
+        Assert.False(BearerTokenAuthenticator.IsAuthorized("Bearer " + AgentToken, security, path, HttpMethods.Put));
+        Assert.True(BearerTokenAuthenticator.IsAuthorized("Bearer " + AdminToken, security, path, HttpMethods.Put));
+    }
+
+    [Fact]
     public void IsAuthorized_legacy_token_still_grants_all_endpoints_when_role_tokens_are_also_set()
     {
         var security = RoleSeparated();
@@ -152,6 +164,13 @@ public class BearerTokenAuthenticatorTests
     public void IsAgentEndpoint_rejects_non_agent_paths(string path)
     {
         Assert.False(BearerTokenAuthenticator.IsAgentEndpoint(path));
+    }
+
+    [Fact]
+    public void IsAgentEndpoint_treats_manifest_put_as_admin_only()
+    {
+        Assert.True(BearerTokenAuthenticator.IsAgentEndpoint("/api/updates/worker/manifest", HttpMethods.Get));
+        Assert.False(BearerTokenAuthenticator.IsAgentEndpoint("/api/updates/worker/manifest", HttpMethods.Put));
     }
 
     private static ApiSecurityOptions RoleSeparated() =>

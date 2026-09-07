@@ -6,6 +6,7 @@ namespace SwLicenseWatcher.Api;
 [JsonSerializable(typeof(HealthResponse))]
 [JsonSerializable(typeof(ErrorResponse))]
 [JsonSerializable(typeof(DesignResponse))]
+[JsonSerializable(typeof(UpdateManifest))]
 [JsonSerializable(typeof(SnapshotAcceptedResponse))]
 [JsonSerializable(typeof(DeviceSummary))]
 [JsonSerializable(typeof(DeviceListResponse))]

@@ -34,6 +34,8 @@ public partial class App
     private string _listError = "";
     private string _listMeta = "";
     private string _policyError = "";
+    private string _updateError = "";
+    private string _updateSaved = "";
     private string _drawerError = "";
     private string _bulkError = "";
 
@@ -56,6 +58,13 @@ public partial class App
     private string _policyNotes = "";
     private bool _policyEnabled = true;
 
+    private string _updateTarget = "";
+    private string _updateVersion = "";
+    private string _updatePackageUrl = "";
+    private string _updateSha256 = "";
+    private bool _updateRequireAuthenticode = true;
+    private int _updateRollbackMinutes = 10;
+
     private string? _drawerKind;
     private string _drawerKey = "";
     private string _drawerTitle = "상세";
@@ -73,7 +82,8 @@ public partial class App
     private bool ShowSinceFilter => _tab == "violations";
     private bool ShowPolicyForm => _tab == "policies";
     private bool ShowUninstallHint => _tab == "uninstall";
-    private bool ShowCsv => _tab != "uninstall";
+    private bool ShowCsv => _tab is not "uninstall" and not "updates";
+    private bool ShowListToolbar => _tab != "updates";
     private bool ShowBulkBar => _tab == "software";
     private bool ShowManagedLicense => _bulkClassification == "managed";
     private bool ShowPolicyLicense => _policyClassification == "managed";
@@ -176,10 +186,18 @@ public partial class App
             ResetPolicyForm();
         }
 
-        if (_hasToken)
+        if (!_hasToken)
         {
-            await LoadListAsync();
+            return;
         }
+
+        if (tab == "updates")
+        {
+            await LoadWorkerUpdatePinAsync();
+            return;
+        }
+
+        await LoadListAsync();
     }
 
     private async Task QueryAsync()
@@ -230,11 +248,13 @@ public partial class App
                     _policies = policies.Items ?? [];
                     _totalCount = policies.TotalCount;
                     break;
-                default:
+                case "uninstall":
                     var uninstalls = await Api.GetUninstallRequestsAsync(query);
                     _uninstalls = uninstalls.Items ?? [];
                     _totalCount = uninstalls.TotalCount;
                     break;
+                default:
+                    return;
             }
 
             _listMeta = $"총 {_totalCount}건";
@@ -592,6 +612,61 @@ public partial class App
         _policyNotes = "";
         _policyEnabled = true;
         _policyError = "";
+    }
+
+    private void ApplyWorkerUpdatePin(UpdateManifest pin)
+    {
+        _updateTarget = pin.TargetServiceName;
+        _updateVersion = pin.Version;
+        _updatePackageUrl = pin.PackageUrl;
+        _updateSha256 = pin.Sha256;
+        _updateRequireAuthenticode = pin.RequireAuthenticode;
+        _updateRollbackMinutes = pin.RollbackAfterMinutes;
+    }
+
+    private async Task LoadWorkerUpdatePinAsync()
+    {
+        _updateError = "";
+        _updateSaved = "";
+        try
+        {
+            ApplyWorkerUpdatePin(await Api.GetWorkerUpdatePinAsync());
+        }
+        catch (AdminApiException ex) when (ex.IsUnauthorized)
+        {
+            await HandleUnauthorizedAsync();
+        }
+        catch (AdminApiException ex)
+        {
+            _updateError = ex.Message;
+        }
+    }
+
+    private async Task SaveWorkerUpdatePinAsync()
+    {
+        _updateError = "";
+        _updateSaved = "";
+        var request = new UpdateManifest(
+            string.IsNullOrWhiteSpace(_updateTarget) ? "SwLicenseWatcher.Agent.Worker" : _updateTarget.Trim(),
+            _updateVersion.Trim(),
+            _updatePackageUrl.Trim(),
+            _updateSha256.Trim(),
+            _updateRequireAuthenticode,
+            _updateRollbackMinutes);
+        try
+        {
+            var saved = await Api.PutWorkerUpdatePinAsync(request);
+            ApplyWorkerUpdatePin(saved);
+            _updateSaved = $"핀이 {saved.Version}으로 저장되었습니다. Watchdog는 다음 확인 주기에 따라갑니다.";
+        }
+        catch (AdminApiException ex) when (ex.IsUnauthorized)
+        {
+            await HandleUnauthorizedAsync();
+        }
+        catch (AdminApiException ex)
+        {
+            _updateError = ex.Message;
+        }
     }
 
     private async Task SavePolicyAsync()

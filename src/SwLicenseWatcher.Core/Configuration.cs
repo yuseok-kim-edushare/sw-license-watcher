@@ -166,6 +166,8 @@ public sealed class SqlServerStorageOptions
     public UninstallRequestTableOptions UninstallRequestTable { get; set; } = new();
 
     public SoftwareLicenseTableOptions SoftwareLicenseTable { get; set; } = new();
+
+    public WorkerUpdatePinTableOptions WorkerUpdatePinTable { get; set; } = new();
 }
 
 public sealed class PcTableOptions
@@ -301,6 +303,25 @@ public sealed class SoftwareLicenseTableOptions
     public string SoftwareNameColumn { get; set; } = "sw_name";
 
     public string LicenseSourceColumn { get; set; } = "license_source";
+
+    public string UpdatedAtUtcColumn { get; set; } = "updated_at_utc";
+}
+
+public sealed class WorkerUpdatePinTableOptions
+{
+    public string TableName { get; set; } = "worker_update_pin";
+
+    public string TargetServiceNameColumn { get; set; } = "target_service_name";
+
+    public string VersionColumn { get; set; } = "version";
+
+    public string PackageUrlColumn { get; set; } = "package_url";
+
+    public string Sha256Column { get; set; } = "sha256";
+
+    public string RequireAuthenticodeColumn { get; set; } = "require_authenticode";
+
+    public string RollbackAfterMinutesColumn { get; set; } = "rollback_after_minutes";
 
     public string UpdatedAtUtcColumn { get; set; } = "updated_at_utc";
 }

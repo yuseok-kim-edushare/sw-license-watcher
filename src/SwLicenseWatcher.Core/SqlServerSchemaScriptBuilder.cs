@@ -18,6 +18,7 @@ public sealed class SqlServerSchemaScriptBuilder
         var staleHeartbeat = options.StaleHeartbeatNotificationTable;
         var uninstall = options.UninstallRequestTable;
         var license = options.SoftwareLicenseTable;
+        var workerPin = options.WorkerUpdatePinTable;
 
         var sql = new StringBuilder();
         sql.AppendLine($"IF SCHEMA_ID(N'{schemaLiteral}') IS NULL EXEC(N'CREATE SCHEMA [{schemaCommandIdentifier}]');");
@@ -115,6 +116,19 @@ public sealed class SqlServerSchemaScriptBuilder
         sql.AppendLine($"    [{Escape(license.UpdatedAtUtcColumn)}] DATETIMEOFFSET NOT NULL,");
         sql.AppendLine($"    CONSTRAINT [{Escape(BuildIdentifier("UX", license.TableName, license.PcForeignKeyColumn, license.SoftwareNameColumn))}] UNIQUE ([{Escape(license.PcForeignKeyColumn)}], [{Escape(license.SoftwareNameColumn)}]),");
         sql.AppendLine($"    CONSTRAINT [{Escape(BuildIdentifier("FK", license.TableName, pc.TableName))}] FOREIGN KEY ([{Escape(license.PcForeignKeyColumn)}]) REFERENCES [{schema}].[{Escape(pc.TableName)}]([{Escape(pc.PrimaryKeyColumn)}]) ON DELETE CASCADE");
+        sql.AppendLine(");");
+        sql.AppendLine("END");
+        sql.AppendLine();
+        AppendTableIfMissing(sql, schema, workerPin.TableName);
+        sql.AppendLine($"CREATE TABLE [{schema}].[{Escape(workerPin.TableName)}] (");
+        sql.AppendLine($"    [{Escape(workerPin.TargetServiceNameColumn)}] NVARCHAR(128) NOT NULL,");
+        sql.AppendLine($"    [{Escape(workerPin.VersionColumn)}] NVARCHAR(32) NOT NULL,");
+        sql.AppendLine($"    [{Escape(workerPin.PackageUrlColumn)}] NVARCHAR(2048) NOT NULL,");
+        sql.AppendLine($"    [{Escape(workerPin.Sha256Column)}] NVARCHAR(64) NOT NULL,");
+        sql.AppendLine($"    [{Escape(workerPin.RequireAuthenticodeColumn)}] BIT NOT NULL CONSTRAINT [{Escape(BuildIdentifier("DF", workerPin.TableName, workerPin.RequireAuthenticodeColumn))}] DEFAULT(1),");
+        sql.AppendLine($"    [{Escape(workerPin.RollbackAfterMinutesColumn)}] INT NOT NULL,");
+        sql.AppendLine($"    [{Escape(workerPin.UpdatedAtUtcColumn)}] DATETIMEOFFSET NOT NULL,");
+        sql.AppendLine($"    CONSTRAINT [{Escape(BuildIdentifier("PK", workerPin.TableName))}] PRIMARY KEY ([{Escape(workerPin.TargetServiceNameColumn)}])");
         sql.AppendLine(");");
         sql.AppendLine("END");
         sql.AppendLine();
@@ -217,7 +231,11 @@ public static class SqlIdentifierValidator
             options.UninstallRequestTable.CodeHashColumn, options.UninstallRequestTable.CodeColumn,
             options.SoftwareLicenseTable.TableName, options.SoftwareLicenseTable.PcForeignKeyColumn,
             options.SoftwareLicenseTable.SoftwareNameColumn, options.SoftwareLicenseTable.LicenseSourceColumn,
-            options.SoftwareLicenseTable.UpdatedAtUtcColumn
+            options.SoftwareLicenseTable.UpdatedAtUtcColumn,
+            options.WorkerUpdatePinTable.TableName, options.WorkerUpdatePinTable.TargetServiceNameColumn,
+            options.WorkerUpdatePinTable.VersionColumn, options.WorkerUpdatePinTable.PackageUrlColumn,
+            options.WorkerUpdatePinTable.Sha256Column, options.WorkerUpdatePinTable.RequireAuthenticodeColumn,
+            options.WorkerUpdatePinTable.RollbackAfterMinutesColumn, options.WorkerUpdatePinTable.UpdatedAtUtcColumn
         };
 
         if (identifiers.Any(identifier => !IsValid(identifier)))

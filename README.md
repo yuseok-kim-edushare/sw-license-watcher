@@ -109,6 +109,7 @@ SHA256SUMS.txt                                위 ZIP의 SHA-256
 - `StaleHeartbeatNotificationTable.TableName`
 - `UninstallRequestTable.TableName`
 - `SoftwareLicenseTable.TableName`
+- `WorkerUpdatePinTable.TableName`
 - `SoftwarePolicyTable.DefaultLicenseSourceColumn`
 
 현재 기본 예시는 다음처럼 커스텀되어 있습니다.
@@ -120,6 +121,7 @@ SHA256SUMS.txt                                위 ZIP의 SHA-256
 - 하트비트 두절 알림 상태 테이블: `company_stale_heartbeat_notification`
 - 제거 요청 테이블: `company_pc_uninstall_request`
 - PC별 SW 라이선스 할당 테이블: `company_pc_sw_license`
+- Worker 업데이트 핀 테이블: `company_worker_update_pin`
 - 정책 테이블 기본 라이선스 컬럼: `default_license_source` (`managed`만)
 
 ## 회사 배포
@@ -243,7 +245,7 @@ END
 
 회사 예시 매핑(`company_pc` / `company_stale_heartbeat_notification`)을 쓰는 기존 DB는 테이블·컬럼·FK 이름을 설정값에 맞게 바꿉니다.
 
-Watchdog에는 Worker 실행 파일이 설치된 `Watchdog__WorkerInstallDirectory`와 업데이트 후 확인할 `Watchdog__WorkerHealthFilePath`도 설정합니다. 이 경로는 Worker의 `Agent__HealthFilePath`와 동일해야 하며, Worker 서비스 계정이 쓰고 Watchdog 서비스 계정이 읽을 수 있어야 합니다. 자체 패치 ZIP(`SwLicenseWatcher.Agent.Worker-{version}.zip`)에는 정확히 하나의 `SwLicenseWatcher.Agent.Worker.exe`가 있어야 하며, Watchdog은 설치 폴더의 `appsettings.json`(및 `appsettings.*.json`)을 유지합니다. `RequireAuthenticode`가 `true`(기본)이면 ZIP의 모든 EXE/DLL이 신뢰된 Authenticode 서명을 가져야 합니다. CD에 서명 시크릿이 없으면 릴리스는 서명되지 않으므로, 회사 인증서로 ZIP 내용을 서명한 뒤 재해시하거나 `Updates:Worker:RequireAuthenticode`를 `false`로 둡니다(비권장).
+Watchdog에는 Worker 실행 파일이 설치된 `Watchdog__WorkerInstallDirectory`와 업데이트 후 확인할 `Watchdog__WorkerHealthFilePath`도 설정합니다. 이 경로는 Worker의 `Agent__HealthFilePath`와 동일해야 하며, Worker 서비스 계정이 쓰고 Watchdog 서비스 계정이 읽을 수 있어야 합니다. 자체 패치 ZIP(`SwLicenseWatcher.Agent.Worker-{version}.zip`)에는 정확히 하나의 `SwLicenseWatcher.Agent.Worker.exe`가 있어야 하며, Watchdog은 설치 폴더의 `appsettings.json`(및 `appsettings.*.json`)을 유지합니다. `RequireAuthenticode`가 `true`(기본)이면 ZIP의 모든 EXE/DLL이 신뢰된 Authenticode 서명을 가져야 합니다. CD에 서명 시크릿이 없으면 릴리스는 서명되지 않으므로, 회사 인증서로 ZIP 내용을 서명한 뒤 재해시하거나 `/admin` **업데이트** 탭에서 `RequireAuthenticode`를 끄세요(비권장).
 
 ## 서버 알림 (웹훅 / SMTP)
 

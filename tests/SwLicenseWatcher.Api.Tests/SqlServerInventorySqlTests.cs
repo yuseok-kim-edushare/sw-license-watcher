@@ -304,4 +304,34 @@ public class SqlServerInventorySqlTests
         Assert.Contains("[sw]]name] = @name", upsert, StringComparison.Ordinal);
         Assert.Contains("[src]]col] = @licenseSource", upsert, StringComparison.Ordinal);
     }
+
+    [Fact]
+    public void BuildGetWorkerUpdatePinSql_selects_by_target_service()
+    {
+        var sql = new SqlServerInventoryRepository(new SqlServerStorageOptions()).BuildGetWorkerUpdatePinSql();
+        Assert.Contains("FROM [inventory].[worker_update_pin]", sql, StringComparison.Ordinal);
+        Assert.Contains("[target_service_name] = @targetServiceName", sql, StringComparison.Ordinal);
+        Assert.Contains("[package_url]", sql, StringComparison.Ordinal);
+        Assert.DoesNotContain("Token", sql, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void BuildUpsertWorkerUpdatePinSql_merges_on_target_service()
+    {
+        var sql = new SqlServerInventoryRepository(new SqlServerStorageOptions()).BuildUpsertWorkerUpdatePinSql();
+        Assert.Contains("MERGE [inventory].[worker_update_pin]", sql, StringComparison.Ordinal);
+        Assert.Contains("WHEN MATCHED THEN", sql, StringComparison.Ordinal);
+        Assert.Contains("WHEN NOT MATCHED THEN", sql, StringComparison.Ordinal);
+        Assert.Contains("@packageUrl", sql, StringComparison.Ordinal);
+        Assert.DoesNotContain("Token", sql, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void BuildSeedWorkerUpdatePinSql_inserts_only_when_missing()
+    {
+        var sql = new SqlServerInventoryRepository(new SqlServerStorageOptions()).BuildSeedWorkerUpdatePinSql();
+        Assert.Contains("IF NOT EXISTS", sql, StringComparison.Ordinal);
+        Assert.Contains("INSERT INTO [inventory].[worker_update_pin]", sql, StringComparison.Ordinal);
+        Assert.Contains("[target_service_name] = @targetServiceName", sql, StringComparison.Ordinal);
+    }
 }

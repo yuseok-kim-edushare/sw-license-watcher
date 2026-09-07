@@ -118,8 +118,8 @@ $adminToken = .\deploy\scripts\New-ApiToken.ps1
 | `Storage:SqlServer:ConnectionString` | Express 연결 문자열 |
 | `Database:ApplySchemaOnStartup` | `true` |
 | `Notifications:Webhook/Smtp:Enabled` | `false` |
-| `Updates:Worker:RequireAuthenticode` | 서명 없는 빌드면 **`false`** |
-| `Updates:Worker:PackageUrl` | 자체 패치를 안 하면 플레이스홀더 HTTPS URL로 기동은 됩니다 |
+| `Updates:Worker:RequireAuthenticode` | 시드값. 서명 없는 빌드면 **`false`** (이후 `/admin` 업데이트 탭에서도 바꿀 수 있음) |
+| `Updates:Worker:PackageUrl` | 시드용. 자체 패치를 안 하면 플레이스홀더 HTTPS URL로 기동은 됩니다 |
 | `Kestrel` | **넣지 않음** |
 
 풀을 재순환한 뒤:
@@ -210,7 +210,7 @@ IIS HTTP 바인딩만 열고 `http://localhost`로 에이전트를 붙이는 것
 Watchdog 기본 주기는 **4시간 ± 1시간**입니다. 테스트 시 `CheckInterval`을 줄이세요.
 
 1. Worker ZIP(`SwLicenseWatcher.Agent.Worker-{version}.zip`)을 IIS 가상 디렉터리나 다른 HTTPS 경로에 둡니다. URL은 **HTTPS**여야 합니다.
-2. API `Updates:Worker`에 `Version`, `PackageUrl`, `Sha256`을 넣습니다.
+2. `/admin` **업데이트** 탭에 `Version`, `PackageUrl`, `Sha256`을 넣습니다. API `appsettings.json`의 `Updates:Worker`는 테이블이 비어 있을 때만 시드됩니다.
 
 ```powershell
 (Get-FileHash -Algorithm SHA256 C:\SwLw\packages\SwLicenseWatcher.Agent.Worker-1.0.x.zip).Hash

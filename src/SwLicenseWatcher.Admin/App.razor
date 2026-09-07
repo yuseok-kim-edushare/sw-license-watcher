@@ -41,8 +41,11 @@ else
                 <button type="button" class="tab @(_tab == "violations" ? "is-active" : null)" @onclick="@(() => SelectTabAsync("violations"))">위반</button>
                 <button type="button" class="tab @(_tab == "policies" ? "is-active" : null)" @onclick="@(() => SelectTabAsync("policies"))">정책</button>
                 <button type="button" class="tab @(_tab == "uninstall" ? "is-active" : null)" @onclick="@(() => SelectTabAsync("uninstall"))">제거 요청</button>
+                <button type="button" class="tab @(_tab == "updates" ? "is-active" : null)" @onclick="@(() => SelectTabAsync("updates"))">업데이트</button>
             </nav>
 
+            @if (ShowListToolbar)
+            {
             <div class="toolbar">
                 <label>검색
                     <input type="search" maxlength="256" @bind="_search" @bind:event="oninput" @onkeydown="OnSearchKey" />
@@ -76,6 +79,7 @@ else
                     <button type="button" @onclick="DownloadCsvAsync">CSV 다운로드</button>
                 }
             </div>
+            }
 
             @if (ShowUninstallHint)
             {
@@ -113,6 +117,48 @@ else
                 }
             }
 
+            @if (_tab == "updates")
+            {
+                <section class="card">
+                    <h2>Worker 업데이트 핀</h2>
+                    <p class="hint">GitHub Release의 Version · PackageUrl · Sha256을 저장하면 Watchdog가 다음 확인 주기에 Worker를 교체합니다. appsettings <code>Updates:Worker</code>는 테이블이 비어 있을 때만 시드되며, 이미 핀이 있으면 파일을 고쳐도 바뀌지 않습니다.</p>
+                    @if (!string.IsNullOrEmpty(_updateError))
+                    {
+                        <p class="error">@_updateError</p>
+                    }
+                    @if (!string.IsNullOrEmpty(_updateSaved))
+                    {
+                        <p class="meta">@_updateSaved</p>
+                    }
+                    <div class="form-grid">
+                        <label>대상 서비스
+                            <input value="@_updateTarget" readonly />
+                        </label>
+                        <label>버전
+                            <input maxlength="32" @bind="_updateVersion" />
+                        </label>
+                        <label class="wide">패키지 URL (HTTPS)
+                            <input maxlength="2048" @bind="_updatePackageUrl" />
+                        </label>
+                        <label class="wide">SHA-256
+                            <input maxlength="64" @bind="_updateSha256" />
+                        </label>
+                        <label>롤백 대기(분)
+                            <input type="number" min="1" max="60" @bind="_updateRollbackMinutes" />
+                        </label>
+                        <label class="check">
+                            <input type="checkbox" @bind="_updateRequireAuthenticode" />
+                            Authenticode 필수
+                        </label>
+                    </div>
+                    <div class="form-actions">
+                        <button type="button" class="primary" @onclick="SaveWorkerUpdatePinAsync">핀 저장</button>
+                        <button type="button" @onclick="LoadWorkerUpdatePinAsync">다시 읽기</button>
+                    </div>
+                </section>
+            }
+            else
+            {
             @if (!string.IsNullOrEmpty(_listError))
             {
                 <p class="error">@_listError</p>
@@ -353,6 +399,8 @@ else
                     </div>
                 </section>
             }
+            }
+
         </section>
     }
 }
