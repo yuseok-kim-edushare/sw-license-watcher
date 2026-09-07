@@ -269,14 +269,16 @@ internal static class AgentSetupService
         var binPath = $"\"{exePath}\"";
         if (ServiceExists(name))
         {
-            RunSc("config", name, "binPath=", binPath, "start=", "auto", "DisplayName=", displayName);
+            RunSc(WindowsServiceRegistration.Config(name, binPath, displayName));
         }
         else
         {
-            RunSc("create", name, "binPath=", binPath, "start=", "auto", "DisplayName=", displayName);
+            RunSc(WindowsServiceRegistration.Create(name, binPath, displayName));
         }
 
-        RunSc("description", name, description);
+        RunSc(WindowsServiceRegistration.Description(name, description));
+        RunSc(WindowsServiceRegistration.FailureRestart(name));
+        RunSc(WindowsServiceRegistration.FailureFlag(name));
     }
 
     private static void StartService(string name)
@@ -315,7 +317,7 @@ internal static class AgentSetupService
         }
 
         StopService(name);
-        RunSc("delete", name);
+        RunSc(WindowsServiceRegistration.Delete(name));
         var deadline = DateTime.UtcNow.AddSeconds(30);
         while (DateTime.UtcNow < deadline)
         {
@@ -336,8 +338,13 @@ internal static class AgentSetupService
             string.Equals(service.ServiceName, name, StringComparison.OrdinalIgnoreCase));
     }
 
-    private static void RunSc(params string[] arguments)
+    private static void RunSc(IReadOnlyList<string> arguments)
     {
+        if (arguments.Count == 0)
+        {
+            throw new ArgumentException("sc.exe requires at least one argument.", nameof(arguments));
+        }
+
         var start = new ProcessStartInfo
         {
             FileName = "sc.exe",

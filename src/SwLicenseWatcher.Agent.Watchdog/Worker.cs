@@ -1,6 +1,7 @@
+using System.Security.Principal;
+using Microsoft.Extensions.Hosting.WindowsServices;
 using Microsoft.Extensions.Options;
 using SwLicenseWatcher.Core;
-using System.Security.Cryptography;
 
 namespace SwLicenseWatcher.Agent.Watchdog;
 
@@ -14,6 +15,10 @@ public sealed class Worker(
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         var watchdogOptions = options.Value;
+        if (OperatingSystem.IsWindows())
+        {
+            EnsureLocalSystemWhenInstalledAsService();
+        }
 
         do
         {
@@ -66,5 +71,16 @@ public sealed class Worker(
             }
         }
         while (!stoppingToken.IsCancellationRequested);
+    }
+
+    [System.Runtime.Versioning.SupportedOSPlatform("windows")]
+    private static void EnsureLocalSystemWhenInstalledAsService()
+    {
+        if (ServiceIdentity.IsDisallowedServiceAccount(
+                WindowsServiceHelpers.IsWindowsService(),
+                WindowsIdentity.GetCurrent().IsSystem))
+        {
+            throw new InvalidOperationException(ServiceIdentity.WatchdogMustBeLocalSystem);
+        }
     }
 }

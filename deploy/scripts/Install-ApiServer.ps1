@@ -7,7 +7,9 @@
 .DESCRIPTION
     Copies api/win-x64 (Native AOT Kestrel) onto the server, writes appsettings.json from the
     company template with connection string and tokens, then registers SwLicenseWatcher.Api
-    as an Automatic Windows Service with restart-on-failure recovery.
+    as a LocalSystem Automatic Windows Service with restart-on-failure recovery.
+    The installer must run elevated; the service logon is LocalSystem, not the
+    installing administrator.
     This script does not install the IIS in-process publish output (api/iis/win-x64).
 
 .PARAMETER SourcePath
@@ -239,6 +241,24 @@ function Set-ServiceRestartRecovery {
     }
 }
 
+function Assert-ServiceAccountLocalSystem {
+    param([Parameter(Mandatory)] [string] $Name)
+
+    $service = Get-CimInstance -ClassName Win32_Service -Filter ("Name='{0}'" -f $Name)
+    if ($null -eq $service) {
+        throw "Service $Name was not registered."
+    }
+
+    $startName = [string] $service.StartName
+    $normalized = $startName.Trim()
+    $isLocalSystem = $normalized -eq 'LocalSystem' -or
+        $normalized -eq 'NT AUTHORITY\SYSTEM' -or
+        $normalized -eq '.\LocalSystem'
+    if (-not $isLocalSystem) {
+        throw "Service $Name must run as LocalSystem. Current account: '$startName'."
+    }
+}
+
 function Install-OrUpdateService {
     param(
         [Parameter(Mandatory)] [string] $Name,
@@ -248,22 +268,30 @@ function Install-OrUpdateService {
     )
 
     $binPath = '"{0}"' -f $ExePath
+    $quotedDisplayName = '"{0}"' -f $DisplayName
+    $quotedDescription = '"{0}"' -f $Description
     $existing = Get-Service -Name $Name -ErrorAction SilentlyContinue
     if ($null -ne $existing) {
         Stop-ServiceIfPresent -Name $Name
-        $quotedDisplayName = '"{0}"' -f $DisplayName
-        & sc.exe config $Name binPath= $binPath start= auto DisplayName= $quotedDisplayName | Out-Null
+        & sc.exe config $Name binPath= $binPath start= auto obj= LocalSystem DisplayName= $quotedDisplayName | Out-Null
         if ($LASTEXITCODE -ne 0) {
             throw "sc.exe config $Name failed with exit code $LASTEXITCODE."
         }
-        $quotedDescription = '"{0}"' -f $Description
-        & sc.exe description $Name $quotedDescription | Out-Null
-        Set-ServiceRestartRecovery -Name $Name
-        return
+    }
+    else {
+        & sc.exe create $Name binPath= $binPath start= auto obj= LocalSystem DisplayName= $quotedDisplayName | Out-Null
+        if ($LASTEXITCODE -ne 0) {
+            throw "sc.exe create $Name failed with exit code $LASTEXITCODE."
+        }
     }
 
-    New-Service -Name $Name -BinaryPathName $binPath -DisplayName $DisplayName -StartupType Automatic -Description $Description | Out-Null
+    & sc.exe description $Name $quotedDescription | Out-Null
+    if ($LASTEXITCODE -ne 0) {
+        throw "sc.exe description $Name failed with exit code $LASTEXITCODE."
+    }
+
     Set-ServiceRestartRecovery -Name $Name
+    Assert-ServiceAccountLocalSystem -Name $Name
 }
 
 function Import-SettingsOrPublish {
@@ -380,7 +408,7 @@ try {
 
     Write-Host "Installing API from $apiSource"
     Write-Host "Install directory: $apiDir"
-    Write-Host "Service: $ServiceName (Automatic, restart on failure)"
+    Write-Host "Service: $ServiceName (LocalSystem, Automatic, restart on failure)"
     if ($hasListenUrl) {
         Write-Host "ListenUrl=$ListenUrl"
     }
@@ -435,7 +463,7 @@ try {
         throw "Service $ServiceName did not reach Running. Check the Application event log and $apiDir\appsettings.json."
     }
 
-    Write-Success "Service $ServiceName is running."
+    Write-Success "Service $ServiceName is running as LocalSystem."
     Write-Host "Install directory: $apiDir"
     Write-Host "Confirm with: Invoke-RestMethod -Uri https://<server>/health"
     Write-Host "HTTPS certificates are not installed by this script. Place a certificate in LocalMachine\My and match Kestrel:Endpoints:Https:Certificate:Subject. See docs\company-deployment.md."

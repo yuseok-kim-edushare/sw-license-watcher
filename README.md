@@ -4,8 +4,8 @@
 
 ## 구현된 핵심 요구사항
 
-- **Windows Service 2개**
-  - `SwLicenseWatcher.Agent.Watchdog`: 자체 패치, SHA-256/Authenticode 검증, 백업/롤백 정책 담당
+- **Windows Service 2개** (로그온은 **LocalSystem**. 설치 스크립트/Setup만 관리자 권한이 필요함)
+  - `SwLicenseWatcher.Agent.Watchdog`: 자체 패치, SHA-256/Authenticode 검증, 백업/롤백 정책 담당. Worker 서비스를 멈추고 교체하므로 사용자 계정(로컬 관리자 포함)으로 돌리지 않음
   - `SwLicenseWatcher.Agent.Worker`: 설치 소프트웨어 수집, heartbeat/snapshot 전송 담당. heartbeat `Status`는 스냅샷이 전달되면 `Healthy`, 재시도를 위해 큐에 적재되면 `Degraded`, API가 거절하면 `Rejected`
 - **로컬 상태 저장 설계**
   - 전송 실패 스냅샷을 원자적 파일 큐에 저장하고 다음 주기에 재전송
@@ -124,7 +124,7 @@ SHA256SUMS.txt                                위 ZIP의 SHA-256
 
 서버 API는 [deploy/examples/appsettings.api.company.json](deploy/examples/appsettings.api.company.json)(Kestrel) 또는 [deploy/examples/appsettings.api.iis.company.json](deploy/examples/appsettings.api.iis.company.json)(IIS)으로 맞추고, 회사 PC에는 Worker·Watchdog만 설치합니다. 절차는 [docs/company-deployment.md](docs/company-deployment.md)를 참고하세요.
 
-Kestrel(Native AOT, `api/win-x64`)은 서버에서 [deploy/scripts/Install-ApiServer.ps1](deploy/scripts/Install-ApiServer.ps1)로 Windows Service(`SwLicenseWatcher.Api`)로 등록합니다. API는 `AddWindowsService`로 자신을 호스팅하므로 SCM에서 시작해도 콘텐츠 루트는 실행 파일 폴더이고, Application 이벤트 로그 원본은 `SwLicenseWatcher.Api`입니다. Native AOT slim builder에서도 `UseKestrelHttpsConfiguration`으로 `Kestrel:Endpoints:Https`가 적용됩니다. IIS in-process(`api/iis/win-x64`)는 Hosting Bundle과 사이트 바인딩을 쓰는 수동 절차입니다.
+Kestrel(Native AOT, `api/win-x64`)은 서버에서 [deploy/scripts/Install-ApiServer.ps1](deploy/scripts/Install-ApiServer.ps1)로 Windows Service(`SwLicenseWatcher.Api`)를 **LocalSystem**으로 등록합니다. API는 `AddWindowsService`로 자신을 호스팅하므로 SCM에서 시작해도 콘텐츠 루트는 실행 파일 폴더이고, Application 이벤트 로그 원본은 `SwLicenseWatcher.Api`입니다. Native AOT slim builder에서도 `UseKestrelHttpsConfiguration`으로 `Kestrel:Endpoints:Https`가 적용됩니다. IIS in-process(`api/iis/win-x64`)는 Hosting Bundle과 사이트 바인딩을 쓰는 수동 절차입니다.
 
 ```powershell
 $agentToken = .\deploy\scripts\New-ApiToken.ps1
@@ -388,7 +388,7 @@ Invoke-RestMethod -Headers $headers -Uri "http://127.0.0.1:5080/api/violations?s
 Invoke-WebRequest -Headers $headers -Uri "http://127.0.0.1:5080/api/policies?format=csv" -OutFile policies.csv
 ```
 
-Worker/Watchdog는 진단용으로 1회 실행 모드도 지원합니다.
+Worker/Watchdog는 진단용으로 1회 실행 모드도 지원합니다. 콘텐츠 루트는 실행 파일 폴더이므로 cwd와 무관하게 `appsettings.json`을 읽습니다. 설치된 Worker 서비스를 제어하는 Watchdog 진단은 관리자 콘솔에서 실행하세요. 운영 설치본은 LocalSystem 서비스입니다.
 
 ```bash
 dotnet run --project src/SwLicenseWatcher.Agent.Worker -- --Agent:RunOnceForDiagnostics=true

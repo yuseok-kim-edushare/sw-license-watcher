@@ -101,7 +101,7 @@ $adminToken = .\New-ApiToken.ps1
 
 ### Kestrel (Native AOT) Windows Service
 
-`Install-ApiServer.ps1`이 `api/win-x64`를 `C:\Program Files\SwLicenseWatcher\Api`에 복사하고, `SwLicenseWatcher.Api` 서비스를 자동 시작·실패 시 재시작으로 등록합니다. API는 `AddWindowsService`로 SCM에 상태를 보고하고, 서비스로 실행 중이면 Application 이벤트 로그(원본 `SwLicenseWatcher.Api`)에 기록합니다. 콘텐츠 루트는 실행 파일 폴더이므로 `appsettings.json`도 그 위치에서 읽습니다. Native AOT(`CreateSlimBuilder`)에서도 `UseKestrelHttpsConfiguration`이 켜져 있어 회사 템플릿의 `Kestrel:Endpoints:Https`가 적용됩니다. 회사 템플릿 [appsettings.api.company.json](../deploy/examples/appsettings.api.company.json)에 연결 문자열과 토큰을 넣습니다. 대상 서버에 .NET 런타임은 필요 없습니다.
+`Install-ApiServer.ps1`이 `api/win-x64`를 `C:\Program Files\SwLicenseWatcher\Api`에 복사하고, `SwLicenseWatcher.Api` 서비스를 **LocalSystem** 자동 시작·실패 시 재시작으로 등록합니다. 설치 스크립트만 관리자 권한이 필요하고, 서비스 로그온은 설치한 관리자 계정이 아닙니다. API는 `AddWindowsService`로 SCM에 상태를 보고하고, 서비스로 실행 중이면 Application 이벤트 로그(원본 `SwLicenseWatcher.Api`)에 기록합니다. 콘텐츠 루트는 실행 파일 폴더이므로 `appsettings.json`도 그 위치에서 읽습니다. Native AOT(`CreateSlimBuilder`)에서도 `UseKestrelHttpsConfiguration`이 켜져 있어 회사 템플릿의 `Kestrel:Endpoints:Https`가 적용됩니다. 회사 템플릿 [appsettings.api.company.json](../deploy/examples/appsettings.api.company.json)에 연결 문자열과 토큰을 넣습니다. 대상 서버에 .NET 런타임은 필요 없습니다.
 
 관리자 PowerShell에서:
 
@@ -245,7 +245,7 @@ USB나 그룹웨어로 뿌릴 때는 IT가 Packager GUI에서 회사 설치본 *
 
 서버 API가 이미 떠 있고, 토큰과 HTTPS URL을 알고 있어야 합니다.
 
-Worker를 먼저 기동하고 Watchdog을 올립니다. 재실행하면 서비스를 멈춘 뒤 에이전트 파일만 갱신합니다. `api` 폴더는 복사하지 않습니다.
+Worker를 먼저 기동하고 Watchdog을 올립니다. 두 서비스 모두 **LocalSystem**으로 등록합니다. 설치 PowerShell만 관리자 권한이 필요하고, Watchdog이 Worker를 멈추고 파일을 교체하려면 실행 계정은 LocalSystem이어야 합니다. 로컬 관리자 사용자로 서비스를 돌리면 SCM `Access Denied`가 납니다. 재실행하면 계정까지 LocalSystem으로 되돌린 뒤 에이전트 파일만 갱신합니다. `api` 폴더는 복사하지 않습니다.
 
 ```powershell
 .\Install-Agent.ps1 `
@@ -260,9 +260,13 @@ Worker를 먼저 기동하고 Watchdog을 올립니다. 재실행하면 서비�
 
 ```powershell
 Get-Service SwLicenseWatcher.Agent.Worker, SwLicenseWatcher.Agent.Watchdog
+Get-CimInstance Win32_Service -Filter "Name='SwLicenseWatcher.Agent.Watchdog'" |
+  Select-Object Name, StartName, State
 Get-Content C:\ProgramData\SwLicenseWatcher\state\worker-health.json
 Get-WinEvent -FilterHashtable @{ LogName = "Application"; StartTime = (Get-Date).AddMinutes(-15) } -MaxEvents 30
 ```
+
+`StartName`은 `LocalSystem`이어야 합니다.
 
 ### Intune / SCCM 무인 설치
 
@@ -309,6 +313,7 @@ Watchdog은 설치 디렉터리를 패키지 내용으로 교체하기 전에 PC
 | 서비스가 바로 종료 | Event Log. 빈 토큰, 비-loopback HTTP `ServerBaseUrl` |
 | `401` | PC `ApiToken`과 서버 `Security:AgentToken`(또는 레거시 `Security:Token`)이 다름 |
 | 스냅샷이 한 PC로만 보임 | 모든 에이전트가 같은 `DeviceCode`(예: 개발용 `pc-demo-001`) |
+| Watchdog이 Worker 서비스에 Access Denied | Watchdog이 LocalSystem이 아님. `Install-Agent.ps1`을 다시 실행하거나 `sc.exe config SwLicenseWatcher.Agent.Watchdog obj= LocalSystem` |
 | Watchdog이 업데이트를 안 함 | 서버 manifest `Version`이 이미 `.version`과 같음, `PackageUrl`이 HTTP, SHA-256 불일치 |
 | Authenticode 실패 | ZIP 안의 EXE/DLL이 회사 신뢰 루트로 서명되지 않음 |
 | 업데이트 후 롤백 | Worker가 `HealthFilePath`에 버전을 못 씀. 경로가 Worker/Watchdog JSON에서 같은지 |
@@ -330,9 +335,10 @@ Watchdog은 설치 디렉터리를 패키지 내용으로 교체하기 전에 PC
 | 항목 | 기본 경로 |
 | --- | --- |
 | API (Kestrel Windows Service) | `C:\Program Files\SwLicenseWatcher\Api` |
-| API 서비스 이름 | `SwLicenseWatcher.Api` |
+| API 서비스 이름 | `SwLicenseWatcher.Api` (LocalSystem) |
 | Worker | `C:\Program Files\SwLicenseWatcher\Agent.Worker` |
 | Watchdog | `C:\Program Files\SwLicenseWatcher\Agent.Watchdog` |
+| 에이전트 서비스 계정 | LocalSystem (`SwLicenseWatcher.Agent.Worker`, `SwLicenseWatcher.Agent.Watchdog`) |
 | 헬스 파일 | `C:\ProgramData\SwLicenseWatcher\state\worker-health.json` |
 | 스냅샷 큐 | `C:\ProgramData\SwLicenseWatcher\state\queue` |
 | 업데이트 staging / backup | `C:\ProgramData\SwLicenseWatcher\staging`, `backup` |

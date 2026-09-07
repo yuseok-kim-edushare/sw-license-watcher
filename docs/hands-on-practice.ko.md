@@ -133,7 +133,7 @@ Invoke-RestMethod https://localhost/health
 
 ## 4. 같은 PC에 에이전트 설치
 
-API가 뜬 뒤에, **관리자 PowerShell**에서:
+API가 뜬 뒤에, **관리자 PowerShell**에서 설치합니다. 설치 프로세스만 관리자이고, Worker·Watchdog 서비스 계정은 **LocalSystem**입니다. Watchdog이 Worker를 멈추고 교체하려면 이 계정이 맞습니다.
 
 ```powershell
 .\deploy\scripts\Install-Agent.ps1 `
@@ -150,6 +150,8 @@ API가 뜬 뒤에, **관리자 PowerShell**에서:
 
 ```powershell
 Get-Service SwLicenseWatcher.Agent.Worker, SwLicenseWatcher.Agent.Watchdog
+Get-CimInstance Win32_Service -Filter "Name='SwLicenseWatcher.Agent.Watchdog'" |
+  Select-Object Name, StartName, State
 Get-Content C:\ProgramData\SwLicenseWatcher\state\worker-health.json
 Invoke-RestMethod -Headers @{ Authorization = "Bearer $adminToken" } `
   -Uri "https://localhost/api/inventory/devices"

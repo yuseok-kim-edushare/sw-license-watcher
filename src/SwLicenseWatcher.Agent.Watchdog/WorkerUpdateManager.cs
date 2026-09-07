@@ -1,3 +1,4 @@
+using System.ComponentModel;
 using System.IO.Compression;
 using System.Text.Json;
 using System.Runtime.InteropServices;
@@ -375,16 +376,27 @@ public sealed class WorkerUpdateManager(
     private static Task SetServiceStateAsync(ServiceController service, bool start, CancellationToken cancellationToken) =>
         Task.Run(() =>
         {
-            service.Refresh();
-            if (start && service.Status != ServiceControllerStatus.Running)
+            try
             {
-                service.Start();
-                service.WaitForStatus(ServiceControllerStatus.Running, TimeSpan.FromMinutes(2));
+                service.Refresh();
+                if (start && service.Status != ServiceControllerStatus.Running)
+                {
+                    service.Start();
+                    service.WaitForStatus(ServiceControllerStatus.Running, TimeSpan.FromMinutes(2));
+                }
+                else if (!start && service.Status != ServiceControllerStatus.Stopped)
+                {
+                    service.Stop();
+                    service.WaitForStatus(ServiceControllerStatus.Stopped, TimeSpan.FromMinutes(2));
+                }
             }
-            else if (!start && service.Status != ServiceControllerStatus.Stopped)
+            catch (InvalidOperationException ex) when (ex.InnerException is Win32Exception { NativeErrorCode: 5 })
             {
-                service.Stop();
-                service.WaitForStatus(ServiceControllerStatus.Stopped, TimeSpan.FromMinutes(2));
+                throw new InvalidOperationException(ServiceIdentity.WatchdogMustBeLocalSystem, ex);
+            }
+            catch (Win32Exception ex) when (ex.NativeErrorCode == 5)
+            {
+                throw new InvalidOperationException(ServiceIdentity.WatchdogMustBeLocalSystem, ex);
             }
         }, cancellationToken);
 

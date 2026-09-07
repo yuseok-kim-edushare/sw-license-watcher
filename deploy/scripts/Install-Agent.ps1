@@ -9,7 +9,11 @@
     (api/win-x64) is a server web app and is never installed by this script, even if it
     is present in the same Release folder.
     Writes company appsettings.json for both agent processes, creates ProgramData
-    directories, then starts Worker followed by Watchdog.
+    directories, then registers Worker and Watchdog as LocalSystem Automatic
+    services (restart on failure) and starts Worker followed by Watchdog.
+    The installer must run elevated; the service logon is LocalSystem, not the
+    installing administrator. Watchdog has to stop and replace Worker, which a
+    user account cannot do reliably.
     DeviceCode defaults to the computer name so each PC reports as a distinct asset.
 
 .PARAMETER SourcePath
@@ -150,6 +154,38 @@ function Stop-ServiceIfPresent {
     $svc.WaitForStatus([System.ServiceProcess.ServiceControllerStatus]::Stopped, [TimeSpan]::FromMinutes(1))
 }
 
+function Assert-ServiceAccountLocalSystem {
+    param([Parameter(Mandatory)] [string] $Name)
+
+    $service = Get-CimInstance -ClassName Win32_Service -Filter ("Name='{0}'" -f $Name)
+    if ($null -eq $service) {
+        throw "Service $Name was not registered."
+    }
+
+    $startName = [string] $service.StartName
+    $normalized = $startName.Trim()
+    $isLocalSystem = $normalized -eq 'LocalSystem' -or
+        $normalized -eq 'NT AUTHORITY\SYSTEM' -or
+        $normalized -eq '.\LocalSystem'
+    if (-not $isLocalSystem) {
+        throw "Service $Name must run as LocalSystem so it can control other services and Program Files. Current account: '$startName'."
+    }
+}
+
+function Set-ServiceRestartRecovery {
+    param([Parameter(Mandatory)] [string] $Name)
+
+    & sc.exe failure $Name reset= 86400 actions= restart/5000/restart/30000/restart/60000 | Out-Null
+    if ($LASTEXITCODE -ne 0) {
+        throw "sc.exe failure $Name failed with exit code $LASTEXITCODE."
+    }
+
+    & sc.exe failureflag $Name 1 | Out-Null
+    if ($LASTEXITCODE -ne 0) {
+        throw "sc.exe failureflag $Name failed with exit code $LASTEXITCODE."
+    }
+}
+
 function Install-OrUpdateService {
     param(
         [Parameter(Mandatory)] [string] $Name,
@@ -159,18 +195,30 @@ function Install-OrUpdateService {
     )
 
     $binPath = '"{0}"' -f $ExePath
+    $quotedDisplayName = '"{0}"' -f $DisplayName
+    $quotedDescription = '"{0}"' -f $Description
     $existing = Get-Service -Name $Name -ErrorAction SilentlyContinue
     if ($null -ne $existing) {
         Stop-ServiceIfPresent -Name $Name
-        $quotedDisplayName = '"{0}"' -f $DisplayName
-        & sc.exe config $Name binPath= $binPath start= auto DisplayName= $quotedDisplayName | Out-Null
+        & sc.exe config $Name binPath= $binPath start= auto obj= LocalSystem DisplayName= $quotedDisplayName | Out-Null
         if ($LASTEXITCODE -ne 0) {
             throw "sc.exe config $Name failed with exit code $LASTEXITCODE."
         }
-        return
+    }
+    else {
+        & sc.exe create $Name binPath= $binPath start= auto obj= LocalSystem DisplayName= $quotedDisplayName | Out-Null
+        if ($LASTEXITCODE -ne 0) {
+            throw "sc.exe create $Name failed with exit code $LASTEXITCODE."
+        }
     }
 
-    New-Service -Name $Name -BinaryPathName $binPath -DisplayName $DisplayName -StartupType Automatic -Description $Description | Out-Null
+    & sc.exe description $Name $quotedDescription | Out-Null
+    if ($LASTEXITCODE -ne 0) {
+        throw "sc.exe description $Name failed with exit code $LASTEXITCODE."
+    }
+
+    Set-ServiceRestartRecovery -Name $Name
+    Assert-ServiceAccountLocalSystem -Name $Name
 }
 
 function Import-SettingsOrPublish {
@@ -279,7 +327,8 @@ Start-Service -Name $workerServiceName
 Start-Service -Name $watchdogServiceName
 (Get-Service -Name $watchdogServiceName).WaitForStatus([System.ServiceProcess.ServiceControllerStatus]::Running, [TimeSpan]::FromSeconds(30))
 
-Write-Host "Services $workerServiceName and $watchdogServiceName are running."
+Write-Host "Services $workerServiceName and $watchdogServiceName are running as LocalSystem."
+Write-Host "The installer needed Administrator only to register the services; Watchdog uses LocalSystem to update Worker."
 $workerVersionFile = Join-Path $workerDir ".version"
 if (Test-Path -LiteralPath $workerVersionFile) {
     $workerVersion = [System.IO.File]::ReadAllText($workerVersionFile).Trim()
