@@ -26,7 +26,7 @@
   </ItemGroup>
 
   <Target Name="PublishAdminWasmIntoWwwroot"
-          BeforeTargets="GetCopyToOutputDirectoryItems;AssignTargetPaths;PrepareForPublish"
+          BeforeTargets="PrepareForPublish"
           Condition="'$(DesignTimeBuild)' != 'true'">
     <PropertyGroup>
       <_AdminPublishDir>$(MSBuildThisFileDirectory)obj\$(Configuration)\admin-wasm\</_AdminPublishDir>
@@ -34,7 +34,7 @@
     </PropertyGroup>
     <MSBuild Projects="..\SwLicenseWatcher.Admin\SwLicenseWatcher.Admin.csproj"
              Targets="Publish"
-             Properties="Configuration=$(Configuration);PublishDir=$(_AdminPublishDir);PublishAot=false;PublishTrimmed=false;SelfContained=false;RuntimeIdentifier=;UseAppHost=false"
+             Properties="Configuration=$(Configuration);PublishDir=$(_AdminPublishDir);PublishAot=false;PublishTrimmed=false;SelfContained=false;RuntimeIdentifier=browser-wasm;UseAppHost=false;AdminInnerPublish=true"
              RemoveProperties="RuntimeIdentifier;SelfContained;PublishAot;PublishTrimmed" />
     <ItemGroup>
       <_AdminPublished Include="$(_AdminPublishDir)wwwroot\admin\**\*.*" />
