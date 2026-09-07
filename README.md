@@ -61,6 +61,8 @@
 - `/deploy/examples`: 서버 API·PC 에이전트용 `appsettings.json` 템플릿
 - `/deploy/scripts`: 서버 API(Kestrel Windows Service) 및 PC Worker·Watchdog 설치/제거 스크립트, SQL Server 스키마 적용 스크립트
 - `/docs/company-deployment.md`: 서버 설정 예시와 회사 PC 클라이언트 배포 절차
+- `/docs/packager-setup.ko.md`: USB·그룹웨어용 회사 Setup 사용 안내 (패키저·직원 설치·제거 승인)
+- `/docs/hands-on-practice.ko.md`: 집 PC IIS+SQL 실습
 - `.github/workflows/ci.yaml`: CI (빌드/테스트, Native AOT publish 검증, Dependabot auto-merge 트리거)
 - `.github/workflows/auto-merge.yaml`: Dependabot PR 자동 머지
 - `.github/workflows/cd.yaml`: CD (버전 스탬프 후 publish, GitHub Release에 통합 ZIP·Worker 자체 패치 ZIP·Packager ZIP·SHA256SUMS)
@@ -122,7 +124,7 @@ SHA256SUMS.txt                                위 ZIP의 SHA-256
 
 ## 회사 배포
 
-서버 API는 [deploy/examples/appsettings.api.company.json](deploy/examples/appsettings.api.company.json)(Kestrel) 또는 [deploy/examples/appsettings.api.iis.company.json](deploy/examples/appsettings.api.iis.company.json)(IIS)으로 맞추고, 회사 PC에는 Worker·Watchdog만 설치합니다. 절차는 [docs/company-deployment.md](docs/company-deployment.md)를 참고하세요.
+서버 API는 [deploy/examples/appsettings.api.company.json](deploy/examples/appsettings.api.company.json)(Kestrel) 또는 [deploy/examples/appsettings.api.iis.company.json](deploy/examples/appsettings.api.iis.company.json)(IIS)으로 맞추고, 회사 PC에는 Worker·Watchdog만 설치합니다. 서버·Intune 절차는 [docs/company-deployment.md](docs/company-deployment.md), USB·그룹웨어용 설치 관리자는 [docs/packager-setup.ko.md](docs/packager-setup.ko.md), 집 PC 재현은 [docs/hands-on-practice.ko.md](docs/hands-on-practice.ko.md)를 참고하세요.
 
 Kestrel(Native AOT, `api/win-x64`)은 서버에서 [deploy/scripts/Install-ApiServer.ps1](deploy/scripts/Install-ApiServer.ps1)로 Windows Service(`SwLicenseWatcher.Api`)를 **LocalSystem**으로 등록합니다. API는 `AddWindowsService`로 자신을 호스팅하므로 SCM에서 시작해도 콘텐츠 루트는 실행 파일 폴더이고, Application 이벤트 로그 원본은 `SwLicenseWatcher.Api`입니다. Native AOT slim builder에서도 `UseKestrelHttpsConfiguration`으로 `Kestrel:Endpoints:Https`가 적용됩니다. IIS in-process(`api/iis/win-x64`)는 Hosting Bundle과 사이트 바인딩을 쓰는 수동 절차입니다.
 

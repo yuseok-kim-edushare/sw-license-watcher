@@ -29,7 +29,7 @@ deploy/
     Uninstall-Agent.ps1
 ```
 
-직원 PC에는 PowerShell 대신 Release의 `SwLicenseWatcher.Packager-{version}.zip`으로 만든 **회사 Setup.exe 하나**를 배포할 수 있습니다. Intune/자동화가 있으면 아래 스크립트 경로를 그대로 씁니다.
+직원 PC에는 PowerShell 대신 Release의 `SwLicenseWatcher.Packager-{version}.zip`으로 만든 **회사 Setup.exe 하나**를 배포할 수 있습니다. 패키저·직원 설치·제거 승인 순서는 [packager-setup.ko.md](packager-setup.ko.md)입니다. Intune/자동화가 있으면 아래 스크립트 경로를 그대로 씁니다.
 
 Release ZIP의 `api/win-x64`(AOT)와 `api/iis/win-x64`(IIS)는 서버용입니다. `Install-ApiServer.ps1`은 `api/win-x64`만 복사하고, `Install-Agent.ps1`은 `agent-worker`와 `agent-watchdog`만 복사합니다.
 
@@ -225,19 +225,21 @@ Worker와 **같은** `DeviceCode`, `ServerBaseUrl`, `ApiToken`을 넣습니다.
 
 ## 5. 패키저로 회사 Setup.exe 만들기
 
-USB나 그룹웨어로 뿌릴 때는 IT가 Packager GUI에서 회사 설치본 **파일 하나**를 만듭니다. 직원 PC에 .NET SDK는 필요 없습니다.
+USB나 그룹웨어로 뿌릴 때는 IT가 Packager GUI에서 회사 설치본 **파일 하나**를 만듭니다. 직원 PC에 .NET SDK는 필요 없습니다. 화면 칸·공지 문안·제거 승인·집 시험은 [packager-setup.ko.md](packager-setup.ko.md)에 모아 두었습니다.
 
-1. GitHub Release의 `SwLicenseWatcher.Packager-{version}.zip`을 풉니다. 안에 `Packager.exe`, 런처 스텁 `SwLicenseWatcher-Setup.exe`, `setup-ui/`, `agent-worker/`, `agent-watchdog/`가 있습니다.
-2. `Packager.exe`를 실행하고 서버 HTTPS 주소와 `Security:AgentToken`을 넣습니다. 패키저 옆에 에이전트가 있으면 Release ZIP은 비워도 됩니다.
-3. 저장 위치의 `SwLicenseWatcher-Setup.exe`를 직원에게 배포합니다.
+핵심만 적으면:
+
+1. GitHub Release의 `SwLicenseWatcher.Packager-{version}.zip`을 풉니다. 안에 `Packager.exe`, 런처 스텁 `SwLicenseWatcher-Setup.exe`, `setup-ui/`, `agent-worker/`, `agent-watchdog/`가 있습니다. **스텁은 직원에게 주지 마세요.**
+2. `Packager.exe`를 실행하고 서버 HTTPS 주소와 `Security:AgentToken`을 넣습니다. 패키저 옆에 에이전트가 있으면 공식 Release ZIP은 비워도 됩니다.
+3. 저장 위치(기본 바탕화면)의 `SwLicenseWatcher-Setup.exe`만 USB·공지에 올립니다. Packager ZIP 전체를 배포하지 않습니다.
 
 직원 설치 화면:
 
 - 서버 주소와 키는 설치본에 들어 있어 다시 묻지 않습니다.
-- PC 관리 식별자/자산번호는 선택입니다. 비우면 컴퓨터 이름을 씁니다.
+- PC 관리 식별자/자산번호는 선택입니다. 비우면 컴퓨터 이름을 씁니다. 추측해서 쓰지 마세요.
 - 설치 후 설정 앱에 SW License Watcher가 보이며, 제거는 `/admin` **제거 요청** 승인 뒤에만 진행됩니다.
 
-업그레이드는 같은 회사 Setup.exe를 다시 실행하면 됩니다. 제거 승인은 필요 없습니다.
+업그레이드는 새 릴리스로 다시 포장한 Setup.exe를 실행하면 됩니다. 제거 승인은 필요 없습니다.
 
 로컬 해제 키는 없습니다. `sc.exe delete`로 서비스를 지우면 서버에는 하트비트 두절로 남습니다.
 
