@@ -1,4 +1,4 @@
-<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk" TreatAsLocalProperty="PublishAot;PublishTrimmed">
 
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
@@ -6,9 +6,8 @@
     <Nullable>enable</Nullable>
     <IsAotCompatible>true</IsAotCompatible>
     <PublishAot>false</PublishAot>
+    <PublishTrimmed>false</PublishTrimmed>
   </PropertyGroup>
-
-  <Import Project="..\..\NonAotFlavour.props" Condition="'$(PublishAot)' == 'false'" />
 
   <ItemGroup>
     <InternalsVisibleTo Include="SwLicenseWatcher.Setup.Tests" />

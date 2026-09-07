@@ -20,17 +20,4 @@
     <ProjectReference Include="..\SwLicenseWatcher.Core\SwLicenseWatcher.Core.csproj" AdditionalProperties="PublishAot=false;PublishTrimmed=false" />
   </ItemGroup>
 
-  <Target Name="CopyWasmToApiWwwroot" AfterTargets="Build" Condition="'$(DesignTimeBuild)' != 'true' and '$(AdminInnerPublish)' != 'true'">
-    <PropertyGroup>
-      <_ApiAdminDir>$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)..\SwLicenseWatcher.Api\wwwroot\admin'))</_ApiAdminDir>
-    </PropertyGroup>
-    <ItemGroup>
-      <_AdminStatic Include="$(MSBuildThisFileDirectory)wwwroot\**\*.*" />
-      <_AdminFramework Include="$(OutputPath)wwwroot\_framework\**\*.*" />
-    </ItemGroup>
-    <MakeDir Directories="$(_ApiAdminDir)" />
-    <Copy SourceFiles="@(_AdminStatic)" DestinationFiles="@(_AdminStatic->'$(_ApiAdminDir)\%(RecursiveDir)%(Filename)%(Extension)')" SkipUnchangedFiles="true" />
-    <Copy SourceFiles="@(_AdminFramework)" DestinationFiles="@(_AdminFramework->'$(_ApiAdminDir)\_framework\%(RecursiveDir)%(Filename)%(Extension)')" SkipUnchangedFiles="true" />
-  </Target>
-
 </Project>

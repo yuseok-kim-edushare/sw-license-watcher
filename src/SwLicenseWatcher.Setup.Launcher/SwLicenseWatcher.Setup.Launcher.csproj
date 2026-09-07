@@ -15,7 +15,7 @@
   <Import Project="..\..\NonAotFlavour.props" Condition="'$(PublishAot)' != 'true'" />
 
   <ItemGroup>
-    <ProjectReference Include="..\SwLicenseWatcher.Setup.Core\SwLicenseWatcher.Setup.Core.csproj" />
+    <ProjectReference Include="..\SwLicenseWatcher.Setup.Core\SwLicenseWatcher.Setup.Core.csproj" GlobalPropertiesToRemove="PublishAot;PublishTrimmed" />
   </ItemGroup>
 
 </Project>

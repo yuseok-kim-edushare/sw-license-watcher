@@ -10,6 +10,7 @@
     <AspNetCoreHostingModel Condition="'$(PublishAot)' != 'true'">InProcess</AspNetCoreHostingModel>
     <UseAppHost Condition="'$(PublishAot)' != 'true'">false</UseAppHost>
     <IsTransformWebConfigDisabled>true</IsTransformWebConfigDisabled>
+    <DefaultItemExcludes>$(DefaultItemExcludes);wwwroot\admin\**</DefaultItemExcludes>
   </PropertyGroup>
 
   <!-- Non-AOT flavour (IIS publish, test references) gets its own bin/obj. See NonAotFlavour.props. -->
@@ -26,11 +27,11 @@
   </ItemGroup>
 
   <Target Name="PublishAdminWasmIntoWwwroot"
-          BeforeTargets="PrepareForPublish"
-          Condition="'$(DesignTimeBuild)' != 'true'">
+          AfterTargets="Publish"
+          Condition="'$(DesignTimeBuild)' != 'true' And '$(PublishDir)' != ''">
     <PropertyGroup>
       <_AdminPublishDir>$(MSBuildThisFileDirectory)obj\$(Configuration)\admin-wasm\</_AdminPublishDir>
-      <_ApiAdminDir>$(MSBuildThisFileDirectory)wwwroot\admin\</_ApiAdminDir>
+      <_PublishedAdminDir>$(PublishDir)wwwroot\admin\</_PublishedAdminDir>
     </PropertyGroup>
     <MSBuild Projects="..\SwLicenseWatcher.Admin\SwLicenseWatcher.Admin.csproj"
              Targets="Publish"
@@ -39,16 +40,10 @@
     <ItemGroup>
       <_AdminPublished Include="$(_AdminPublishDir)wwwroot\admin\**\*.*" />
     </ItemGroup>
-    <MakeDir Directories="$(_ApiAdminDir)" />
+    <MakeDir Directories="$(_PublishedAdminDir)" />
     <Copy SourceFiles="@(_AdminPublished)"
-          DestinationFiles="@(_AdminPublished->'$(_ApiAdminDir)%(RecursiveDir)%(Filename)%(Extension)')"
+          DestinationFiles="@(_AdminPublished->'$(_PublishedAdminDir)%(RecursiveDir)%(Filename)%(Extension)')"
           SkipUnchangedFiles="true" />
-    <ItemGroup>
-      <Content Include="wwwroot\admin\**\*"
-               Exclude="$(DefaultItemExcludes);$(DefaultExcludesInProjectFolder)"
-               CopyToOutputDirectory="PreserveNewest"
-               CopyToPublishDirectory="PreserveNewest" />
-    </ItemGroup>
   </Target>
 
   <ItemGroup Condition="'$(PublishAot)' == 'true'">
