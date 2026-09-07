@@ -48,8 +48,8 @@ public sealed class SqlServerInventoryRepository(SqlServerStorageOptions options
                 """;
             await ExecuteAsync(connection, transaction, sql,
             [
-                new("@pcId", pcId), new("@name", Truncate(entry.Name, 256)), new("@version", DbValue(Truncate(entry.Version, 64))),
-                new("@publisher", DbValue(Truncate(entry.Publisher, 256))), new("@location", DbValue(Truncate(entry.InstallLocation, 512))),
+                new("@pcId", pcId), new("@name", Truncate(entry.Name.Trim(), 256)), new("@version", DbValue(Truncate(entry.Version, 64))),
+                new("@publisher", DbValue(Truncate(entry.Publisher?.Trim(), 256))), new("@location", DbValue(Truncate(entry.InstallLocation, 512))),
                 new("@scope", Truncate(entry.DiscoveryScope, 256)), new("@source", Truncate(entry.DiscoverySource, 64)),
                 new("@classification", Truncate(match.StoredClassification, 32)!),
                 new("@collectedAt", snapshot.CollectedAtUtc)
@@ -849,7 +849,7 @@ public sealed class SqlServerInventoryRepository(SqlServerStorageOptions options
                 continue;
             }
 
-            var name = Truncate(match.Software.Name, 256);
+            var name = Truncate(match.Software.Name.Trim(), 256);
             if (string.IsNullOrEmpty(name))
             {
                 continue;
@@ -909,9 +909,9 @@ public sealed class SqlServerInventoryRepository(SqlServerStorageOptions options
         [
             new("@pcId", pcId),
             new("@policyId", policy.Id),
-            new("@name", Truncate(software.Name, 256)),
+            new("@name", Truncate(software.Name.Trim(), 256)),
             new("@version", DbValue(Truncate(software.Version, 64))),
-            new("@publisher", DbValue(Truncate(software.Publisher, 256))),
+            new("@publisher", DbValue(Truncate(software.Publisher?.Trim(), 256))),
             new("@collectedAt", collectedAt)
         ], cancellationToken);
     }

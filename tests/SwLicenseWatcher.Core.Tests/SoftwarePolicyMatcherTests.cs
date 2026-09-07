@@ -26,6 +26,18 @@ public class SoftwarePolicyMatcherTests
     }
 
     [Fact]
+    public void Match_ignores_leading_and_trailing_whitespace_on_names()
+    {
+        var software = Software("Microsoft SQL Server 2025 LocalDB ", "17.0");
+        var match = SoftwarePolicyMatcher.Match(
+            software,
+            [Policy("Microsoft SQL Server 2025 LocalDB", SoftwarePolicyClassification.Whitelist)]);
+
+        Assert.Equal(SoftwarePolicyClassification.Whitelist, match.Classification);
+        Assert.Equal(SoftwarePolicyClassificationNames.White, match.StoredClassification);
+    }
+
+    [Fact]
     public void Match_supports_prefix_and_wildcard_name_patterns()
     {
         var chrome = Software("Google Chrome", "120.0");

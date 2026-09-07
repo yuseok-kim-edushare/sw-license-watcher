@@ -67,6 +67,13 @@ public static class SoftwarePolicyMatcher
 
     internal static bool MatchesPattern(string value, string pattern)
     {
+        value = value.Trim();
+        pattern = pattern.Trim();
+        if (pattern.Length == 0)
+        {
+            return false;
+        }
+
         if (pattern.IndexOfAny(['*', '?']) < 0)
         {
             return value.Equals(pattern, StringComparison.OrdinalIgnoreCase);
