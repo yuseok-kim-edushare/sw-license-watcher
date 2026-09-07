@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <UseWindowsForms>true</UseWindowsForms>
+    <PublishAot>false</PublishAot>
+    <PublishTrimmed>false</PublishTrimmed>
+    <AssemblyName>SwLicenseWatcher.Setup</AssemblyName>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationHighDpiMode>SystemAware</ApplicationHighDpiMode>
+  </PropertyGroup>
+
+  <Import Project="..\..\NonAotFlavour.props" Condition="'$(PublishAot)' == 'false'" />
+
+  <ItemGroup>
+    <PackageReference Include="System.ServiceProcess.ServiceController" />
+    <ProjectReference Include="..\SwLicenseWatcher.Setup.Core\SwLicenseWatcher.Setup.Core.csproj" AdditionalProperties="PublishAot=false;PublishTrimmed=false" />
+  </ItemGroup>
+
+</Project>

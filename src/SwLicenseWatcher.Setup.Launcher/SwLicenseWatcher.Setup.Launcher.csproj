@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <PublishAot>true</PublishAot>
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <AssemblyName>SwLicenseWatcher-Setup</AssemblyName>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+  </PropertyGroup>
+
+  <Import Project="..\..\NonAotFlavour.props" Condition="'$(PublishAot)' != 'true'" />
+
+  <ItemGroup>
+    <ProjectReference Include="..\SwLicenseWatcher.Setup.Core\SwLicenseWatcher.Setup.Core.csproj" />
+  </ItemGroup>
+
+</Project>

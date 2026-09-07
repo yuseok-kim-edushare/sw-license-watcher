@@ -50,20 +50,25 @@
 ## 프로젝트 구조
 
 - `/src/SwLicenseWatcher.Core`: 계약, 옵션, 레지스트리 수집기, DPAPI 보호기, SQL Server DDL 생성기
+- `/src/SwLicenseWatcher.Admin`: `/admin` Blazor WebAssembly (API `wwwroot/admin`으로 publish)
 - `/src/SwLicenseWatcher.Agent.Worker`: inventory 수집 Windows Service
 - `/src/SwLicenseWatcher.Agent.Watchdog`: self-update Windows Service
 - `/src/SwLicenseWatcher.Api`: ASP.NET Core API
+- `/src/SwLicenseWatcher.Setup.Core`: 회사 Setup 페이로드(SWLWPAY1 overlay)와 검증
+- `/src/SwLicenseWatcher.Setup.Launcher`: Native AOT 런처. 뒤에 붙은 zip을 풀어 설치 GUI를 실행
+- `/src/SwLicenseWatcher.Setup`: 직원용 WinForms 설치/제거
+- `/src/SwLicenseWatcher.Packager`: IT용 WinForms 패키저. 런처에 회사 설정을 붙여 Setup.exe 하나를 만듦
 - `/deploy/examples`: 서버 API·PC 에이전트용 `appsettings.json` 템플릿
 - `/deploy/scripts`: 서버 API(Kestrel Windows Service) 및 PC Worker·Watchdog 설치/제거 스크립트, SQL Server 스키마 적용 스크립트
 - `/docs/company-deployment.md`: 서버 설정 예시와 회사 PC 클라이언트 배포 절차
 - `.github/workflows/ci.yaml`: CI (빌드/테스트, Native AOT publish 검증, Dependabot auto-merge 트리거)
 - `.github/workflows/auto-merge.yaml`: Dependabot PR 자동 머지
-- `.github/workflows/cd.yaml`: CD (버전 스탬프 후 publish, GitHub Release에 통합 ZIP·Worker 자체 패치 ZIP·SHA256SUMS)
+- `.github/workflows/cd.yaml`: CD (버전 스탬프 후 publish, GitHub Release에 통합 ZIP·Worker 자체 패치 ZIP·Packager ZIP·SHA256SUMS)
 
 ## CI/CD
 
 - **CI (`ci.yaml`)**: `main` 대상 push/PR에서 `windows-latest`로 솔루션 Restore/Build/Test를 검증합니다. 이와 병행해 win-x64 Native AOT publish를 수행합니다. IL trim/AOT 경고는 자체 코드(SwLicenseWatcher.*)에서 발생하면 실패하고, `Microsoft.Data.SqlClient` 등 서드파티 어셈블리 경고는 요약만 보고합니다. 산출된 native 실행 파일을 smoke-run한 뒤 `native-aot-win-x64` 아티팩트를 업로드합니다. Dependabot PR이 두 job을 모두 통과하면 auto-merge 워크플로우를 트리거합니다.
-- **CD (`cd.yaml`)**: `main`에서 CI가 성공하면 다음 릴리스 버전을 먼저 계산합니다(최신 `x.y.z` 태그 patch+1, 커밋 메시지 `Update Version To x.y.z`로 재정의). 그 버전으로 `Agent.Watchdog`/`Agent.Worker` Native AOT와 API Native AOT(Kestrel)·IIS in-process를 publish하고, 에이전트 폴더에 `.version`을 씁니다. GitHub 시크릿 `SIGNING_CERTIFICATE_PFX_BASE64`·`SIGNING_CERTIFICATE_PASSWORD`(선택 `SIGNING_TIMESTAMP_URL`)가 있으면 EXE/DLL에 Authenticode 서명을 합니다. Release 자산은 `SwLicenseWatcher-{version}.zip`, Worker 자체 패치용 `SwLicenseWatcher.Agent.Worker-{version}.zip`, `SHA256SUMS.txt`입니다.
+- **CD (`cd.yaml`)**: `main`에서 CI가 성공하면 다음 릴리스 버전을 먼저 계산합니다(최신 `x.y.z` 태그 patch+1, 커밋 메시지 `Update Version To x.y.z`로 재정의). 그 버전으로 `Agent.Watchdog`/`Agent.Worker` Native AOT와 API Native AOT(Kestrel)·IIS in-process, Setup 런처 AOT, Setup/Packager WinForms self-contained를 publish하고, 에이전트 폴더에 `.version`을 씁니다. GitHub 시크릿 `SIGNING_CERTIFICATE_PFX_BASE64`·`SIGNING_CERTIFICATE_PASSWORD`(선택 `SIGNING_TIMESTAMP_URL`)가 있으면 EXE/DLL에 Authenticode 서명을 합니다. Release 자산은 `SwLicenseWatcher-{version}.zip`, Worker 자체 패치용 `SwLicenseWatcher.Agent.Worker-{version}.zip`, IT용 `SwLicenseWatcher.Packager-{version}.zip`, `SHA256SUMS.txt`입니다.
 
 Release ZIP 구조:
 
@@ -76,6 +81,12 @@ SwLicenseWatcher-{version}.zip
     api/iis/win-x64/          API IIS in-process (web.config 포함)
 
 SwLicenseWatcher.Agent.Worker-{version}.zip   Worker 자체 패치 (ZIP 루트에 exe·.version)
+SwLicenseWatcher.Packager-{version}.zip
+  Packager.exe
+  SwLicenseWatcher-Setup.exe   런처 스텁 (페이로드 없음)
+  setup-ui/SwLicenseWatcher.Setup.exe
+  agent-worker/win-x64/
+  agent-watchdog/win-x64/
 SHA256SUMS.txt                                위 ZIP의 SHA-256
 ```
 

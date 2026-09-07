@@ -237,6 +237,11 @@ jobs:
               '-p:UseAppHost=false'
             )
 
+          Publish-WithIlWarningGate `
+            -Project 'src/SwLicenseWatcher.Setup.Launcher/SwLicenseWatcher.Setup.Launcher.csproj' `
+            -Output './publish/setup-launcher/win-x64' `
+            -LogName 'setup-launcher'
+
       - name: Assert publish outputs
         shell: pwsh
         run: |
@@ -246,7 +251,8 @@ jobs:
             'publish/agent-watchdog/win-x64/SwLicenseWatcher.Agent.Watchdog.exe',
             'publish/api/win-x64/SwLicenseWatcher.Api.exe',
             'publish/api/iis/win-x64/SwLicenseWatcher.Api.dll',
-            'publish/api/iis/win-x64/web.config'
+            'publish/api/iis/win-x64/web.config',
+            'publish/setup-launcher/win-x64/SwLicenseWatcher-Setup.exe'
           )
           foreach ($path in $required) {
             if (-not (Test-Path -LiteralPath $path)) {

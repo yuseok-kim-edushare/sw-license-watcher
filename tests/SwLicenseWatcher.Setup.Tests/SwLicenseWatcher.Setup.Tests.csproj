@@ -1,0 +1,7 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\SwLicenseWatcher.Setup.Core\SwLicenseWatcher.Setup.Core.csproj" />
+  </ItemGroup>
+
+</Project>

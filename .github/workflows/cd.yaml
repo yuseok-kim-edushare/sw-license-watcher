@@ -90,6 +90,18 @@ jobs:
         shell: pwsh
         run: dotnet publish src/SwLicenseWatcher.Api/SwLicenseWatcher.Api.csproj -r win-x64 -c Release --self-contained false -p:PublishAot=false -p:PublishTrimmed=false -p:UseAppHost=false -p:Version=$env:new_release -p:AssemblyVersion=$($env:new_release).0 -p:FileVersion=$($env:new_release).0 -p:InformationalVersion=$env:new_release -o ./publish/api/iis/win-x64
 
+      - name: Publish Setup Launcher (win-x64, Native AOT)
+        shell: pwsh
+        run: dotnet publish src/SwLicenseWatcher.Setup.Launcher/SwLicenseWatcher.Setup.Launcher.csproj -r win-x64 -c Release -p:Version=$env:new_release -p:AssemblyVersion=$($env:new_release).0 -p:FileVersion=$($env:new_release).0 -p:InformationalVersion=$env:new_release -o ./publish/setup-launcher/win-x64
+
+      - name: Publish Setup UI (win-x64, self-contained)
+        shell: pwsh
+        run: dotnet publish src/SwLicenseWatcher.Setup/SwLicenseWatcher.Setup.csproj -r win-x64 -c Release --self-contained true -p:PublishSingleFile=true -p:PublishAot=false -p:PublishTrimmed=false -p:Version=$env:new_release -p:AssemblyVersion=$($env:new_release).0 -p:FileVersion=$($env:new_release).0 -p:InformationalVersion=$env:new_release -o ./publish/setup-ui/win-x64
+
+      - name: Publish Packager (win-x64, self-contained)
+        shell: pwsh
+        run: dotnet publish src/SwLicenseWatcher.Packager/SwLicenseWatcher.Packager.csproj -r win-x64 -c Release --self-contained true -p:PublishSingleFile=true -p:PublishAot=false -p:PublishTrimmed=false -p:Version=$env:new_release -p:AssemblyVersion=$($env:new_release).0 -p:FileVersion=$($env:new_release).0 -p:InformationalVersion=$env:new_release -o ./publish/packager/win-x64
+
       - name: Stamp agent version files
         shell: pwsh
         run: |
@@ -227,6 +239,7 @@ jobs:
             $releaseNotes += "- agent-worker/win-x64/ - inventory collection Windows Service`n"
             $releaseNotes += "- api/win-x64/ - ASP.NET Core API Native AOT (Kestrel)`n"
             $releaseNotes += "- api/iis/win-x64/ - ASP.NET Core API for IIS in-process hosting`n"
+            $releaseNotes += "- SwLicenseWatcher.Packager-{version}.zip - IT packager + launcher stub + agents`n"
           }
 
           $zipName = "SwLicenseWatcher-$newVersionString.zip"
@@ -252,11 +265,43 @@ jobs:
           }
           Compress-Archive -Path (Join-Path $workerPublish "*") -DestinationPath $workerZipPath -Force
 
+          $packagerStaging = Join-Path $env:RELEASE_ROOT "packager-staging"
+          if (Test-Path $packagerStaging) {
+            Remove-Item -Path $packagerStaging -Recurse -Force
+          }
+          New-Item -Path $packagerStaging -ItemType Directory -Force | Out-Null
+          $packagerPublish = Join-Path "${{ github.workspace }}" "publish\packager\win-x64"
+          $launcherPublish = Join-Path "${{ github.workspace }}" "publish\setup-launcher\win-x64"
+          $setupUiPublish = Join-Path "${{ github.workspace }}" "publish\setup-ui\win-x64"
+          $watchdogPublish = Join-Path "${{ github.workspace }}" "publish\agent-watchdog\win-x64"
+          foreach ($required in @($packagerPublish, $launcherPublish, $setupUiPublish, $workerPublish, $watchdogPublish)) {
+            if (!(Test-Path $required)) {
+              Write-Error "Publish output not found at: $required"
+              exit 1
+            }
+          }
+          Copy-Item -Path (Join-Path $packagerPublish "SwLicenseWatcher.Packager.exe") -Destination (Join-Path $packagerStaging "Packager.exe")
+          Copy-Item -Path (Join-Path $launcherPublish "SwLicenseWatcher-Setup.exe") -Destination (Join-Path $packagerStaging "SwLicenseWatcher-Setup.exe")
+          New-Item -Path (Join-Path $packagerStaging "setup-ui") -ItemType Directory -Force | Out-Null
+          Copy-Item -Path (Join-Path $setupUiPublish "SwLicenseWatcher.Setup.exe") -Destination (Join-Path $packagerStaging "setup-ui\SwLicenseWatcher.Setup.exe")
+          New-Item -Path (Join-Path $packagerStaging "agent-worker\win-x64") -ItemType Directory -Force | Out-Null
+          New-Item -Path (Join-Path $packagerStaging "agent-watchdog\win-x64") -ItemType Directory -Force | Out-Null
+          Copy-Item -Path (Join-Path $workerPublish "*") -Destination (Join-Path $packagerStaging "agent-worker\win-x64") -Recurse -Force
+          Copy-Item -Path (Join-Path $watchdogPublish "*") -Destination (Join-Path $packagerStaging "agent-watchdog\win-x64") -Recurse -Force
+
+          $packagerZipName = "SwLicenseWatcher.Packager-$newVersionString.zip"
+          $packagerZipPath = Join-Path $env:RELEASE_ROOT $packagerZipName
+          if (Test-Path $packagerZipPath) {
+            Remove-Item -Path $packagerZipPath -Force
+          }
+          Compress-Archive -Path (Join-Path $packagerStaging "*") -DestinationPath $packagerZipPath -Force
+
           $combinedSha = (Get-FileHash -Algorithm SHA256 -Path $zipPath).Hash.ToLowerInvariant()
           $workerSha = (Get-FileHash -Algorithm SHA256 -Path $workerZipPath).Hash.ToLowerInvariant()
+          $packagerSha = (Get-FileHash -Algorithm SHA256 -Path $packagerZipPath).Hash.ToLowerInvariant()
           $sumsPath = Join-Path $env:RELEASE_ROOT "SHA256SUMS.txt"
           $utf8NoBom = New-Object System.Text.UTF8Encoding $false
-          $sums = "$combinedSha  $zipName`n$workerSha  $workerZipName`n"
+          $sums = "$combinedSha  $zipName`n$workerSha  $workerZipName`n$packagerSha  $packagerZipName`n"
           [System.IO.File]::WriteAllText($sumsPath, $sums, $utf8NoBom)
 
           $packageUrl = "https://github.com/${{ github.repository }}/releases/download/$newVersionString/$workerZipName"
@@ -275,6 +320,7 @@ jobs:
           echo "zip_path=$zipPath" >> $env:GITHUB_ENV
           echo "zip_name=$zipName" >> $env:GITHUB_ENV
           echo "worker_zip_path=$workerZipPath" >> $env:GITHUB_ENV
+          echo "packager_zip_path=$packagerZipPath" >> $env:GITHUB_ENV
           echo "sha256sums_path=$sumsPath" >> $env:GITHUB_ENV
 
           $releaseNotes | Out-File -FilePath (Join-Path $env:RELEASE_ROOT "releaseNotes.txt") -Encoding utf8
@@ -289,6 +335,7 @@ jobs:
           files: |
             ${{ env.zip_path }}
             ${{ env.worker_zip_path }}
+            ${{ env.packager_zip_path }}
             ${{ env.sha256sums_path }}
           tag_name: ${{ env.new_release }}
           name: Release ${{ env.new_release }}

@@ -29,6 +29,8 @@ deploy/
     Uninstall-Agent.ps1
 ```
 
+직원 PC에는 PowerShell 대신 Release의 `SwLicenseWatcher.Packager-{version}.zip`으로 만든 **회사 Setup.exe 하나**를 배포할 수 있습니다. Intune/자동화가 있으면 아래 스크립트 경로를 그대로 씁니다.
+
 Release ZIP의 `api/win-x64`(AOT)와 `api/iis/win-x64`(IIS)는 서버용입니다. `Install-ApiServer.ps1`은 `api/win-x64`만 복사하고, `Install-Agent.ps1`은 `agent-worker`와 `agent-watchdog`만 복사합니다.
 
 ## 1. 구성 요소
@@ -38,6 +40,8 @@ Release ZIP의 `api/win-x64`(AOT)와 `api/iis/win-x64`(IIS)는 서버용입니�
 | API | 서버만 | 스냅샷·하트비트 수신, SQL 저장, 업데이트 manifest |
 | Worker | PC | Uninstall 레지스트리로 설치 SW 수집, 서버로 전송 |
 | Watchdog | PC | 서버 manifest로 Worker 패키지를 받아 교체·롤백 |
+| Packager | IT PC | 회사 Setup.exe 하나를 만듦 (주소·에이전트 키 주입) |
+| Setup | PC | 직원 GUI. 서비스 설치, 제거는 `/admin` 승인 후 |
 
 소스의 에이전트 `appsettings.json`은 로컬 개발용입니다 (`pc-demo-001`, `http://localhost:5080`, 빈 토큰). 그대로 PC에 복사하면 DeviceCode가 전 장비에서 겹치거나 서비스가 시작되지 않습니다.
 
@@ -219,7 +223,25 @@ Worker와 **같은** `DeviceCode`, `ServerBaseUrl`, `ApiToken`을 넣습니다.
 
 템플릿: [appsettings.worker.company.json](../deploy/examples/appsettings.worker.company.json), [appsettings.watchdog.company.json](../deploy/examples/appsettings.watchdog.company.json).
 
-## 5. PC에 에이전트 설치
+## 5. 패키저로 회사 Setup.exe 만들기
+
+USB나 그룹웨어로 뿌릴 때는 IT가 Packager GUI에서 회사 설치본 **파일 하나**를 만듭니다. 직원 PC에 .NET SDK는 필요 없습니다.
+
+1. GitHub Release의 `SwLicenseWatcher.Packager-{version}.zip`을 풉니다. 안에 `Packager.exe`, 런처 스텁 `SwLicenseWatcher-Setup.exe`, `setup-ui/`, `agent-worker/`, `agent-watchdog/`가 있습니다.
+2. `Packager.exe`를 실행하고 서버 HTTPS 주소와 `Security:AgentToken`을 넣습니다. 패키저 옆에 에이전트가 있으면 Release ZIP은 비워도 됩니다.
+3. 저장 위치의 `SwLicenseWatcher-Setup.exe`를 직원에게 배포합니다.
+
+직원 설치 화면:
+
+- 서버 주소와 키는 설치본에 들어 있어 다시 묻지 않습니다.
+- PC 관리 식별자/자산번호는 선택입니다. 비우면 컴퓨터 이름을 씁니다.
+- 설치 후 설정 앱에 SW License Watcher가 보이며, 제거는 `/admin` **제거 요청** 승인 뒤에만 진행됩니다.
+
+업그레이드는 같은 회사 Setup.exe를 다시 실행하면 됩니다. 제거 승인은 필요 없습니다.
+
+로컬 해제 키는 없습니다. `sc.exe delete`로 서비스를 지우면 서버에는 하트비트 두절로 남습니다.
+
+## 6. PC에 에이전트 설치 (PowerShell / Intune)
 
 서버 API가 이미 떠 있고, 토큰과 HTTPS URL을 알고 있어야 합니다.
 
@@ -260,7 +282,7 @@ powershell.exe -ExecutionPolicy Bypass -File Uninstall-Agent.ps1 `
 
 `-DeviceCode`를 생략하면 컴퓨터 이름을 씁니다. 큐와 백업까지 지울 때만 `-RemoveState`를 붙입니다.
 
-## 6. Worker 자체 패치 (클라이언트 동작)
+## 7. Worker 자체 패치 (클라이언트 동작)
 
 Watchdog이 서버 `GET /api/updates/worker/manifest`를 읽고 Worker만 교체합니다. 패키지 URL은 HTTPS여야 합니다. Release의 `SwLicenseWatcher.Agent.Worker-{version}.zip`은 ZIP 루트에 Worker 산출물(exe, `.version`, dll)이 있고, 실행 파일은 하나여야 합니다.
 
@@ -280,7 +302,7 @@ Watchdog은 설치 디렉터리를 패키지 내용으로 교체하기 전에 PC
 
 실패 시 Watchdog은 백업에서 Worker를 롤백합니다. API 프로세스 자체는 PC에 없습니다.
 
-## 7. 문제 해결
+## 8. 문제 해결
 
 | 증상 | 확인할 것 |
 | --- | --- |

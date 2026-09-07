@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <IsAotCompatible>true</IsAotCompatible>
+    <PublishAot>false</PublishAot>
+  </PropertyGroup>
+
+  <Import Project="..\..\NonAotFlavour.props" Condition="'$(PublishAot)' == 'false'" />
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="SwLicenseWatcher.Setup.Tests" />
+  </ItemGroup>
+
+</Project>
