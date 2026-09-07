@@ -12,8 +12,9 @@
 
 직원에게 주면 안 되는 것:
 
+- `SwLicenseWatcher-{version}.zip` 전체 (API·패키저·에이전트 원본)
 - `SwLicenseWatcher.Packager-{version}.zip` 전체 (패키저·에이전트 원본)
-- 페이로드가 없는 런처 스텁 `SwLicenseWatcher-Setup.exe` (Packager ZIP 안의 그 파일)
+- 페이로드가 없는 런처 스텁 `SwLicenseWatcher-Setup.exe` (릴리스 안의 그 파일)
 - 서버 `AdminToken`, SQL 연결 문자열
 
 직원이 받는 것은 패키저가 **새로 만든** `SwLicenseWatcher-Setup.exe` 하나뿐입니다. 이 파일 안에 에이전트 키가 들어 있으므로 USB·공지 첨부도 내부망에서만 다루세요.
@@ -30,7 +31,9 @@ Intune/SCCM이 있으면 이 문서 대신 [company-deployment.md](company-deplo
 
 ## 2. IT: 회사 Setup.exe 만들기
 
-GitHub Release에서 `SwLicenseWatcher.Packager-{version}.zip`만 받아 풉니다. 풀면 대략 이렇게 있습니다.
+GitHub Release에서 **전체 ZIP** `SwLicenseWatcher-{version}.zip`을 받아 풉니다. API 설치와 회사 Setup 만들기를 한 묶음으로 할 수 있습니다. API가 이미 있고 패키저만 필요하면 더 작은 `SwLicenseWatcher.Packager-{version}.zip`도 있습니다.
+
+풀면 패키저가 보는 쪽은 대략 이렇게 있습니다. 전체 ZIP에는 여기에 `api/win-x64`, `api/iis/win-x64`가 더 있습니다.
 
 ```
 Packager.exe
@@ -46,7 +49,7 @@ agent-watchdog/win-x64/
 | --- | --- | --- |
 | 서버 주소 | 예 | `https://license-watcher.회사.local` (끝 슬래시 없어도 됨) |
 | 에이전트 키 | 예 | 서버 `Security:AgentToken`. 32자 이상. **AdminToken이 아님** |
-| 공식 Release ZIP | 아니오 | 패키저를 폴더 구조 그대로 풀었으면 비움. 에이전트만 다른 ZIP에서 가져올 때만 지정 |
+| 공식 Release ZIP | 아니오 | 전체 ZIP이나 Packager ZIP을 폴더 구조 그대로 풀었으면 비움. 에이전트만 다른 ZIP에서 가져올 때만 지정 |
 | 저장 위치 | 예 | 기본은 바탕화면의 `SwLicenseWatcher-Setup.exe` |
 
 **회사 설치본 만들기**를 누르면 저장 위치에 파일이 생깁니다. 이 파일이 직원용입니다. 스텁과 이름이 같아도, **덮어쓸 대상은 바탕화면(또는 고른 경로)이지 Packager 폴더의 스텁이 아니어야** 합니다. 스텁에 이미 페이로드가 붙어 있으면 패키저가 거부합니다.
@@ -122,8 +125,8 @@ PowerShell로 같은 흐름을 쓰려면 [Uninstall-Agent.ps1](../deploy/scripts
 
 | 증상 | 확인할 것 |
 | --- | --- |
-| “회사 설치 페이로드를 읽지 못했습니다” | Packager ZIP 안의 **스텁**을 실행한 것입니다. 패키저가 만든 파일을 실행하세요. |
-| 패키저가 “이미 페이로드가 붙어 있습니다” | 스텁을 회사본으로 덮어썼습니다. Packager ZIP을 다시 풀고, 저장 위치는 다른 폴더로 하세요. |
+| “회사 설치 페이로드를 읽지 못했습니다” | 릴리스 안의 **빈 스텁**을 실행한 것입니다. 패키저가 만든 파일을 실행하세요. |
+| 패키저가 “이미 페이로드가 붙어 있습니다” | 스텁을 회사본으로 덮어썼습니다. 릴리스 ZIP을 다시 풀고, 저장 위치는 다른 폴더로 하세요. |
 | 설치 직후 서비스가 죽음 | 서버 URL이 비-loopback HTTP이거나, 심은 키가 서버 `AgentToken`과 다름. Application 이벤트 로그 |
 | `/admin`에 PC가 안 보임 | 아직 PollInterval, 또는 TLS(자체 서명 인증서를 직원 PC 신뢰 루트에 안 넣음) |
 | 여러 PC가 한 줄로 합쳐짐 | 자산번호를 같게 넣었거나, 개발용 `pc-demo-001`을 씀 |
@@ -149,4 +152,4 @@ dotnet publish src\SwLicenseWatcher.Packager\SwLicenseWatcher.Packager.csproj `
   -o C:\SwLw\packager
 ```
 
-런처 산출 이름은 `SwLicenseWatcher-Setup.exe`입니다. 그 옆에 Worker/Watchdog `win-x64` 폴더를 `agent-worker\win-x64`, `agent-watchdog\win-x64`로 복사한 뒤 `Packager.exe`를 실행하면 Release ZIP과 같은 배치가 됩니다.
+런처 산출 이름은 `SwLicenseWatcher-Setup.exe`입니다. 그 옆에 Worker/Watchdog `win-x64` 폴더를 `agent-worker\win-x64`, `agent-watchdog\win-x64`로 복사한 뒤 `Packager.exe`를 실행하면 전체 Release ZIP 루트와 같은 배치가 됩니다.

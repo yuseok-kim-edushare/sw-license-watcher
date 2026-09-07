@@ -29,9 +29,9 @@ deploy/
     Uninstall-Agent.ps1
 ```
 
-직원 PC에는 PowerShell 대신 Release의 `SwLicenseWatcher.Packager-{version}.zip`으로 만든 **회사 Setup.exe 하나**를 배포할 수 있습니다. 패키저·직원 설치·제거 승인 순서는 [packager-setup.ko.md](packager-setup.ko.md)입니다. Intune/자동화가 있으면 아래 스크립트 경로를 그대로 씁니다.
+직원 PC에는 PowerShell 대신 전체 Release ZIP(`SwLicenseWatcher-{version}.zip`) 안의 `Packager.exe`로 만든 **회사 Setup.exe 하나**를 배포할 수 있습니다. API가 이미 있으면 더 작은 `SwLicenseWatcher.Packager-{version}.zip`만 받아도 됩니다. 패키저·직원 설치·제거 승인 순서는 [packager-setup.ko.md](packager-setup.ko.md)입니다. Intune/자동화가 있으면 아래 스크립트 경로를 그대로 씁니다.
 
-Release ZIP의 `api/win-x64`(AOT)와 `api/iis/win-x64`(IIS)는 서버용입니다. `Install-ApiServer.ps1`은 `api/win-x64`만 복사하고, `Install-Agent.ps1`은 `agent-worker`와 `agent-watchdog`만 복사합니다.
+전체 ZIP의 `api/win-x64`(AOT)와 `api/iis/win-x64`(IIS)는 서버용입니다. `Install-ApiServer.ps1`은 `api/win-x64`만 복사하고, `Install-Agent.ps1`은 `agent-worker`와 `agent-watchdog`만 복사합니다. 루트의 `Packager.exe`와 Setup 스텁은 스크립트가 건드리지 않습니다.
 
 ## 1. 구성 요소
 
@@ -229,9 +229,9 @@ USB나 그룹웨어로 뿌릴 때는 IT가 Packager GUI에서 회사 설치본 *
 
 핵심만 적으면:
 
-1. GitHub Release의 `SwLicenseWatcher.Packager-{version}.zip`을 풉니다. 안에 `Packager.exe`, 런처 스텁 `SwLicenseWatcher-Setup.exe`, `setup-ui/`, `agent-worker/`, `agent-watchdog/`가 있습니다. **스텁은 직원에게 주지 마세요.**
-2. `Packager.exe`를 실행하고 서버 HTTPS 주소와 `Security:AgentToken`을 넣습니다. 패키저 옆에 에이전트가 있으면 공식 Release ZIP은 비워도 됩니다.
-3. 저장 위치(기본 바탕화면)의 `SwLicenseWatcher-Setup.exe`만 USB·공지에 올립니다. Packager ZIP 전체를 배포하지 않습니다.
+1. GitHub Release의 `SwLicenseWatcher-{version}.zip`을 풉니다. 같은 폴더에 API와 `Packager.exe`, 런처 스텁 `SwLicenseWatcher-Setup.exe`, `setup-ui/`, 에이전트가 있습니다. **스텁은 직원에게 주지 마세요.** API가 이미 있으면 `SwLicenseWatcher.Packager-{version}.zip`만 풀어도 됩니다.
+2. `Packager.exe`를 실행하고 서버 HTTPS 주소와 `Security:AgentToken`을 넣습니다. 패키저 옆에 에이전트가 있으면 공식 Release ZIP 칸은 비워도 됩니다.
+3. 저장 위치(기본 바탕화면)의 `SwLicenseWatcher-Setup.exe`만 USB·공지에 올립니다. 전체 ZIP이나 Packager ZIP을 직원에게 주지 않습니다.
 
 직원 설치 화면:
 

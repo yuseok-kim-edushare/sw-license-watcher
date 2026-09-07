@@ -139,7 +139,7 @@ internal sealed class PackagerForm : Form
 
             if (AttachedPayload.HasPayload(launcher))
             {
-                throw new InvalidOperationException("선택한 Setup.exe에 이미 페이로드가 붙어 있습니다. Packager ZIP의 빈 런처 스텁을 쓰세요.");
+                throw new InvalidOperationException("선택한 Setup.exe에 이미 페이로드가 붙어 있습니다. 릴리스의 빈 런처 스텁을 쓰세요.");
             }
 
             if (string.IsNullOrWhiteSpace(setupUi) || !File.Exists(setupUi))

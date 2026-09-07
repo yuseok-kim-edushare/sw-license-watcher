@@ -182,14 +182,14 @@ dotnet run --project src\SwLicenseWatcher.Agent.Worker -- `
 
 집에서도 직원이 받는 것과 같은 **Setup.exe 하나**로 설치할 수 있습니다. 절차의 자세한 칸 이름은 [packager-setup.ko.md](packager-setup.ko.md)입니다.
 
-1. Release의 `SwLicenseWatcher.Packager-{version}.zip`을 풉니다. 또는 그 문서 8절처럼 소스에서 `C:\SwLw\packager`로 publish합니다.
+1. Release의 전체 ZIP(`SwLicenseWatcher-{version}.zip`)을 풉니다. API 없이 패키저만 보려면 `SwLicenseWatcher.Packager-{version}.zip`이거나, [packager-setup.ko.md](packager-setup.ko.md) 8절처럼 소스에서 `C:\SwLw\packager`로 publish합니다.
 2. `Packager.exe`를 실행합니다.
 3. 서버 주소에 IIS면 `https://localhost`, 수집만 보면 `http://127.0.0.1:5080`을 넣습니다. 에이전트 키는 서버 `Security:AgentToken`과 같아야 합니다.
 4. 저장 위치를 Packager 폴더의 스텁과 **겹치지 않게** 고른 뒤 **회사 설치본 만들기**를 누릅니다.
 5. 만들어진 `SwLicenseWatcher-Setup.exe`를 관리자로 실행합니다. 자산번호는 비워 두면 컴퓨터 이름이 됩니다.
 6. `/admin`에서 자기 PC가 보이는지 확인합니다.
 
-Packager ZIP 안의 빈 `SwLicenseWatcher-Setup.exe`(스텁)를 실행하면 “회사 설치 페이로드를 읽지 못했습니다”가 납니다. 패키저가 **새로 만든** 파일을 실행하세요.
+릴리스 안의 빈 `SwLicenseWatcher-Setup.exe`(스텁)를 실행하면 “회사 설치 페이로드를 읽지 못했습니다”가 납니다. 패키저가 **새로 만든** 파일을 실행하세요.
 
 제거도 회사와 같습니다. 설정 앱에서 제거 → Setup이 **관리자 승인 대기** → `https://localhost/admin`의 **제거 요청**에서 승인. `Uninstall-Agent.ps1`은 같은 API를 씁니다.
 

@@ -209,6 +209,21 @@ jobs:
             Copy-Item -Path "$src\*" -Destination $dest -Recurse -Force
           }
 
+          foreach ($fileCopy in @(
+            @{ Src = "publish\packager\win-x64\SwLicenseWatcher.Packager.exe"; Dest = "Packager.exe" },
+            @{ Src = "publish\setup-launcher\win-x64\SwLicenseWatcher-Setup.exe"; Dest = "SwLicenseWatcher-Setup.exe" },
+            @{ Src = "publish\setup-ui\win-x64\SwLicenseWatcher.Setup.exe"; Dest = "setup-ui\SwLicenseWatcher.Setup.exe" }
+          )) {
+            $src = Join-Path $projectRoot $fileCopy.Src
+            $dest = Join-Path $stagingDir $fileCopy.Dest
+            if (!(Test-Path $src)) {
+              Write-Error "Publish output not found at: $src"
+              exit 1
+            }
+            New-Item -Path (Split-Path $dest -Parent) -ItemType Directory -Force | Out-Null
+            Copy-Item -Path $src -Destination $dest -Force
+          }
+
           Write-Host "Release staging contents:"
           Get-ChildItem -Path $stagingDir -Recurse -File | ForEach-Object {
             Write-Host $_.FullName.Replace($stagingDir, "")
@@ -239,7 +254,10 @@ jobs:
             $releaseNotes += "- agent-worker/win-x64/ - inventory collection Windows Service`n"
             $releaseNotes += "- api/win-x64/ - ASP.NET Core API Native AOT (Kestrel)`n"
             $releaseNotes += "- api/iis/win-x64/ - ASP.NET Core API for IIS in-process hosting`n"
-            $releaseNotes += "- SwLicenseWatcher.Packager-{version}.zip - IT packager + launcher stub + agents`n"
+            $releaseNotes += "- Packager.exe - IT GUI to bake server URL and agent token into one Setup.exe`n"
+            $releaseNotes += "- SwLicenseWatcher-Setup.exe - empty launcher stub (do not give to employees)`n"
+            $releaseNotes += "- setup-ui/SwLicenseWatcher.Setup.exe - employee install/uninstall UI`n"
+            $releaseNotes += "- SwLicenseWatcher.Packager-{version}.zip - slimmer IT-only copy (no API)`n"
           }
 
           $zipName = "SwLicenseWatcher-$newVersionString.zip"
@@ -270,24 +288,25 @@ jobs:
             Remove-Item -Path $packagerStaging -Recurse -Force
           }
           New-Item -Path $packagerStaging -ItemType Directory -Force | Out-Null
-          $packagerPublish = Join-Path "${{ github.workspace }}" "publish\packager\win-x64"
-          $launcherPublish = Join-Path "${{ github.workspace }}" "publish\setup-launcher\win-x64"
-          $setupUiPublish = Join-Path "${{ github.workspace }}" "publish\setup-ui\win-x64"
-          $watchdogPublish = Join-Path "${{ github.workspace }}" "publish\agent-watchdog\win-x64"
-          foreach ($required in @($packagerPublish, $launcherPublish, $setupUiPublish, $workerPublish, $watchdogPublish)) {
-            if (!(Test-Path $required)) {
-              Write-Error "Publish output not found at: $required"
+          foreach ($relative in @(
+            "Packager.exe",
+            "SwLicenseWatcher-Setup.exe",
+            "setup-ui",
+            "agent-worker",
+            "agent-watchdog"
+          )) {
+            $src = Join-Path $renamedStaging $relative
+            if (!(Test-Path $src)) {
+              Write-Error "Combined release is missing packager input: $src"
               exit 1
             }
+            $dest = Join-Path $packagerStaging $relative
+            if (Test-Path $src -PathType Container) {
+              Copy-Item -Path $src -Destination $dest -Recurse -Force
+            } else {
+              Copy-Item -Path $src -Destination $dest -Force
+            }
           }
-          Copy-Item -Path (Join-Path $packagerPublish "SwLicenseWatcher.Packager.exe") -Destination (Join-Path $packagerStaging "Packager.exe")
-          Copy-Item -Path (Join-Path $launcherPublish "SwLicenseWatcher-Setup.exe") -Destination (Join-Path $packagerStaging "SwLicenseWatcher-Setup.exe")
-          New-Item -Path (Join-Path $packagerStaging "setup-ui") -ItemType Directory -Force | Out-Null
-          Copy-Item -Path (Join-Path $setupUiPublish "SwLicenseWatcher.Setup.exe") -Destination (Join-Path $packagerStaging "setup-ui\SwLicenseWatcher.Setup.exe")
-          New-Item -Path (Join-Path $packagerStaging "agent-worker\win-x64") -ItemType Directory -Force | Out-Null
-          New-Item -Path (Join-Path $packagerStaging "agent-watchdog\win-x64") -ItemType Directory -Force | Out-Null
-          Copy-Item -Path (Join-Path $workerPublish "*") -Destination (Join-Path $packagerStaging "agent-worker\win-x64") -Recurse -Force
-          Copy-Item -Path (Join-Path $watchdogPublish "*") -Destination (Join-Path $packagerStaging "agent-watchdog\win-x64") -Recurse -Force
 
           $packagerZipName = "SwLicenseWatcher.Packager-$newVersionString.zip"
           $packagerZipPath = Join-Path $env:RELEASE_ROOT $packagerZipName
