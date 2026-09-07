@@ -14,6 +14,7 @@ public class PublicPathsTests
     [InlineData("/admin/admin.js")]
     [InlineData("/admin/admin.css")]
     [InlineData("/admin/_framework/blazor.webassembly.js")]
+    [InlineData("/admin/_framework/icudt_CJK.tjcz0u77k5.dat")]
     [InlineData("/admin/css/admin.css")]
     public void IsAnonymous_allows_health_and_admin_assets(string path)
     {
@@ -76,5 +77,14 @@ public class PublicPathsTests
         Assert.Equal("no-store", headers["Cache-Control"]);
         Assert.Contains("script-src 'self' 'wasm-unsafe-eval'", headers["Content-Security-Policy"].ToString(), StringComparison.Ordinal);
         Assert.DoesNotContain("unsafe-inline", headers["Content-Security-Policy"].ToString(), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void CreateContentTypeProvider_maps_icu_dat_files()
+    {
+        var provider = AdminStaticFiles.CreateContentTypeProvider();
+
+        Assert.True(provider.TryGetContentType("icudt_CJK.tjcz0u77k5.dat", out var contentType));
+        Assert.Equal("application/octet-stream", contentType);
     }
 }

@@ -1,3 +1,5 @@
+using Microsoft.AspNetCore.StaticFiles;
+
 namespace SwLicenseWatcher.Api;
 
 internal static class AdminStaticFiles
@@ -22,6 +24,7 @@ internal static class AdminStaticFiles
 
         app.UseStaticFiles(new StaticFileOptions
         {
+            ContentTypeProvider = CreateContentTypeProvider(),
             OnPrepareResponse = context =>
             {
                 if (!PublicPaths.IsAdminAsset(context.Context.Request.Path))
@@ -32,6 +35,14 @@ internal static class AdminStaticFiles
                 ApplySecurityHeaders(context.Context.Response.Headers);
             }
         });
+    }
+
+    internal static FileExtensionContentTypeProvider CreateContentTypeProvider()
+    {
+        var provider = new FileExtensionContentTypeProvider();
+        // Blazor WASM downloads ICU data as *.dat. Unknown types are 404 by default.
+        provider.Mappings[".dat"] = "application/octet-stream";
+        return provider;
     }
 
     internal static void ApplySecurityHeaders(IHeaderDictionary headers)

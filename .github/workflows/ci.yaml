@@ -446,6 +446,18 @@ jobs:
             }
             Write-Host 'API admin WASM framework script returned 200.'
 
+            $icuFile = Get-ChildItem -LiteralPath (Join-Path $apiDir 'wwwroot/admin/_framework') -Filter 'icudt_CJK*.dat' |
+              Where-Object { $_.Extension -eq '.dat' } |
+              Select-Object -First 1
+            if ($null -eq $icuFile) {
+              throw 'Published API is missing wwwroot/admin/_framework/icudt_CJK*.dat (Korean WASM locale data).'
+            }
+            $icu = Invoke-WebRequest -Uri "$base/admin/_framework/$($icuFile.Name)" -UseBasicParsing -SkipHttpErrorCheck -TimeoutSec 15
+            if ($icu.StatusCode -ne 200) {
+              throw "/admin/_framework/$($icuFile.Name) returned $($icu.StatusCode), expected 200 (.dat MIME mapping missing?)."
+            }
+            Write-Host "API admin WASM ICU data returned 200 ($($icuFile.Name))."
+
             if ($apiProc.HasExited) {
               Write-Host '=== api stdout ==='
               if (Test-Path -LiteralPath $apiStdout) { Get-Content -LiteralPath $apiStdout }
