@@ -1,7 +1,7 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <ItemGroup>
-    <ProjectReference Include="..\..\src\SwLicenseWatcher.Core\SwLicenseWatcher.Core.csproj" />
+    <ProjectReference Include="..\..\src\SwLicenseWatcher.Core\SwLicenseWatcher.Core.csproj" GlobalPropertiesToRemove="PublishAot;PublishTrimmed;RuntimeIdentifier;SelfContained" />
   </ItemGroup>
 
 </Project>

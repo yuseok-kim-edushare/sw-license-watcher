@@ -47,7 +47,7 @@ jobs:
         run: dotnet restore SwLicenseWatcher.slnx
 
       - name: Build
-        run: dotnet build SwLicenseWatcher.slnx -c Release --no-restore
+        run: dotnet build SwLicenseWatcher.slnx -c Release --no-restore -m:1
 
       - name: Build Api for IIS (non-AOT)
         run: dotnet build src/SwLicenseWatcher.Api/SwLicenseWatcher.Api.csproj -c Release -p:PublishAot=false --no-restore

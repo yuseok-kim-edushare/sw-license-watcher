@@ -19,7 +19,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\SwLicenseWatcher.Core\SwLicenseWatcher.Core.csproj" />
+    <ProjectReference Include="..\SwLicenseWatcher.Core\SwLicenseWatcher.Core.csproj" GlobalPropertiesToRemove="PublishAot;PublishTrimmed;RuntimeIdentifier;SelfContained" />
   </ItemGroup>
 
   <ItemGroup>

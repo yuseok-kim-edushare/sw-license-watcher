@@ -17,7 +17,7 @@
   <ItemGroup>
     <PackageReference Include="Microsoft.AspNetCore.Components.WebAssembly" />
     <PackageReference Include="Microsoft.AspNetCore.Components.WebAssembly.DevServer" PrivateAssets="all" />
-    <ProjectReference Include="..\SwLicenseWatcher.Core\SwLicenseWatcher.Core.csproj" AdditionalProperties="PublishAot=false;PublishTrimmed=false" />
+    <ProjectReference Include="..\SwLicenseWatcher.Core\SwLicenseWatcher.Core.csproj" GlobalPropertiesToRemove="PublishAot;PublishTrimmed;RuntimeIdentifier;SelfContained" />
   </ItemGroup>
 
 </Project>
