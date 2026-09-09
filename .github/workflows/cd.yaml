@@ -42,7 +42,8 @@ jobs:
       - name: Setup .NET
         uses: actions/setup-dotnet@v6
         with:
-          global-json-file: global.json
+          dotnet-version: 10.0.x
+          dotnet-quality: ga
 
       - name: Restore dependencies
         run: dotnet restore SwLicenseWatcher.slnx
