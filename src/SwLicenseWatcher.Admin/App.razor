@@ -11,7 +11,23 @@ else
         </div>
         @if (_hasToken)
         {
-            <button type="button" class="logout" @onclick="LogoutAsync">로그아웃</button>
+            <div class="header-actions">
+                <div class="auto-refresh">
+                    <div class="auto-refresh-row">
+                        <span class="auto-refresh-label">자동 새로고침 (5분)</span>
+                        <button type="button"
+                                class="switch @(_autoRefresh ? "is-on" : null)"
+                                role="switch"
+                                aria-checked="@_autoRefresh.ToString().ToLowerInvariant()"
+                                aria-label="자동 새로고침 5분"
+                                @onclick="ToggleAutoRefreshAsync">
+                            <span class="switch-thumb"></span>
+                        </button>
+                    </div>
+                    <p class="auto-refresh-hint">@AutoRefreshHint</p>
+                </div>
+                <button type="button" class="logout" @onclick="LogoutAsync">로그아웃</button>
+            </div>
         }
     </header>
 

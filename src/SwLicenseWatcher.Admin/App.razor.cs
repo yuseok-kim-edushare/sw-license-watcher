@@ -7,9 +7,11 @@ using SwLicenseWatcher.Core;
 
 namespace SwLicenseWatcher.Admin;
 
-public partial class App
+public partial class App : IAsyncDisposable
 {
     private const int PageSize = 50;
+    private const int AutoRefreshIntervalMinutes = 5;
+    private const string AutoRefreshStorageKey = "swlw.adminAutoRefresh";
     internal static readonly string[] SoftwareClasses = ["", "white", "managed", "black", "unclassified"];
     internal static readonly string[] PolicyClasses = ["", "white", "managed", "black"];
 
@@ -20,6 +22,10 @@ public partial class App
 
     private bool _ready;
     private bool _hasToken;
+    private bool _autoRefresh;
+    private bool _autoRefreshBusy;
+    private DateTimeOffset? _lastRefreshedAt;
+    private CancellationTokenSource? _autoRefreshCts;
     private string _tokenInput = "";
     private string _tokenError = "";
     private string _statusLine = "API: -";
@@ -100,6 +106,19 @@ public partial class App
             .Select(row => row.Name)
             .Distinct(StringComparer.Ordinal)
             .Count();
+    private string AutoRefreshHint
+    {
+        get
+        {
+            if (_lastRefreshedAt is { } at)
+            {
+                var last = $"마지막 {at.ToLocalTime():t}";
+                return _autoRefresh ? $"5분마다 · {last}" : last;
+            }
+
+            return _autoRefresh ? "5분마다" : "꺼짐";
+        }
+    }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
@@ -111,10 +130,15 @@ public partial class App
         await Tokens.LoadAsync();
         _hasToken = Tokens.HasToken;
         _ready = true;
+        await LoadAutoRefreshPreferenceAsync();
         await RefreshHealthAsync();
         if (_hasToken)
         {
             await LoadListAsync();
+            if (_autoRefresh)
+            {
+                StartAutoRefreshLoop();
+            }
         }
 
         StateHasChanged();
@@ -142,10 +166,15 @@ public partial class App
         _tokenError = "";
         _hasToken = true;
         await LoadListAsync();
+        if (_autoRefresh)
+        {
+            StartAutoRefreshLoop();
+        }
     }
 
     private async Task LogoutAsync()
     {
+        StopAutoRefreshLoop();
         await Tokens.ClearAsync();
         _hasToken = false;
         _tokenError = "";
@@ -258,6 +287,7 @@ public partial class App
             }
 
             _listMeta = $"총 {_totalCount}건";
+            _lastRefreshedAt = DateTimeOffset.Now;
         }
         catch (AdminApiException ex) when (ex.IsUnauthorized)
         {
@@ -631,6 +661,7 @@ public partial class App
         try
         {
             ApplyWorkerUpdatePin(await Api.GetWorkerUpdatePinAsync());
+            _lastRefreshedAt = DateTimeOffset.Now;
         }
         catch (AdminApiException ex) when (ex.IsUnauthorized)
         {
@@ -768,10 +799,127 @@ public partial class App
 
     private async Task HandleUnauthorizedAsync()
     {
+        StopAutoRefreshLoop();
         _hasToken = false;
         _tokenError = "인증에 실패했습니다. 관리자 토큰을 다시 입력하세요.";
         CloseDrawer();
         await Task.CompletedTask;
+    }
+
+    private async Task LoadAutoRefreshPreferenceAsync()
+    {
+        try
+        {
+            var stored = await Js.InvokeAsync<string?>("localStorage.getItem", AutoRefreshStorageKey);
+            _autoRefresh = stored == "1";
+        }
+        catch (JSException)
+        {
+            _autoRefresh = false;
+        }
+    }
+
+    private async Task ToggleAutoRefreshAsync()
+    {
+        _autoRefresh = !_autoRefresh;
+        try
+        {
+            await Js.InvokeVoidAsync("localStorage.setItem", AutoRefreshStorageKey, _autoRefresh ? "1" : "0");
+        }
+        catch (JSException)
+        {
+            /* keep in-memory toggle */
+        }
+
+        if (_autoRefresh && _hasToken)
+        {
+            await AutoRefreshOnceAsync();
+            StartAutoRefreshLoop();
+            return;
+        }
+
+        StopAutoRefreshLoop();
+    }
+
+    private void StartAutoRefreshLoop()
+    {
+        StopAutoRefreshLoop();
+        var cts = new CancellationTokenSource();
+        _autoRefreshCts = cts;
+        _ = RunAutoRefreshLoopAsync(cts.Token);
+    }
+
+    private void StopAutoRefreshLoop()
+    {
+        var cts = _autoRefreshCts;
+        _autoRefreshCts = null;
+        if (cts is null)
+        {
+            return;
+        }
+
+        cts.Cancel();
+        cts.Dispose();
+    }
+
+    private async Task RunAutoRefreshLoopAsync(CancellationToken cancellationToken)
+    {
+        using var timer = new PeriodicTimer(TimeSpan.FromMinutes(AutoRefreshIntervalMinutes));
+        try
+        {
+            while (await timer.WaitForNextTickAsync(cancellationToken))
+            {
+                await AutoRefreshOnceAsync();
+                await InvokeAsync(StateHasChanged);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        catch (JSDisconnectedException)
+        {
+        }
+    }
+
+    private async Task AutoRefreshOnceAsync()
+    {
+        if (!_hasToken || _autoRefreshBusy)
+        {
+            return;
+        }
+
+        _autoRefreshBusy = true;
+        try
+        {
+            await RefreshHealthAsync();
+            if (_tab == "updates")
+            {
+                _lastRefreshedAt = DateTimeOffset.Now;
+                return;
+            }
+
+            await LoadListAsync();
+            if (_drawerKind is not null)
+            {
+                await LoadDrawerAsync();
+            }
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        catch (JSDisconnectedException)
+        {
+        }
+        finally
+        {
+            _autoRefreshBusy = false;
+        }
+    }
+
+    public ValueTask DisposeAsync()
+    {
+        StopAutoRefreshLoop();
+        return ValueTask.CompletedTask;
     }
 
     internal static string Dash(object? value) =>
