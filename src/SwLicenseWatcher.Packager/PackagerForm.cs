@@ -25,13 +25,16 @@ internal sealed class PackagerForm : Form
         Controls.Add(LabelAt(20, 16, "서버 주소 (필수)"));
         _serverUrl = TextAt(20, 36, 600);
         _serverUrl.PlaceholderText = "https://license-watcher.example.local";
+        Controls.Add(_serverUrl);
 
         Controls.Add(LabelAt(20, 72, "에이전트 키 (필수, 32자 이상)"));
         _agentToken = TextAt(20, 92, 600);
         _agentToken.UseSystemPasswordChar = true;
+        Controls.Add(_agentToken);
 
         Controls.Add(LabelAt(20, 128, "공식 Release ZIP (패키저 옆에 에이전트가 있으면 비워도 됩니다)"));
         _releaseZip = TextAt(20, 148, 500);
+        Controls.Add(_releaseZip);
         var browseZip = new Button
         {
             Location = new Point(528, 146),
@@ -47,6 +50,7 @@ internal sealed class PackagerForm : Form
         _output.Text = Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory),
             PayloadLayout.LauncherFileName);
+        Controls.Add(_output);
         var browseOut = new Button
         {
             Location = new Point(528, 202),
