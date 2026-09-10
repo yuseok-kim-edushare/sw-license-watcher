@@ -25,6 +25,16 @@ internal static class EndpointPolicies
             path.StartsWithSegments(AgentPaths.UninstallRequests, StringComparison.OrdinalIgnoreCase);
     }
 
+    internal static bool IsAdminEndpoint(PathString path, string httpMethod)
+    {
+        if (path.Equals(AgentPaths.WorkerManifest, StringComparison.OrdinalIgnoreCase))
+        {
+            return HttpMethods.IsGet(httpMethod) | HttpMethods.IsPut(httpMethod);
+        }
+
+        return !IsAgentEndpoint(path, httpMethod);
+    }
+
     internal static long? GetRequestBodySize(PathString path)
     {
         if (path.Equals(AgentPaths.InventorySnapshots, StringComparison.OrdinalIgnoreCase))

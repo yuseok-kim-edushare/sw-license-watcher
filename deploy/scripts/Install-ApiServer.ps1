@@ -19,12 +19,12 @@
     SQL Server connection string written to Storage:SqlServer:ConnectionString.
 
 .PARAMETER AgentToken
-    Bearer token for agent snapshot/heartbeat/manifest calls (32+ characters).
+    Bearer token for agent snapshot, heartbeat, uninstall-request, and manifest GET calls (32+ characters).
     Same value as PC Agent:ApiToken / Watchdog:ApiToken.
 
 .PARAMETER AdminToken
-    Bearer token for inventory queries, policy CRUD, violations, and design/schema (32+ characters).
-    Must differ from AgentToken.
+    Bearer token for inventory queries, policy CRUD, violations, design/schema, and update-pin writes (32+ characters).
+    Must differ from AgentToken. Does not authorize agent ingestion endpoints.
 
 .PARAMETER ListenUrl
     Optional Kestrel listen URL written to Kestrel:Endpoints:Https:Url (or Http for loopback).
@@ -430,6 +430,7 @@ try {
     $security = Get-OrAddProperty -Object $settings -Name "Security"
     Set-NotePropertyValue -Object $security -Name "AgentToken" -Value $AgentToken
     Set-NotePropertyValue -Object $security -Name "AdminToken" -Value $AdminToken
+    Set-NotePropertyValue -Object $security -Name "Token" -Value ""
 
     $storage = Get-OrAddProperty -Object $settings -Name "Storage"
     $sqlServer = Get-OrAddProperty -Object $storage -Name "SqlServer"

@@ -13,7 +13,7 @@
     API base URL. Must be HTTPS unless it is loopback HTTP for diagnostics.
 
 .PARAMETER ApiToken
-    Agent bearer token. Same value as API Security:AgentToken (or legacy Security:Token).
+    Agent bearer token. Same value as API Security:AgentToken.
 
 .PARAMETER DeviceCode
     PC identity used when requesting the grant. Defaults to the machine name.

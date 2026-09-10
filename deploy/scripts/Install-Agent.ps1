@@ -24,8 +24,7 @@
     API base URL. Must be HTTPS unless it is loopback HTTP for diagnostics.
 
 .PARAMETER ApiToken
-    Agent bearer token (32+ characters). Same value as API Security:AgentToken
-    (or legacy Security:Token).
+    Agent bearer token (32+ characters). Same value as API Security:AgentToken.
 
 .PARAMETER DeviceCode
     PC identity stored on the server. Defaults to the machine name.

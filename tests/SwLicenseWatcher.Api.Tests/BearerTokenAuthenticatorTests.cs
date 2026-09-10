@@ -50,24 +50,6 @@ public class BearerTokenAuthenticatorTests
     [Theory]
     [InlineData("/api/inventory/snapshots")]
     [InlineData("/api/agents/heartbeats")]
-    [InlineData("/api/updates/worker/manifest")]
-    [InlineData("/api/agents/uninstall-requests")]
-    [InlineData("/api/inventory/devices")]
-    [InlineData("/api/policies")]
-    [InlineData("/api/violations")]
-    [InlineData("/api/design")]
-    [InlineData("/api/schema/sql")]
-    public void IsAuthorized_legacy_token_grants_all_endpoints(string path)
-    {
-        var security = new ApiSecurityOptions { Token = Token };
-
-        Assert.True(BearerTokenAuthenticator.IsAuthorized("Bearer " + Token, security, path));
-    }
-
-    [Theory]
-    [InlineData("/api/inventory/snapshots")]
-    [InlineData("/api/agents/heartbeats")]
-    [InlineData("/api/updates/worker/manifest")]
     [InlineData("/api/agents/uninstall-requests")]
     [InlineData("/api/agents/uninstall-requests/12")]
     [InlineData("/api/agents/uninstall-requests/12/consume")]
@@ -76,7 +58,7 @@ public class BearerTokenAuthenticatorTests
         var security = RoleSeparated();
 
         Assert.True(BearerTokenAuthenticator.IsAuthorized("Bearer " + AgentToken, security, path));
-        Assert.True(BearerTokenAuthenticator.IsAuthorized("Bearer " + AdminToken, security, path));
+        Assert.False(BearerTokenAuthenticator.IsAuthorized("Bearer " + AdminToken, security, path));
     }
 
     [Theory]
@@ -91,7 +73,7 @@ public class BearerTokenAuthenticatorTests
     [InlineData("/api/uninstall-requests/12/deny")]
     [InlineData("/api/design")]
     [InlineData("/api/schema/sql")]
-    public void IsAuthorized_agent_token_is_rejected_on_admin_endpoints(string path)
+    public void IsAuthorized_admin_token_is_accepted_on_admin_endpoints(string path)
     {
         var security = RoleSeparated();
 
@@ -100,24 +82,25 @@ public class BearerTokenAuthenticatorTests
     }
 
     [Fact]
-    public void IsAuthorized_agent_token_cannot_change_the_worker_update_pin()
+    public void IsAuthorized_both_tokens_can_read_the_worker_update_pin()
     {
         var security = RoleSeparated();
         const string path = "/api/updates/worker/manifest";
 
         Assert.True(BearerTokenAuthenticator.IsAuthorized("Bearer " + AgentToken, security, path, HttpMethods.Get));
+        Assert.True(BearerTokenAuthenticator.IsAuthorized("Bearer " + AdminToken, security, path, HttpMethods.Get));
         Assert.False(BearerTokenAuthenticator.IsAuthorized("Bearer " + AgentToken, security, path, HttpMethods.Put));
         Assert.True(BearerTokenAuthenticator.IsAuthorized("Bearer " + AdminToken, security, path, HttpMethods.Put));
     }
 
     [Fact]
-    public void IsAuthorized_legacy_token_still_grants_all_endpoints_when_role_tokens_are_also_set()
+    public void IsAuthorized_legacy_token_is_not_accepted()
     {
         var security = RoleSeparated();
         security.Token = Token;
 
-        Assert.True(BearerTokenAuthenticator.IsAuthorized("Bearer " + Token, security, "/api/inventory/devices"));
-        Assert.True(BearerTokenAuthenticator.IsAuthorized("Bearer " + Token, security, "/api/inventory/snapshots"));
+        Assert.False(BearerTokenAuthenticator.IsAuthorized("Bearer " + Token, security, "/api/inventory/devices"));
+        Assert.False(BearerTokenAuthenticator.IsAuthorized("Bearer " + Token, security, "/api/inventory/snapshots"));
     }
 
     [Fact]
@@ -127,20 +110,6 @@ public class BearerTokenAuthenticatorTests
 
         Assert.False(BearerTokenAuthenticator.IsAuthorized("Bearer " + Token, security, "/api/inventory/snapshots"));
         Assert.False(BearerTokenAuthenticator.IsAuthorized(null, security, "/api/inventory/snapshots"));
-    }
-
-    [Fact]
-    public void IsAuthorized_ignores_blank_role_tokens()
-    {
-        var security = new ApiSecurityOptions
-        {
-            Token = Token,
-            AgentToken = " ",
-            AdminToken = string.Empty
-        };
-
-        Assert.True(BearerTokenAuthenticator.IsAuthorized("Bearer " + Token, security, "/api/policies"));
-        Assert.False(BearerTokenAuthenticator.IsAuthorized("Bearer  ", security, "/api/inventory/snapshots"));
     }
 
     [Theory]
@@ -171,6 +140,16 @@ public class BearerTokenAuthenticatorTests
     {
         Assert.True(EndpointPolicies.IsAgentEndpoint(AgentPaths.WorkerManifest, HttpMethods.Get));
         Assert.False(EndpointPolicies.IsAgentEndpoint(AgentPaths.WorkerManifest, HttpMethods.Put));
+        Assert.True(EndpointPolicies.IsAdminEndpoint(AgentPaths.WorkerManifest, HttpMethods.Get));
+        Assert.True(EndpointPolicies.IsAdminEndpoint(AgentPaths.WorkerManifest, HttpMethods.Put));
+    }
+
+    [Fact]
+    public void IsAdminEndpoint_rejects_agent_ingestion_paths()
+    {
+        Assert.False(EndpointPolicies.IsAdminEndpoint(AgentPaths.InventorySnapshots, HttpMethods.Post));
+        Assert.False(EndpointPolicies.IsAdminEndpoint(AgentPaths.Heartbeats, HttpMethods.Post));
+        Assert.False(EndpointPolicies.IsAdminEndpoint(AgentPaths.UninstallRequests, HttpMethods.Post));
     }
 
     private static ApiSecurityOptions RoleSeparated() =>

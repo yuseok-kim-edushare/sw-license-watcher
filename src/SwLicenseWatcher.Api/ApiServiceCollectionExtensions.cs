@@ -34,14 +34,17 @@ internal static class ApiServiceCollectionExtensions
         services.AddOptions<ApiSecurityOptions>()
             .Bind(configuration.GetSection("Security"))
             .Validate(
-                ApiSecurityOptionsValidator.HasAtLeastOneUsableToken,
-                "At least one of Security:Token, Security:AgentToken, or Security:AdminToken must contain at least 32 characters.")
+                ApiSecurityOptionsValidator.HasRequiredRoleTokens,
+                "Security:AgentToken and Security:AdminToken must each contain at least 32 characters.")
             .Validate(
                 ApiSecurityOptionsValidator.HasValidConfiguredTokenLengths,
-                "Every configured Security token (Token, AgentToken, AdminToken) must contain at least 32 characters.")
+                "Every configured Security token (AgentToken, AdminToken) must contain at least 32 characters.")
+            .Validate(
+                ApiSecurityOptionsValidator.RejectsLegacySharedToken,
+                "Security:Token is no longer accepted. Configure distinct Security:AgentToken and Security:AdminToken.")
             .Validate(
                 ApiSecurityOptionsValidator.HasDistinctRoleTokens,
-                "Security:AgentToken must differ from Security:AdminToken and from Security:Token.")
+                "Security:AgentToken must differ from Security:AdminToken.")
             .ValidateOnStart();
         services.AddOptions<UpdateManifestOptions>()
             .Bind(configuration.GetSection("Updates:Worker"))

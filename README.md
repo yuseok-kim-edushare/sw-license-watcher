@@ -170,9 +170,7 @@ Worker/Watchdog 클라이언트가 접속할 서버 주소는 설정 파일로 �
 
 토큰과 SQL Server 연결 문자열은 소스에 저장하지 말고 환경 변수 또는 비밀 저장소로 주입합니다. 설정한 토큰은 각각 32자 이상이어야 합니다. `New-ApiToken.ps1`을 두 번 실행해 에이전트용과 관리자용을 따로 만드세요.
 
-권장: 역할을 분리합니다. `AgentToken`은 에이전트 수집·하트비트·업데이트 manifest만, `AdminToken`은 조회·정책 CRUD·위반·CSV·`/api/design`·`/api/schema/sql`을 포함한 모든 엔드포인트를 허용합니다. `AgentToken`과 `AdminToken`(또는 레거시 `Token`)이 같으면 API는 시작하지 않습니다.
-
-하위 호환: `AgentToken`/`AdminToken`을 비워 두고 `Security:Token`만 두면 이전처럼 모든 엔드포인트에서 그 토큰이 동작합니다.
+토큰은 역할을 분리합니다. `AgentToken`은 에이전트 수집·하트비트·제거 요청·업데이트 manifest 조회만, `AdminToken`은 조회·정책 CRUD·위반·CSV·`/api/design`·`/api/schema/sql`과 업데이트 핀 저장을 허용합니다. 두 토큰은 모두 필수이며 서로 달라야 합니다. 예전 공용 `Security:Token`은 더 이상 받지 않습니다.
 
 ```text
 Security__AgentToken=<agent-token>
@@ -182,14 +180,6 @@ Agent__ApiToken=<agent-token>
 Watchdog__ApiToken=<agent-token>
 ```
 
-레거시 단일 토큰:
-
-```text
-Security__Token=<shared-token>
-Agent__ApiToken=<shared-token>
-Watchdog__ApiToken=<shared-token>
-```
-
 운영 SQL Server 연결에서는 서버 인증서를 검증하고 `TrustServerCertificate=False`를 유지하십시오.
 
 수집 POST 본문은 경로별로 상한을 둡니다. 스냅샷(`/api/inventory/snapshots`)은 8 MiB, 하트비트(`/api/agents/heartbeats`)는 64 KiB입니다. Native AOT slim builder는 MVC `RequestSizeLimit`를 쓰지 않으므로, 인증 미들웨어가 `IHttpMaxRequestBodySizeFeature`로 적용합니다. 한도를 넘기면 413입니다.
@@ -197,7 +187,7 @@ Watchdog__ApiToken=<shared-token>
 스키마는 `GET /api/schema/sql`이 반환하는 idempotent DDL입니다. SSMS에서 손으로 실행하는 대신 [deploy/scripts/Apply-DbSchema.ps1](deploy/scripts/Apply-DbSchema.ps1)로 적용합니다. `-WhatIf`로 배치를 미리 볼 수 있습니다. API가 아직 기동 전이면 스크립트에 로컬 `.sql` 파일을 넘기거나, 기동 후 API에서 DDL을 받아 적용합니다.
 
 ```powershell
-# 실행 중인 API에서 DDL을 받아 적용 (AdminToken 또는 레거시 Token)
+# 실행 중인 API에서 DDL을 받아 적용 (AdminToken)
 .\deploy\scripts\Apply-DbSchema.ps1 `
   -ConnectionString $env:Storage__SqlServer__ConnectionString `
   -ApiBaseUrl http://127.0.0.1:5080 `
@@ -326,7 +316,7 @@ API 실행 후:
 - `GET /api/inventory/devices`: 수집된 PC 목록 (페이징·검색·stale heartbeat 필터)
 - `GET /api/inventory/software`: 소프트웨어별 설치 PC 수 집계 (`?classification=`으로 분류 필터)
 
-조회 API는 `AdminToken`(또는 레거시 `Token`)이 필요합니다. 에이전트 `AgentToken`으로는 호출할 수 없습니다. `?format=csv`를 붙이면 UTF-8 BOM이 포함된 CSV를 내려받아 Excel에서 한글을 깨지지 않게 열 수 있습니다.
+조회 API는 `AdminToken`이 필요합니다. 에이전트 `AgentToken`으로는 호출할 수 없습니다. `?format=csv`를 붙이면 UTF-8 BOM이 포함된 CSV를 내려받아 Excel에서 한글을 깨지지 않게 열 수 있습니다.
 
 | 메서드 | 경로 | 설명 | 주요 쿼리 |
 | --- | --- | --- | --- |
@@ -346,7 +336,7 @@ API 실행 후:
 
 브라우저에서 `https://<server>/admin` 으로 관리자 화면을 엽니다. UI는 Blazor WebAssembly이며, Interactive Server/Auto 회로는 쓰지 않습니다. API가 같은 출처의 `/admin/_framework`를 제공하므로 외부 CDN이 없습니다. curl이나 CSV 없이 PC 목록, 소프트웨어 집계, 위반, 정책, 제거 요청을 조회하고 정책을 만들고 고칠 수 있습니다. 소프트웨어 목록에서 행을 체크한 뒤 `white` / `managed` / `black`을 현재 페이지 선택 항목에 일괄 지정할 수 있고, 서랍에서는 개별 분류와 `managed`의 정책 기본 라이선스(회사/BYO)·PC별 덮어쓰기를 편집합니다.
 
-정적 파일(`/admin`, `/admin/`, CSS, `_framework`)은 인증 없이 내려갑니다. 비밀은 없고, 인벤토리·정책 데이터는 모두 `AdminToken`(또는 레거시 `Token`)이 있어야 합니다. 토큰은 브라우저 `sessionStorage`에만 두고, 탭을 닫으면 사라집니다. 쿠키와 `localStorage`는 쓰지 않습니다.
+정적 파일(`/admin`, `/admin/`, CSS, `_framework`)은 인증 없이 내려갑니다. 비밀은 없고, 인벤토리·정책 데이터는 모두 `AdminToken`이 있어야 합니다. 토큰은 브라우저 `sessionStorage`에만 두고, 탭을 닫으면 사라집니다. 쿠키와 `localStorage`는 쓰지 않습니다.
 
 페이지는 외부 CDN·npm 없이 동작하므로 인터넷이 없는 사내망에서도 열립니다. `/admin` 응답에는 `Content-Security-Policy`(`script-src 'self' 'wasm-unsafe-eval'`, 인라인 스크립트/스타일 없음), `X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer`, `Cache-Control: no-store`를 붙입니다.
 
@@ -356,7 +346,7 @@ API 실행 후:
 
 이름 패턴은 정확 일치이며, `*` / `?` 와일드카드로 prefix·부분 일치도 됩니다(`Google Chrome*`, `*Torrent*`). 선택적 `versionPattern`은 정확/와일드카드(`16.*`)이거나 비교식(`>=17.0`, `<18.0`)이고, 쉼표로 AND 조건을 연결할 수 있습니다(`>=17.0,<18.0`). 게시자(`publisher`)가 있으면 이름과 같은 방식으로 매칭합니다. 여러 정책이 동시에 맞으면 **black > managed > white** 순으로 더 강한 분류를 씁니다.
 
-정책·위반 API도 `AdminToken`(또는 레거시 `Token`)이 필요합니다. 목록 JSON은 인벤토리 조회와 같이 `skip`, `take`, `totalCount`, `items`를 반환합니다. 쿼리 파라미터를 생략하면 JSON `take=100`, CSV `take=10000`(최대 10000)으로 동작합니다.
+정책·위반 API도 `AdminToken`이 필요합니다. 목록 JSON은 인벤토리 조회와 같이 `skip`, `take`, `totalCount`, `items`를 반환합니다. 쿼리 파라미터를 생략하면 JSON `take=100`, CSV `take=10000`(최대 10000)으로 동작합니다.
 
 | 메서드 | 경로 | 설명 | 주요 쿼리 |
 | --- | --- | --- | --- |
@@ -387,7 +377,6 @@ API 실행 후:
 
 ```powershell
 $token = $env:Security__AdminToken
-if (-not $token) { $token = $env:Security__Token }
 $headers = @{ Authorization = "Bearer $token" }
 Invoke-RestMethod -Headers $headers -Uri "http://127.0.0.1:5080/api/inventory/devices?search=PC-01&staleAfterHours=24"
 Invoke-RestMethod -Headers $headers -Uri "http://127.0.0.1:5080/api/inventory/software?classification=unclassified"

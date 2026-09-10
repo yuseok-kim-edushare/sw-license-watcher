@@ -10,8 +10,7 @@
     Recommended:
       Security:AgentToken  = Worker Agent:ApiToken and Watchdog Watchdog:ApiToken
       Security:AdminToken  = inventory queries, policy CRUD, violations, design/schema
-    Legacy: a single Security:Token still authorizes every endpoint when AgentToken and
-    AdminToken are left empty.
+    Both tokens are required and must differ. Do not reuse a shared Security:Token.
 
 .PARAMETER ByteLength
     Number of random bytes before Base64 encoding. Must be 32 or greater.
@@ -40,4 +39,4 @@ finally {
 
 $token = [Convert]::ToBase64String($bytes)
 Write-Output $token
-Write-Host "Assign this value to Security:AgentToken (and Agent:ApiToken / Watchdog:ApiToken) or Security:AdminToken. Run again for the other role. A single Security:Token still grants all endpoints when AgentToken and AdminToken are empty." -ForegroundColor Yellow
+Write-Host "Assign this value to Security:AgentToken (and Agent:ApiToken / Watchdog:ApiToken) or Security:AdminToken. Run again for the other role. Both tokens are required and must differ." -ForegroundColor Yellow

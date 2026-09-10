@@ -49,7 +49,7 @@ deploy/
 
 - PC: Windows x64, 관리자 PowerShell 5.1 이상. Native AOT라 대상 PC에 .NET 런타임은 필요 없습니다.
 - 서버 API URL (HTTPS). HTTP는 loopback 진단만 허용됩니다.
-- 서버 `Security:AgentToken`(32자 이상). PC `ApiToken`과 동일. 조회·정책 API는 `Security:AdminToken`을 씁니다. `AgentToken`/`AdminToken`이 비어 있으면 레거시 `Security:Token`이 모든 엔드포인트에 유효합니다.
+- 서버 `Security:AgentToken`(32자 이상). PC `ApiToken`과 동일. 조회·정책 API는 `Security:AdminToken`을 씁니다. 두 토큰은 모두 필수이며 서로 달라야 합니다.
 - 자체 패치를 쓸 때: 서버가 가리키는 Worker ZIP(`SwLicenseWatcher.Agent.Worker-{version}.zip`)에 `SwLicenseWatcher.Agent.Worker.exe`가 정확히 하나. `RequireAuthenticode`가 `true`이면 EXE/DLL이 신뢰된 Authenticode 서명
 
 토큰과 서명용 PFX는 저장소에 커밋하지 마세요.
@@ -77,9 +77,8 @@ API는 서버에서만 호스팅합니다. PC 에이전트 설치 대상이 아�
 
 | 키 | 필수 | 설명 |
 | --- | --- | --- |
-| `Security:AgentToken` | 권장 | 32자 이상. 스냅샷·하트비트·manifest만. PC `ApiToken`과 동일 |
-| `Security:AdminToken` | 권장 | 32자 이상. 조회·정책·위반·design/schema. `AgentToken`과 달라야 함 |
-| `Security:Token` | 레거시 | 32자 이상. Agent/Admin이 비어 있으면 모든 엔드포인트 |
+| `Security:AgentToken` | 예 | 32자 이상. 스냅샷·하트비트·제거 요청·manifest 조회. PC `ApiToken`과 동일 |
+| `Security:AdminToken` | 예 | 32자 이상. 조회·정책·위반·design/schema·업데이트 핀. `AgentToken`과 달라야 함 |
 | `Security:RequireHttps` | | 운영은 `true`. 원격 HTTP는 거부, loopback HTTP는 허용 |
 | `Storage:SqlServer:ConnectionString` | 예 | `TrustServerCertificate=False` 권장 |
 | `Storage:SqlServer:SchemaName` 및 테이블/컬럼 | 예 | 기본 예시는 `inventory.company_pc`, `inventory.company_stale_heartbeat_notification`, `inventory.company_pc_uninstall_request`, `inventory.company_pc_sw_license`, `inventory.company_worker_update_pin` 등. 정책 테이블에는 `default_license_source` 컬럼이 있습니다. 식별자는 영문·숫자·밑줄만 |
@@ -193,7 +192,7 @@ Invoke-RestMethod -Uri "https://license-watcher.contoso.local/api/schema/sql" -H
 | `Agent:DeviceCode` | 예 | 미지정 시 컴퓨터 이름. 전 PC가 같으면 서버에서 한 자산으로 UPSERT됩니다. |
 | `Agent:DomainName` | 예 | `USERDOMAIN`, 없으면 `WORKGROUP` |
 | `Agent:ServerBaseUrl` | 예 | 서버 API 주소, 예: `https://license-watcher.contoso.local` |
-| `Agent:ApiToken` | 예 | 서버 `Security:AgentToken`(또는 레거시 `Security:Token`)과 **동일**, 32자 이상 |
+| `Agent:ApiToken` | 예 | 서버 `Security:AgentToken`과 **동일**, 32자 이상 |
 | `Agent:SnapshotPath` | | `/api/inventory/snapshots` |
 | `Agent:HeartbeatPath` | | `/api/agents/heartbeats` |
 | `Agent:PollInterval` / `MaxJitter` | | `00:30:00` / `00:15:00` |
@@ -315,7 +314,7 @@ Watchdog은 설치 디렉터리를 패키지 내용으로 교체하기 전에 PC
 | 증상 | 확인할 것 |
 | --- | --- |
 | 서비스가 바로 종료 | Event Log. 빈 토큰, 비-loopback HTTP `ServerBaseUrl` |
-| `401` | PC `ApiToken`과 서버 `Security:AgentToken`(또는 레거시 `Security:Token`)이 다름 |
+| `401` | PC `ApiToken`과 서버 `Security:AgentToken`이 다름 |
 | 스냅샷이 한 PC로만 보임 | 모든 에이전트가 같은 `DeviceCode`(예: 개발용 `pc-demo-001`) |
 | Watchdog이 Worker 서비스에 Access Denied | Watchdog이 LocalSystem이 아님. `Install-Agent.ps1`을 다시 실행하거나 `sc.exe config SwLicenseWatcher.Agent.Watchdog obj= LocalSystem` |
 | Watchdog이 업데이트를 안 함 | `/admin` 업데이트 핀 `Version`이 이미 `.version`과 같음, `PackageUrl`이 HTTP, SHA-256 불일치, 또는 DB 핀이 아직 플레이스홀더 |
@@ -323,7 +322,7 @@ Watchdog은 설치 디렉터리를 패키지 내용으로 교체하기 전에 PC
 | 업데이트 후 롤백 | Worker가 `HealthFilePath`에 버전을 못 씀. 경로가 Worker/Watchdog JSON에서 같은지 |
 | IIS `500.30` / `500.31` | Hosting Bundle(.NET 10) 설치, 앱 풀 No Managed Code, `api/iis`를 쓰는지(AOT 폴더 아님) |
 | IIS에서 Kestrel 포트 충돌 | IIS용 JSON에 `Kestrel:Endpoints`가 있으면 제거. HTTPS는 사이트 바인딩만 사용 |
-| API 서비스가 바로 종료 | Event Log. 빈/짧은 토큰, AgentToken=AdminToken, 연결 문자열, `Kestrel` 인증서 Subject가 LocalMachine\My와 다른지 |
+| API 서비스가 바로 종료 | Event Log. 빈/짧은 토큰, AgentToken=AdminToken, 남아 있는 `Security:Token`, 연결 문자열, `Kestrel` 인증서 Subject가 LocalMachine\My와 다른지 |
 | 서비스 시작 1053 오류 | Application 이벤트 로그(원본 `SwLicenseWatcher.Api`). `appsettings.json`이 실행 파일과 같은 폴더(`C:\Program Files\SwLicenseWatcher\Api`)에 있는지, 토큰·연결 문자열·Kestrel HTTPS 인증서를 확인 |
 | `Install-ApiServer.ps1`이 IIS 폴더를 거부 | `api\win-x64`(Native AOT)를 넘기세요. IIS는 위 IIS in-process 절을 따릅니다 |
 

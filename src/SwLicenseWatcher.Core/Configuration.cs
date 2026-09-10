@@ -91,32 +91,19 @@ public static class ApiSecurityOptionsValidator
     public static bool HasUsableToken(string? value) =>
         !string.IsNullOrWhiteSpace(value) && value.Length >= MinimumTokenLength;
 
-    public static bool HasAtLeastOneUsableToken(ApiSecurityOptions options) =>
-        HasUsableToken(options.Token) ||
-        HasUsableToken(options.AgentToken) ||
+    public static bool HasRequiredRoleTokens(ApiSecurityOptions options) =>
+        HasUsableToken(options.AgentToken) &&
         HasUsableToken(options.AdminToken);
 
     public static bool HasValidConfiguredTokenLengths(ApiSecurityOptions options) =>
-        IsMissingOrUsable(options.Token) &&
         IsMissingOrUsable(options.AgentToken) &&
         IsMissingOrUsable(options.AdminToken);
 
-    public static bool HasDistinctRoleTokens(ApiSecurityOptions options)
-    {
-        if (!HasUsableToken(options.AgentToken))
-        {
-            return true;
-        }
+    public static bool RejectsLegacySharedToken(ApiSecurityOptions options) =>
+        string.IsNullOrWhiteSpace(options.Token);
 
-        if (HasUsableToken(options.AdminToken) &&
-            string.Equals(options.AgentToken, options.AdminToken, StringComparison.Ordinal))
-        {
-            return false;
-        }
-
-        return !HasUsableToken(options.Token) ||
-            !string.Equals(options.AgentToken, options.Token, StringComparison.Ordinal);
-    }
+    public static bool HasDistinctRoleTokens(ApiSecurityOptions options) =>
+        !string.Equals(options.AgentToken, options.AdminToken, StringComparison.Ordinal);
 
     private static bool IsMissingOrUsable(string? value) =>
         string.IsNullOrWhiteSpace(value) || value.Length >= MinimumTokenLength;

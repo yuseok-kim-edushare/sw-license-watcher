@@ -225,7 +225,7 @@ Watchdog은 설치 폴더의 `appsettings.json`을 패치 후에도 유지합니
 | 증상 | 원인 |
 | --- | --- |
 | IIS 500.30 / 500.31 | Hosting Bundle 없음, 앱 풀이 CLR 있음, **AOT 폴더를 가리킴** |
-| API가 바로 죽음 | AgentToken=AdminToken, 토큰 32자 미만, SQL 연결 실패, `ApplySchemaOnStartup` 실패 |
+| API가 바로 죽음 | AgentToken=AdminToken, 토큰 32자 미만, 남아 있는 `Security:Token`, SQL 연결 실패, `ApplySchemaOnStartup` 실패 |
 | 에이전트 즉시 종료 | 빈 `ApiToken`, 비-loopback HTTP URL |
 | 401 | PC `ApiToken` ≠ 서버 `AgentToken` |
 | TLS/SSL 오류 | 자체 서명을 Root에 안 넣음, 호스트 이름 불일치 |

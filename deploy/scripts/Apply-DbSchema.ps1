@@ -5,7 +5,7 @@
 
 .DESCRIPTION
     Loads idempotent DDL either from a running API (GET /api/schema/sql with an
-    AdminToken or legacy Token) or from a local .sql file, splits GO batches, and
+    AdminToken) or from a local .sql file, splits GO batches, and
     executes them against SQL Server.
 
     Prefers System.Data.SqlClient or Microsoft.Data.SqlClient loaded in PowerShell.
@@ -34,8 +34,8 @@
     Running API base URL. Fetches GET /api/schema/sql. Mutually exclusive with -SqlPath.
 
 .PARAMETER ApiToken
-    Bearer token for /api/schema/sql (AdminToken or legacy Token). Defaults to
-    Security__AdminToken, then Security__Token.
+    Bearer token for /api/schema/sql (AdminToken). Defaults to
+    Security__AdminToken.
 
 .PARAMETER SqlPath
     Local UTF-8 .sql file. Mutually exclusive with -ApiBaseUrl.
@@ -390,11 +390,7 @@ try {
         }
 
         if (-not (Test-HasText $token)) {
-            $token = $env:Security__Token
-        }
-
-        if (-not (Test-HasText $token)) {
-            throw "Specify -ApiToken or set Security__AdminToken / Security__Token."
+            throw "Specify -ApiToken or set Security__AdminToken."
         }
 
         $sql = Get-SchemaSqlFromApi -BaseUrl $ApiBaseUrl -Token $token

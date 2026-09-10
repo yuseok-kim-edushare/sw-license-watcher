@@ -32,11 +32,11 @@ public static class BearerTokenAuthenticator
 
         var supplied = suppliedAuthorizationHeader ?? string.Empty;
         var suppliedHash = SHA256.HashData(Encoding.UTF8.GetBytes(supplied));
-        var matchesLegacy = MatchesConfiguredToken(suppliedHash, security.Token);
         var matchesAgent = MatchesConfiguredToken(suppliedHash, security.AgentToken);
         var matchesAdmin = MatchesConfiguredToken(suppliedHash, security.AdminToken);
         var agentEndpoint = EndpointPolicies.IsAgentEndpoint(requestPath, httpMethod);
-        return matchesLegacy | matchesAdmin | (matchesAgent & agentEndpoint);
+        var adminEndpoint = EndpointPolicies.IsAdminEndpoint(requestPath, httpMethod);
+        return (matchesAgent & agentEndpoint) | (matchesAdmin & adminEndpoint);
     }
 
     private static bool MatchesConfiguredToken(byte[] suppliedHash, string expectedToken)
