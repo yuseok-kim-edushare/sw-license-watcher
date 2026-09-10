@@ -1,0 +1,15 @@
+<div class="pager">
+    <button type="button" disabled="@(!CanPrev)" @onclick="Previous">이전</button>
+    <span>@From-@To / @Total</span>
+    <button type="button" disabled="@(!CanNext)" @onclick="Next">다음</button>
+</div>
+
+@code {
+    [Parameter] public int From { get; set; }
+    [Parameter] public int To { get; set; }
+    [Parameter] public int Total { get; set; }
+    [Parameter] public bool CanPrev { get; set; }
+    [Parameter] public bool CanNext { get; set; }
+    [Parameter] public EventCallback Previous { get; set; }
+    [Parameter] public EventCallback Next { get; set; }
+}

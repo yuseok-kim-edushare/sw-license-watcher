@@ -1,0 +1,60 @@
+@inherits AdminTabComponent
+@using static DashboardPresentation
+
+<div class="toolbar">
+    <label>검색
+        <input type="search" maxlength="256" @bind="Search" @bind:event="oninput" @onkeydown="OnSearchKey" />
+    </label>
+    <label>이후
+        <input type="date" value="@_since" @onchange="@(e => _since = e.Value?.ToString() ?? "")" />
+    </label>
+    <button type="button" class="primary" @onclick="QueryAsync">조회</button>
+    <button type="button" @onclick="@(() => DownloadCsvAsync("/api/violations", "violations.csv"))">CSV 다운로드</button>
+</div>
+@if (!string.IsNullOrEmpty(Error))
+{
+    <p class="error">@Error</p>
+}
+<p class="meta">@Meta</p>
+<table class="data">
+    <thead><tr><th>PC</th><th>호스트</th><th>소프트웨어</th><th>버전</th><th>정책</th><th>분류</th><th>최초 적발</th><th>마지막 발견</th></tr></thead>
+    <tbody>
+        @if (_violations.Count == 0)
+        {
+            <tr><td class="empty" colspan="8">항목이 없습니다.</td></tr>
+        }
+        else
+        {
+            @foreach (var row in _violations)
+            {
+                <tr>
+                    <td>@Dash(row.DeviceCode)</td><td>@Dash(row.HostName)</td><td>@Dash(row.SoftwareName)</td><td>@Dash(row.SoftwareVersion)</td>
+                    <td>@Dash(row.PolicyProductName)</td><td>@Dash(ClassificationStorage(row.Classification))</td>
+                    <td>@FormatTime(row.DetectedAtUtc)</td><td>@FormatTime(row.LastSeenAtUtc)</td>
+                </tr>
+            }
+        }
+    </tbody>
+</table>
+<Pagination From="PageFrom" To="PageTo" Total="TotalCount" CanPrev="CanPrev" CanNext="CanNext"
+            Previous="PrevPageAsync" Next="NextPageAsync" />
+
+@code {
+    private string _since = "";
+    private IReadOnlyList<SoftwareViolationEntry> _violations = [];
+
+    public override Task RefreshAsync() => LoadAsync(async () =>
+    {
+        var data = await Api.GetViolationsAsync(PagingQuery());
+        _violations = data.Items ?? [];
+        TotalCount = data.TotalCount;
+    });
+
+    protected override void AddFilters(List<string> parts)
+    {
+        if (!string.IsNullOrWhiteSpace(_since))
+        {
+            parts.Add("since=" + Uri.EscapeDataString(_since));
+        }
+    }
+}

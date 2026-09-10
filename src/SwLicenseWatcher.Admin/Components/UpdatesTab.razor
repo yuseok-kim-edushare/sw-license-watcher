@@ -1,0 +1,79 @@
+@inherits AdminTabComponent
+
+<section class="card">
+    <h2>Worker 업데이트 핀</h2>
+    <p class="hint">GitHub Release의 Version · PackageUrl · Sha256을 저장하면 Watchdog가 다음 확인 주기에 Worker를 교체합니다. appsettings <code>Updates:Worker</code>는 테이블이 비어 있을 때만 시드되며, 이미 핀이 있으면 파일을 고쳐도 바뀌지 않습니다.</p>
+    @if (!string.IsNullOrEmpty(Error))
+    {
+        <p class="error">@Error</p>
+    }
+    @if (!string.IsNullOrEmpty(_saved))
+    {
+        <p class="meta">@_saved</p>
+    }
+    <div class="form-grid">
+        <label>대상 서비스<input value="@_target" readonly /></label>
+        <label>버전<input maxlength="32" @bind="_version" /></label>
+        <label class="wide">패키지 URL (HTTPS)<input maxlength="2048" @bind="_packageUrl" /></label>
+        <label class="wide">SHA-256<input maxlength="64" @bind="_sha256" /></label>
+        <label>롤백 대기(분)<input type="number" min="1" max="60" @bind="_rollbackMinutes" /></label>
+        <label class="check"><input type="checkbox" @bind="_requireAuthenticode" />Authenticode 필수</label>
+    </div>
+    <div class="form-actions">
+        <button type="button" class="primary" @onclick="SaveAsync">핀 저장</button>
+        <button type="button" @onclick="RefreshAsync">다시 읽기</button>
+    </div>
+</section>
+
+@code {
+    private string _target = "";
+    private string _version = "";
+    private string _packageUrl = "";
+    private string _sha256 = "";
+    private bool _requireAuthenticode = true;
+    private int _rollbackMinutes = 10;
+    private string _saved = "";
+
+    public override async Task RefreshAsync()
+    {
+        Error = "";
+        _saved = "";
+        var succeeded = await Requests.RunAsync(async () =>
+        {
+            Apply(await Api.GetWorkerUpdatePinAsync());
+        }, message => Error = message);
+        if (succeeded)
+        {
+            await Refreshed.InvokeAsync();
+        }
+    }
+
+    private async Task SaveAsync()
+    {
+        Error = "";
+        _saved = "";
+        var request = new UpdateManifest(
+            string.IsNullOrWhiteSpace(_target) ? "SwLicenseWatcher.Agent.Worker" : _target.Trim(),
+            _version.Trim(),
+            _packageUrl.Trim(),
+            _sha256.Trim(),
+            _requireAuthenticode,
+            _rollbackMinutes);
+        await Requests.RunAsync(async () =>
+        {
+            var saved = await Api.PutWorkerUpdatePinAsync(request);
+            Apply(saved);
+            _saved = $"핀이 {saved.Version}으로 저장되었습니다. Watchdog는 다음 확인 주기에 따라갑니다.";
+        }, message => Error = message);
+    }
+
+    private void Apply(UpdateManifest pin)
+    {
+        _target = pin.TargetServiceName;
+        _version = pin.Version;
+        _packageUrl = pin.PackageUrl;
+        _sha256 = pin.Sha256;
+        _requireAuthenticode = pin.RequireAuthenticode;
+        _rollbackMinutes = pin.RollbackAfterMinutes;
+    }
+}

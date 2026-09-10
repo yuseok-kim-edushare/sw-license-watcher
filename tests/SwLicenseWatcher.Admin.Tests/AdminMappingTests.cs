@@ -9,8 +9,8 @@ public class AdminMappingTests
     [Fact]
     public void Filter_values_preserve_api_storage_names_and_order()
     {
-        Assert.Equal(["", "white", "managed", "black", "unclassified"], App.SoftwareClasses);
-        Assert.Equal(["", "white", "managed", "black"], App.PolicyClasses);
+        Assert.Equal(["", "white", "managed", "black", "unclassified"], DashboardPresentation.SoftwareClasses);
+        Assert.Equal(["", "white", "managed", "black"], DashboardPresentation.PolicyClasses);
     }
 
     [Theory]
@@ -20,7 +20,7 @@ public class AdminMappingTests
     [InlineData(42, "42")]
     public void Dash_maps_missing_and_present_values(object? value, string expected)
     {
-        Assert.Equal(expected, App.Dash(value));
+        Assert.Equal(expected, DashboardPresentation.Dash(value));
     }
 
     [Theory]
@@ -30,7 +30,7 @@ public class AdminMappingTests
     [InlineData(null, "-")]
     public void LicenseLabel_maps_known_storage_values(string? value, string expected)
     {
-        Assert.Equal(expected, App.LicenseLabel(value));
+        Assert.Equal(expected, DashboardPresentation.LicenseLabel(value));
     }
 
     [Theory]
@@ -40,7 +40,7 @@ public class AdminMappingTests
     [InlineData((SoftwarePolicyClassification)999, "managed")]
     public void ClassifyStorage_maps_enum_values(SoftwarePolicyClassification value, string expected)
     {
-        Assert.Equal(expected, App.ClassifyStorage(value));
+        Assert.Equal(expected, DashboardPresentation.ClassificationStorage(value));
     }
 
     [Fact]
@@ -50,9 +50,9 @@ public class AdminMappingTests
         var secondVersion = first with { Version = "2.0" };
         var secondClass = first with { Classification = "black" };
 
-        Assert.Equal("Editor\u001f1.0\u001fmanaged", App.SoftwareKey(first));
-        Assert.NotEqual(App.SoftwareKey(first), App.SoftwareKey(secondVersion));
-        Assert.NotEqual(App.SoftwareKey(first), App.SoftwareKey(secondClass));
+        Assert.Equal("Editor\u001f1.0\u001fmanaged", DashboardPresentation.SoftwareKey(first));
+        Assert.NotEqual(DashboardPresentation.SoftwareKey(first), DashboardPresentation.SoftwareKey(secondVersion));
+        Assert.NotEqual(DashboardPresentation.SoftwareKey(first), DashboardPresentation.SoftwareKey(secondClass));
     }
 
     [Theory]
@@ -62,7 +62,7 @@ public class AdminMappingTests
     [InlineData(" company ", "company")]
     public void EmptyToNull_trims_values_and_maps_whitespace_to_null(string? value, string? expected)
     {
-        Assert.Equal(expected, App.EmptyToNull(value));
+        Assert.Equal(expected, DashboardPresentation.EmptyToNull(value));
     }
 
     [Theory]
@@ -73,7 +73,7 @@ public class AdminMappingTests
         string value,
         SoftwarePolicyClassification expected)
     {
-        Assert.True(App.TryParseClassification(value, out var actual));
+        Assert.True(SoftwarePolicyClassificationNames.TryParse(value, out var actual));
         Assert.Equal(expected, actual);
     }
 

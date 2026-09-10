@@ -1,0 +1,253 @@
+@using static DashboardPresentation
+@inject AdminApiClient Api
+@inject AdminRequestHandler Requests
+
+@if (_kind is not null)
+{
+    <div class="backdrop" @onclick="Close"></div>
+    <aside class="drawer">
+        <div class="drawer-head">
+            <h2>@_title</h2>
+            <button type="button" @onclick="Close">닫기</button>
+        </div>
+        @if (!string.IsNullOrEmpty(_error))
+        {
+            <p class="error">@_error</p>
+        }
+        <label class="drawer-class-wrap">분류
+            <select @bind="_classFilter" @bind:after="RefreshAsync">
+                @foreach (var value in SoftwareClasses)
+                {
+                    <option value="@value">@(value == "" ? "전체" : value)</option>
+                }
+            </select>
+        </label>
+        <div>
+            @if (_kind == "device" && _device is { } detail)
+            {
+                <p>@Dash(detail.HostName) / @Dash(detail.DomainName)</p>
+                <p class="meta">@Dash(detail.OperatingSystem) · 에이전트 @Dash(detail.AgentVersion)</p>
+                <p class="meta">heartbeat @FormatTime(detail.LastHeartbeatUtc) · inventory @FormatTime(detail.LastInventoryUtc)</p>
+                <table class="data">
+                    <thead><tr><th>이름</th><th>버전</th><th>게시자</th><th>분류</th><th>라이선스</th><th>범위</th></tr></thead>
+                    <tbody>
+                        @if (detail.InstalledSoftware.Count == 0)
+                        {
+                            <tr><td class="empty" colspan="6">항목이 없습니다.</td></tr>
+                        }
+                        else
+                        {
+                            @foreach (var row in detail.InstalledSoftware)
+                            {
+                                <tr>
+                                    <td>@Dash(row.Name)</td><td>@Dash(row.Version)</td><td>@Dash(row.Publisher)</td>
+                                    <td>@Dash(row.Classification)</td>
+                                    <td>
+                                        @if (row.Classification == SoftwarePolicyClassificationNames.Managed)
+                                        {
+                                            <select class="license-source" value="@row.LicenseSourceOverride" @onchange="@(e => SaveLicenseSourceAsync(detail.DeviceCode, row.Name, e.Value?.ToString()))">
+                                                <option value="">기본값</option><option value="@LicenseSourceNames.Company">회사</option><option value="@LicenseSourceNames.Byo">BYO</option>
+                                            </select>
+                                        }
+                                        else
+                                        {
+                                            @LicenseLabel(row.LicenseSource)
+                                        }
+                                    </td>
+                                    <td>@Dash(row.DiscoveryScope)</td>
+                                </tr>
+                            }
+                        }
+                    </tbody>
+                </table>
+            }
+            else if (_kind == "software")
+            {
+                <div class="drawer-form">
+                    <label>분류
+                        <select @bind="_classifyAs">
+                            <option value="@SoftwarePolicyClassificationNames.White">white</option>
+                            <option value="@SoftwarePolicyClassificationNames.Managed">managed</option>
+                            <option value="@SoftwarePolicyClassificationNames.Black">black</option>
+                        </select>
+                    </label>
+                    @if (_classifyAs == SoftwarePolicyClassificationNames.Managed)
+                    {
+                        <label>기본 라이선스
+                            <select class="license-source" @bind="_license">
+                                <option value="">미지정</option><option value="@LicenseSourceNames.Company">회사</option><option value="@LicenseSourceNames.Byo">BYO</option>
+                            </select>
+                        </label>
+                    }
+                    <button type="button" class="primary" @onclick="SaveClassificationAsync">분류 저장</button>
+                </div>
+                <p class="meta">설치 PC @_softwareTotal 대</p>
+                <table class="data">
+                    <thead><tr><th>자산코드</th><th>호스트</th><th>OS</th><th>버전</th><th>게시자</th><th>분류</th><th>라이선스</th></tr></thead>
+                    <tbody>
+                        @if (_softwareDevices.Count == 0)
+                        {
+                            <tr><td class="empty" colspan="7">항목이 없습니다.</td></tr>
+                        }
+                        else
+                        {
+                            @foreach (var row in _softwareDevices)
+                            {
+                                <tr>
+                                    <td>@Dash(row.DeviceCode)</td><td>@Dash(row.HostName)</td><td>@Dash(row.OperatingSystem)</td>
+                                    <td>@Dash(row.Version)</td><td>@Dash(row.Publisher)</td><td>@Dash(row.Classification)</td>
+                                    <td>
+                                        @if (row.Classification == SoftwarePolicyClassificationNames.Managed)
+                                        {
+                                            <select class="license-source" value="@row.LicenseSourceOverride" @onchange="@(e => SaveLicenseSourceAsync(row.DeviceCode, _key, e.Value?.ToString()))">
+                                                <option value="">기본값</option><option value="@LicenseSourceNames.Company">회사</option><option value="@LicenseSourceNames.Byo">BYO</option>
+                                            </select>
+                                        }
+                                        else
+                                        {
+                                            @LicenseLabel(row.LicenseSource)
+                                        }
+                                    </td>
+                                </tr>
+                            }
+                        }
+                    </tbody>
+                </table>
+            }
+        </div>
+    </aside>
+}
+
+@code {
+    [Parameter] public EventCallback Changed { get; set; }
+
+    private string? _kind;
+    private string _key = "";
+    private string _title = "상세";
+    private string _publisher = "";
+    private string _classFilter = "";
+    private string _classifyAs = SoftwarePolicyClassificationNames.Managed;
+    private string _license = "";
+    private string _error = "";
+    private DeviceDetail? _device;
+    private IReadOnlyList<SoftwareDevice> _softwareDevices = [];
+    private int _softwareTotal;
+
+    public bool IsOpen => _kind is not null;
+
+    public async Task OpenDeviceAsync(string deviceCode)
+    {
+        _kind = "device";
+        _key = deviceCode;
+        _title = deviceCode;
+        _classFilter = "";
+        _error = "";
+        await RefreshAsync();
+    }
+
+    public async Task OpenSoftwareAsync(SoftwareAggregate row)
+    {
+        _kind = "software";
+        _key = row.Name;
+        _title = row.Name;
+        _publisher = "";
+        _classFilter = "";
+        _classifyAs = SoftwarePolicyClassificationNames.TryParse(row.Classification, out var classification)
+            ? SoftwarePolicyClassificationNames.ToStorage(classification)
+            : SoftwarePolicyClassificationNames.Managed;
+        _license = "";
+        _error = "";
+        await RefreshAsync();
+        await LoadPolicyDefaultAsync();
+    }
+
+    public async Task RefreshAsync()
+    {
+        if (_kind is null)
+        {
+            return;
+        }
+
+        _error = "";
+        await Requests.RunAsync(async () =>
+        {
+            if (_kind == "device")
+            {
+                _device = await Api.GetDeviceAsync(_key, EmptyToNull(_classFilter));
+            }
+            else
+            {
+                var query = "take=100";
+                if (!string.IsNullOrEmpty(_classFilter))
+                {
+                    query += "&classification=" + Uri.EscapeDataString(_classFilter);
+                }
+
+                var data = await Api.GetSoftwareDevicesAsync(_key, query);
+                _softwareDevices = data.Items ?? [];
+                _softwareTotal = data.TotalCount;
+                if (string.IsNullOrEmpty(_publisher) && _softwareDevices.Count > 0)
+                {
+                    _publisher = _softwareDevices[0].Publisher ?? "";
+                }
+            }
+        }, message => _error = message);
+    }
+
+    public void Close()
+    {
+        _kind = null;
+        _key = "";
+        _device = null;
+        _softwareDevices = [];
+        _error = "";
+    }
+
+    private async Task LoadPolicyDefaultAsync()
+    {
+        await Requests.RunAsync(async () =>
+        {
+            var data = await Api.GetPoliciesAsync("search=" + Uri.EscapeDataString(_key) + "&take=20");
+            var match = data.Items?.FirstOrDefault(row =>
+                string.Equals(row.ProductName, _key, StringComparison.OrdinalIgnoreCase));
+            if (match is not null)
+            {
+                _license = match.DefaultLicenseSource ?? "";
+            }
+        }, _ => { });
+    }
+
+    private async Task SaveClassificationAsync()
+    {
+        _error = "";
+        if (!SoftwarePolicyClassificationNames.TryParse(_classifyAs, out var classification))
+        {
+            _error = "분류를 선택하세요.";
+            return;
+        }
+
+        var succeeded = await Requests.RunAsync(async () =>
+        {
+            await Api.PutClassificationAsync(_key, new SoftwareClassificationWriteRequest(
+                classification,
+                EmptyToNull(_publisher),
+                LicenseSourceNames.ForManagedPolicy(classification, EmptyToNull(_license))));
+        }, message => _error = message);
+        if (succeeded)
+        {
+            await Changed.InvokeAsync();
+        }
+    }
+
+    private async Task SaveLicenseSourceAsync(string deviceCode, string softwareName, string? licenseSource)
+    {
+        _error = "";
+        var succeeded = await Requests.RunAsync(
+            () => Api.PutLicenseSourceAsync(deviceCode, softwareName, new(EmptyToNull(licenseSource))),
+            message => _error = message);
+        if (succeeded)
+        {
+            await Changed.InvokeAsync();
+        }
+    }
+}

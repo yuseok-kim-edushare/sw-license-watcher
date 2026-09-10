@@ -1,0 +1,180 @@
+@inherits AdminTabComponent
+@using static DashboardPresentation
+
+<div class="toolbar">
+    <label>검색
+        <input type="search" maxlength="256" @bind="Search" @bind:event="oninput" @onkeydown="OnSearchKey" />
+    </label>
+    <label>분류
+        <select @bind="_classFilter">
+            @foreach (var value in SoftwareClasses)
+            {
+                <option value="@value">@(value == "" ? "전체" : value)</option>
+            }
+        </select>
+    </label>
+    <button type="button" class="primary" @onclick="QueryAsync">조회</button>
+    <button type="button" @onclick="@(() => DownloadCsvAsync("/api/inventory/software", "software.csv"))">CSV 다운로드</button>
+</div>
+
+<div class="bulk-bar">
+    <label>일괄 분류
+        <select @bind="_bulkClassification">
+            <option value="@SoftwarePolicyClassificationNames.White">white</option>
+            <option value="@SoftwarePolicyClassificationNames.Managed">managed</option>
+            <option value="@SoftwarePolicyClassificationNames.Black">black</option>
+        </select>
+    </label>
+    @if (_bulkClassification == SoftwarePolicyClassificationNames.Managed)
+    {
+        <label>기본 라이선스(managed)
+            <select class="license-source" @bind="_bulkLicense">
+                <option value="">미지정</option><option value="@LicenseSourceNames.Company">회사</option><option value="@LicenseSourceNames.Byo">BYO</option>
+            </select>
+        </label>
+    }
+    <button type="button" class="primary" @onclick="ApplyBulkClassificationAsync" disabled="@(SelectedNameCount == 0)">
+        선택 항목에 적용 (@SelectedNameCount)
+    </button>
+    <p class="hint">현재 페이지에서 고른 행만 적용합니다. 같은 이름은 한 번만 보냅니다.</p>
+</div>
+@if (!string.IsNullOrEmpty(_bulkError))
+{
+    <p class="error">@_bulkError</p>
+}
+@if (!string.IsNullOrEmpty(Error))
+{
+    <p class="error">@Error</p>
+}
+<p class="meta">@Meta</p>
+
+<table class="data">
+    <thead>
+        <tr>
+            <th class="check"><input type="checkbox" checked="@AllPageSelected" @onchange="ToggleSelectAll" /></th>
+            <th>이름</th><th>버전</th><th>분류</th><th>PC 수</th><th>회사</th><th>BYO</th><th>미지정</th>
+        </tr>
+    </thead>
+    <tbody>
+        @if (_software.Count == 0)
+        {
+            <tr><td class="empty" colspan="8">항목이 없습니다.</td></tr>
+        }
+        else
+        {
+            @foreach (var row in _software)
+            {
+                var key = SoftwareKey(row);
+                <tr>
+                    <td class="check"><input type="checkbox" checked="@_selectedKeys.Contains(key)" @onchange="@(args => ToggleRow(row, args))" /></td>
+                    <td><button type="button" class="linkish" @onclick="@(() => _drawer.OpenSoftwareAsync(row))">@Dash(row.Name)</button></td>
+                    <td>@Dash(row.Version)</td><td>@Dash(row.Classification)</td><td>@row.DeviceCount</td>
+                    <td>@row.CompanyCount</td><td>@row.ByoCount</td><td>@row.UnassignedCount</td>
+                </tr>
+            }
+        }
+    </tbody>
+</table>
+<Pagination From="PageFrom" To="PageTo" Total="TotalCount" CanPrev="CanPrev" CanNext="CanNext"
+            Previous="PrevPageAsync" Next="NextPageAsync" />
+<DetailDrawer @ref="_drawer" Changed="RefreshAsync" />
+
+@code {
+    private string _classFilter = "";
+    private IReadOnlyList<SoftwareAggregate> _software = [];
+    private readonly HashSet<string> _selectedKeys = [];
+    private string _bulkClassification = SoftwarePolicyClassificationNames.Managed;
+    private string _bulkLicense = "";
+    private string _bulkError = "";
+    private DetailDrawer _drawer = default!;
+
+    private bool AllPageSelected => _software.Count > 0 && _software.All(row => _selectedKeys.Contains(SoftwareKey(row)));
+    private int SelectedNameCount => SelectedNames().Count;
+
+    public override async Task RefreshAsync()
+    {
+        await LoadAsync(async () =>
+        {
+            var data = await Api.GetSoftwareAsync(PagingQuery());
+            _software = data.Items ?? [];
+            TotalCount = data.TotalCount;
+            var pageKeys = _software.Select(SoftwareKey).ToHashSet(StringComparer.Ordinal);
+            _selectedKeys.RemoveWhere(key => !pageKeys.Contains(key));
+        });
+        if (_drawer?.IsOpen == true)
+        {
+            await _drawer.RefreshAsync();
+        }
+    }
+
+    protected override void AddFilters(List<string> parts)
+    {
+        if (!string.IsNullOrWhiteSpace(_classFilter))
+        {
+            parts.Add("classification=" + Uri.EscapeDataString(_classFilter));
+        }
+    }
+
+    private void ToggleSelectAll(ChangeEventArgs args)
+    {
+        foreach (var row in _software)
+        {
+            if (args.Value is true)
+            {
+                _selectedKeys.Add(SoftwareKey(row));
+            }
+            else
+            {
+                _selectedKeys.Remove(SoftwareKey(row));
+            }
+        }
+    }
+
+    private void ToggleRow(SoftwareAggregate row, ChangeEventArgs args)
+    {
+        if (args.Value is true)
+        {
+            _selectedKeys.Add(SoftwareKey(row));
+        }
+        else
+        {
+            _selectedKeys.Remove(SoftwareKey(row));
+        }
+    }
+
+    private List<string> SelectedNames() => _software
+        .Where(row => _selectedKeys.Contains(SoftwareKey(row)))
+        .Select(row => row.Name)
+        .Distinct(StringComparer.Ordinal)
+        .ToList();
+
+    private async Task ApplyBulkClassificationAsync()
+    {
+        _bulkError = "";
+        var names = SelectedNames();
+        if (names.Count == 0)
+        {
+            _bulkError = "적용할 소프트웨어를 선택하세요.";
+            return;
+        }
+
+        if (!SoftwarePolicyClassificationNames.TryParse(_bulkClassification, out var classification))
+        {
+            _bulkError = "분류를 선택하세요.";
+            return;
+        }
+
+        var request = new SoftwareClassificationBatchWriteRequest(names.Select(name =>
+            new SoftwareClassificationItemWriteRequest(
+                name,
+                classification,
+                Publisher: null,
+                DefaultLicenseSource: LicenseSourceNames.ForManagedPolicy(classification, EmptyToNull(_bulkLicense)))).ToList());
+        var succeeded = await Requests.RunAsync(() => Api.PutClassificationsAsync(request), message => _bulkError = message);
+        if (succeeded)
+        {
+            _selectedKeys.Clear();
+            await RefreshAsync();
+        }
+    }
+}

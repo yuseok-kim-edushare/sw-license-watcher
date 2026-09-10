@@ -1,0 +1,71 @@
+@inherits AdminTabComponent
+@using static DashboardPresentation
+
+<div class="toolbar">
+    <label>검색
+        <input type="search" maxlength="256" @bind="Search" @bind:event="oninput" @onkeydown="OnSearchKey" />
+    </label>
+    <label>지연(시간)
+        <input type="number" min="1" step="1" @bind="_staleHours" />
+    </label>
+    <button type="button" class="primary" @onclick="QueryAsync">조회</button>
+    <button type="button" @onclick="@(() => DownloadCsvAsync("/api/inventory/devices", "devices.csv"))">CSV 다운로드</button>
+</div>
+
+@if (!string.IsNullOrEmpty(Error))
+{
+    <p class="error">@Error</p>
+}
+<p class="meta">@Meta</p>
+
+<table class="data">
+    <thead><tr><th>자산코드</th><th>호스트</th><th>도메인</th><th>OS</th><th>에이전트</th><th>heartbeat</th><th>inventory</th></tr></thead>
+    <tbody>
+        @if (_devices.Count == 0)
+        {
+            <tr><td class="empty" colspan="7">항목이 없습니다.</td></tr>
+        }
+        else
+        {
+            @foreach (var row in _devices)
+            {
+                <tr>
+                    <td><button type="button" class="linkish" @onclick="@(() => _drawer.OpenDeviceAsync(row.DeviceCode))">@Dash(row.DeviceCode)</button></td>
+                    <td>@Dash(row.HostName)</td><td>@Dash(row.DomainName)</td><td>@Dash(row.OperatingSystem)</td>
+                    <td>@Dash(row.AgentVersion)</td><td>@FormatTime(row.LastHeartbeatUtc)</td><td>@FormatTime(row.LastInventoryUtc)</td>
+                </tr>
+            }
+        }
+    </tbody>
+</table>
+<Pagination From="PageFrom" To="PageTo" Total="TotalCount" CanPrev="CanPrev" CanNext="CanNext"
+            Previous="PrevPageAsync" Next="NextPageAsync" />
+<DetailDrawer @ref="_drawer" Changed="RefreshAsync" />
+
+@code {
+    private string _staleHours = "";
+    private IReadOnlyList<DeviceSummary> _devices = [];
+    private DetailDrawer _drawer = default!;
+
+    public override async Task RefreshAsync()
+    {
+        await LoadAsync(async () =>
+        {
+            var data = await Api.GetDevicesAsync(PagingQuery());
+            _devices = data.Items ?? [];
+            TotalCount = data.TotalCount;
+        });
+        if (_drawer?.IsOpen == true)
+        {
+            await _drawer.RefreshAsync();
+        }
+    }
+
+    protected override void AddFilters(List<string> parts)
+    {
+        if (!string.IsNullOrWhiteSpace(_staleHours))
+        {
+            parts.Add("staleAfterHours=" + Uri.EscapeDataString(_staleHours.Trim()));
+        }
+    }
+}

@@ -24,5 +24,6 @@ builder.Services.AddScoped(sp =>
     };
 });
 builder.Services.AddScoped<AdminApiClient>();
+builder.Services.AddScoped<AdminRequestHandler>();
 
 await builder.Build().RunAsync();

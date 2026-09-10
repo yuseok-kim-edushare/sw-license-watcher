@@ -1,3 +1,5 @@
+@using SwLicenseWatcher.Admin.Components
+
 @if (!_ready)
 {
     <p class="hint loading-msg">불러오는 중...</p>
@@ -52,507 +54,50 @@ else
     {
         <section class="app-panel">
             <nav class="tabs">
-                <button type="button" class="tab @(_tab == "devices" ? "is-active" : null)" @onclick="@(() => SelectTabAsync("devices"))">PC 목록</button>
-                <button type="button" class="tab @(_tab == "software" ? "is-active" : null)" @onclick="@(() => SelectTabAsync("software"))">소프트웨어</button>
-                <button type="button" class="tab @(_tab == "violations" ? "is-active" : null)" @onclick="@(() => SelectTabAsync("violations"))">위반</button>
-                <button type="button" class="tab @(_tab == "policies" ? "is-active" : null)" @onclick="@(() => SelectTabAsync("policies"))">정책</button>
-                <button type="button" class="tab @(_tab == "uninstall" ? "is-active" : null)" @onclick="@(() => SelectTabAsync("uninstall"))">제거 요청</button>
-                <button type="button" class="tab @(_tab == "updates" ? "is-active" : null)" @onclick="@(() => SelectTabAsync("updates"))">업데이트</button>
+                <button type="button" class="tab @(_tabs.IsActive("devices") ? "is-active" : null)" @onclick="@(() => SelectTab("devices"))">PC 목록</button>
+                <button type="button" class="tab @(_tabs.IsActive("software") ? "is-active" : null)" @onclick="@(() => SelectTab("software"))">소프트웨어</button>
+                <button type="button" class="tab @(_tabs.IsActive("violations") ? "is-active" : null)" @onclick="@(() => SelectTab("violations"))">위반</button>
+                <button type="button" class="tab @(_tabs.IsActive("policies") ? "is-active" : null)" @onclick="@(() => SelectTab("policies"))">정책</button>
+                <button type="button" class="tab @(_tabs.IsActive("uninstall") ? "is-active" : null)" @onclick="@(() => SelectTab("uninstall"))">제거 요청</button>
+                <button type="button" class="tab @(_tabs.IsActive("updates") ? "is-active" : null)" @onclick="@(() => SelectTab("updates"))">업데이트</button>
             </nav>
 
-            @if (ShowListToolbar)
+            @if (_tabs.IsVisited("devices"))
             {
-            <div class="toolbar">
-                <label>검색
-                    <input type="search" maxlength="256" @bind="_search" @bind:event="oninput" @onkeydown="OnSearchKey" />
-                </label>
-                @if (ShowStaleFilter)
-                {
-                    <label>지연(시간)
-                        <input type="number" min="1" step="1" @bind="_staleHours" />
-                    </label>
-                }
-                @if (ShowClassFilter)
-                {
-                    <label>분류
-                        <select @bind="_classFilter">
-                            @foreach (var value in ClassFilterValues)
-                            {
-                                <option value="@value">@(value == "" ? "전체" : value)</option>
-                            }
-                        </select>
-                    </label>
-                }
-                @if (ShowSinceFilter)
-                {
-                    <label>이후
-                        <input type="date" value="@_since" @onchange="@(e => _since = e.Value?.ToString() ?? "")" />
-                    </label>
-                }
-                <button type="button" class="primary" @onclick="QueryAsync">조회</button>
-                @if (ShowCsv)
-                {
-                    <button type="button" @onclick="DownloadCsvAsync">CSV 다운로드</button>
-                }
-            </div>
-            }
-
-            @if (ShowUninstallHint)
-            {
-                <p class="hint">승인하면 해당 PC 제거기에 일회용 해제 코드가 표시됩니다. 대시보드에는 코드를 보여 주지 않습니다.</p>
-            }
-
-            @if (ShowBulkBar)
-            {
-                <div class="bulk-bar">
-                    <label>일괄 분류
-                        <select @bind="_bulkClassification">
-                            <option value="white">white</option>
-                            <option value="managed">managed</option>
-                            <option value="black">black</option>
-                        </select>
-                    </label>
-                    @if (ShowManagedLicense)
-                    {
-                        <label>기본 라이선스(managed)
-                            <select class="license-source" @bind="_bulkLicense">
-                                <option value="">미지정</option>
-                                <option value="company">회사</option>
-                                <option value="byo">BYO</option>
-                            </select>
-                        </label>
-                    }
-                    <button type="button" class="primary" @onclick="ApplyBulkClassificationAsync" disabled="@(SelectedNameCount == 0)">
-                        선택 항목에 적용 (@SelectedNameCount)
-                    </button>
-                    <p class="hint">현재 페이지에서 고른 행만 적용합니다. 같은 이름은 한 번만 보냅니다.</p>
+                <div hidden="@(!_tabs.IsActive("devices"))">
+                    <DevicesTab @ref="_devicesTab" Refreshed="OnRefreshed" />
                 </div>
-                @if (!string.IsNullOrEmpty(_bulkError))
-                {
-                    <p class="error">@_bulkError</p>
-                }
             }
-
-            @if (_tab == "updates")
+            @if (_tabs.IsVisited("software"))
             {
-                <section class="card">
-                    <h2>Worker 업데이트 핀</h2>
-                    <p class="hint">GitHub Release의 Version · PackageUrl · Sha256을 저장하면 Watchdog가 다음 확인 주기에 Worker를 교체합니다. appsettings <code>Updates:Worker</code>는 테이블이 비어 있을 때만 시드되며, 이미 핀이 있으면 파일을 고쳐도 바뀌지 않습니다.</p>
-                    @if (!string.IsNullOrEmpty(_updateError))
-                    {
-                        <p class="error">@_updateError</p>
-                    }
-                    @if (!string.IsNullOrEmpty(_updateSaved))
-                    {
-                        <p class="meta">@_updateSaved</p>
-                    }
-                    <div class="form-grid">
-                        <label>대상 서비스
-                            <input value="@_updateTarget" readonly />
-                        </label>
-                        <label>버전
-                            <input maxlength="32" @bind="_updateVersion" />
-                        </label>
-                        <label class="wide">패키지 URL (HTTPS)
-                            <input maxlength="2048" @bind="_updatePackageUrl" />
-                        </label>
-                        <label class="wide">SHA-256
-                            <input maxlength="64" @bind="_updateSha256" />
-                        </label>
-                        <label>롤백 대기(분)
-                            <input type="number" min="1" max="60" @bind="_updateRollbackMinutes" />
-                        </label>
-                        <label class="check">
-                            <input type="checkbox" @bind="_updateRequireAuthenticode" />
-                            Authenticode 필수
-                        </label>
-                    </div>
-                    <div class="form-actions">
-                        <button type="button" class="primary" @onclick="SaveWorkerUpdatePinAsync">핀 저장</button>
-                        <button type="button" @onclick="LoadWorkerUpdatePinAsync">다시 읽기</button>
-                    </div>
-                </section>
+                <div hidden="@(!_tabs.IsActive("software"))">
+                    <SoftwareTab @ref="_softwareTab" Refreshed="OnRefreshed" />
+                </div>
             }
-            else
+            @if (_tabs.IsVisited("violations"))
             {
-            @if (!string.IsNullOrEmpty(_listError))
+                <div hidden="@(!_tabs.IsActive("violations"))">
+                    <ViolationsTab @ref="_violationsTab" Refreshed="OnRefreshed" />
+                </div>
+            }
+            @if (_tabs.IsVisited("policies"))
             {
-                <p class="error">@_listError</p>
+                <div hidden="@(!_tabs.IsActive("policies"))">
+                    <PoliciesTab @ref="_policiesTab" Refreshed="OnRefreshed" />
+                </div>
             }
-            <p class="meta">@_listMeta</p>
-
-            @if (_tab == "devices")
+            @if (_tabs.IsVisited("uninstall"))
             {
-                <table class="data">
-                    <thead>
-                        <tr>
-                            <th>자산코드</th><th>호스트</th><th>도메인</th><th>OS</th><th>에이전트</th><th>heartbeat</th><th>inventory</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        @if (_devices.Count == 0)
-                        {
-                            <tr><td class="empty" colspan="7">항목이 없습니다.</td></tr>
-                        }
-                        else
-                        {
-                            @foreach (var row in _devices)
-                            {
-                                <tr>
-                                    <td><button type="button" class="linkish" @onclick="@(() => OpenDeviceAsync(row.DeviceCode))">@Dash(row.DeviceCode)</button></td>
-                                    <td>@Dash(row.HostName)</td>
-                                    <td>@Dash(row.DomainName)</td>
-                                    <td>@Dash(row.OperatingSystem)</td>
-                                    <td>@Dash(row.AgentVersion)</td>
-                                    <td>@FormatTime(row.LastHeartbeatUtc)</td>
-                                    <td>@FormatTime(row.LastInventoryUtc)</td>
-                                </tr>
-                            }
-                        }
-                    </tbody>
-                </table>
+                <div hidden="@(!_tabs.IsActive("uninstall"))">
+                    <UninstallTab @ref="_uninstallTab" Refreshed="OnRefreshed" />
+                </div>
             }
-            else if (_tab == "software")
+            @if (_tabs.IsVisited("updates"))
             {
-                <table class="data">
-                    <thead>
-                        <tr>
-                            <th class="check">
-                                <input type="checkbox" checked="@AllPageSelected" @onchange="ToggleSelectAll" />
-                            </th>
-                            <th>이름</th><th>버전</th><th>분류</th><th>PC 수</th><th>회사</th><th>BYO</th><th>미지정</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        @if (_software.Count == 0)
-                        {
-                            <tr><td class="empty" colspan="8">항목이 없습니다.</td></tr>
-                        }
-                        else
-                        {
-                            @foreach (var row in _software)
-                            {
-                                var key = SoftwareKey(row);
-                                <tr>
-                                    <td class="check">
-                                        <input type="checkbox" checked="@_selectedSoftwareKeys.Contains(key)" @onchange="@(args => ToggleSoftwareRow(row, args))" />
-                                    </td>
-                                    <td><button type="button" class="linkish" @onclick="@(() => OpenSoftwareAsync(row))">@Dash(row.Name)</button></td>
-                                    <td>@Dash(row.Version)</td>
-                                    <td>@Dash(row.Classification)</td>
-                                    <td>@row.DeviceCount</td>
-                                    <td>@row.CompanyCount</td>
-                                    <td>@row.ByoCount</td>
-                                    <td>@row.UnassignedCount</td>
-                                </tr>
-                            }
-                        }
-                    </tbody>
-                </table>
+                <div hidden="@(!_tabs.IsActive("updates"))">
+                    <UpdatesTab @ref="_updatesTab" Refreshed="OnRefreshed" />
+                </div>
             }
-            else if (_tab == "violations")
-            {
-                <table class="data">
-                    <thead>
-                        <tr>
-                            <th>PC</th><th>호스트</th><th>소프트웨어</th><th>버전</th><th>정책</th><th>분류</th><th>최초 적발</th><th>마지막 발견</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        @if (_violations.Count == 0)
-                        {
-                            <tr><td class="empty" colspan="8">항목이 없습니다.</td></tr>
-                        }
-                        else
-                        {
-                            @foreach (var row in _violations)
-                            {
-                                <tr>
-                                    <td>@Dash(row.DeviceCode)</td>
-                                    <td>@Dash(row.HostName)</td>
-                                    <td>@Dash(row.SoftwareName)</td>
-                                    <td>@Dash(row.SoftwareVersion)</td>
-                                    <td>@Dash(row.PolicyProductName)</td>
-                                    <td>@Dash(ClassifyStorage(row.Classification))</td>
-                                    <td>@FormatTime(row.DetectedAtUtc)</td>
-                                    <td>@FormatTime(row.LastSeenAtUtc)</td>
-                                </tr>
-                            }
-                        }
-                    </tbody>
-                </table>
-            }
-            else if (_tab == "policies")
-            {
-                <table class="data">
-                    <thead>
-                        <tr>
-                            <th>ID</th><th>제품</th><th>게시자</th><th>버전 패턴</th><th>분류</th><th>기본 라이선스</th><th>사용</th><th>수정 시각</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        @if (_policies.Count == 0)
-                        {
-                            <tr><td class="empty" colspan="8">항목이 없습니다.</td></tr>
-                        }
-                        else
-                        {
-                            @foreach (var row in _policies)
-                            {
-                                <tr>
-                                    <td>@row.Id</td>
-                                    <td><button type="button" class="linkish" @onclick="@(() => FillPolicyForm(row))">@Dash(row.ProductName)</button></td>
-                                    <td>@Dash(row.Publisher)</td>
-                                    <td>@Dash(row.VersionPattern)</td>
-                                    <td>@Dash(ClassifyStorage(row.Classification))</td>
-                                    <td>@LicenseLabel(row.DefaultLicenseSource)</td>
-                                    <td>@(row.Enabled ? "사용" : "중지")</td>
-                                    <td>@FormatTime(row.UpdatedAtUtc)</td>
-                                </tr>
-                            }
-                        }
-                    </tbody>
-                </table>
-            }
-            else
-            {
-                <table class="data">
-                    <thead>
-                        <tr>
-                            <th>ID</th><th>자산코드</th><th>호스트</th><th>상태</th><th>요청</th><th>승인</th><th>만료</th><th>처리</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        @if (_uninstalls.Count == 0)
-                        {
-                            <tr><td class="empty" colspan="8">항목이 없습니다.</td></tr>
-                        }
-                        else
-                        {
-                            @foreach (var row in _uninstalls)
-                            {
-                                <tr>
-                                    <td>@row.Id</td>
-                                    <td>@Dash(row.DeviceCode)</td>
-                                    <td>@Dash(row.HostName)</td>
-                                    <td>@Dash(row.Status)</td>
-                                    <td>@FormatTime(row.RequestedAtUtc)</td>
-                                    <td>@FormatTime(row.ApprovedAtUtc)</td>
-                                    <td>@FormatTime(row.ExpiresAtUtc)</td>
-                                    <td>
-                                        @if (string.Equals(row.Status, "pending", StringComparison.OrdinalIgnoreCase))
-                                        {
-                                            <div class="row-actions">
-                                                <button type="button" @onclick="@(() => DecideUninstallAsync(row.Id, true))">승인</button>
-                                                <button type="button" class="dangerish" @onclick="@(() => DecideUninstallAsync(row.Id, false))">거절</button>
-                                            </div>
-                                        }
-                                        else
-                                        {
-                                            <text>-</text>
-                                        }
-                                    </td>
-                                </tr>
-                            }
-                        }
-                    </tbody>
-                </table>
-            }
-
-            <div class="pager">
-                <button type="button" disabled="@(!CanPrev)" @onclick="PrevPageAsync">이전</button>
-                <span>@PageFrom-@PageTo / @_totalCount</span>
-                <button type="button" disabled="@(!CanNext)" @onclick="NextPageAsync">다음</button>
-            </div>
-
-            @if (ShowPolicyForm)
-            {
-                <section class="card">
-                    <h2>@(_policyId is null ? "정책 생성" : "정책 수정")</h2>
-                    @if (!string.IsNullOrEmpty(_policyError))
-                    {
-                        <p class="error">@_policyError</p>
-                    }
-                    <div class="form-grid">
-                        <label>제품 이름
-                            <input maxlength="256" @bind="_policyProduct" />
-                        </label>
-                        <label>게시자
-                            <input maxlength="256" @bind="_policyPublisher" />
-                        </label>
-                        <label>버전 패턴
-                            <input maxlength="64" @bind="_policyVersion" />
-                        </label>
-                        <label>분류
-                            <select @bind="_policyClassification">
-                                <option value="white">white</option>
-                                <option value="managed">managed</option>
-                                <option value="black">black</option>
-                            </select>
-                        </label>
-                        @if (ShowPolicyLicense)
-                        {
-                            <label>기본 라이선스(managed)
-                                <select @bind="_policyLicense">
-                                    <option value="">미지정</option>
-                                    <option value="company">회사</option>
-                                    <option value="byo">BYO</option>
-                                </select>
-                            </label>
-                        }
-                        <label class="wide">메모
-                            <input maxlength="1024" @bind="_policyNotes" />
-                        </label>
-                        <label class="check">
-                            <input type="checkbox" @bind="_policyEnabled" />
-                            사용
-                        </label>
-                    </div>
-                    <div class="form-actions">
-                        <button type="button" class="primary" @onclick="SavePolicyAsync">저장</button>
-                        <button type="button" @onclick="ResetPolicyForm">새로 만들기</button>
-                        <button type="button" class="danger" disabled="@(_policyId is null)" @onclick="DeletePolicyAsync">삭제</button>
-                    </div>
-                </section>
-            }
-            }
-
         </section>
     }
-}
-
-@if (_drawerKind is not null)
-{
-    <div class="backdrop" @onclick="CloseDrawer"></div>
-    <aside class="drawer">
-        <div class="drawer-head">
-            <h2>@_drawerTitle</h2>
-            <button type="button" @onclick="CloseDrawer">닫기</button>
-        </div>
-        @if (!string.IsNullOrEmpty(_drawerError))
-        {
-            <p class="error">@_drawerError</p>
-        }
-        <label class="drawer-class-wrap">분류
-            <select @bind="_drawerClassFilter" @bind:after="LoadDrawerAsync">
-                @foreach (var value in SoftwareClasses)
-                {
-                    <option value="@value">@(value == "" ? "전체" : value)</option>
-                }
-            </select>
-        </label>
-        <div>
-            @if (_drawerKind == "device" && _drawerDevice is { } detail)
-            {
-                <p>@Dash(detail.HostName) / @Dash(detail.DomainName)</p>
-                <p class="meta">@Dash(detail.OperatingSystem) · 에이전트 @Dash(detail.AgentVersion)</p>
-                <p class="meta">heartbeat @FormatTime(detail.LastHeartbeatUtc) · inventory @FormatTime(detail.LastInventoryUtc)</p>
-                <table class="data">
-                    <thead>
-                        <tr>
-                            <th>이름</th><th>버전</th><th>게시자</th><th>분류</th><th>라이선스</th><th>범위</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        @if (detail.InstalledSoftware.Count == 0)
-                        {
-                            <tr><td class="empty" colspan="6">항목이 없습니다.</td></tr>
-                        }
-                        else
-                        {
-                            @foreach (var row in detail.InstalledSoftware)
-                            {
-                                <tr>
-                                    <td>@Dash(row.Name)</td>
-                                    <td>@Dash(row.Version)</td>
-                                    <td>@Dash(row.Publisher)</td>
-                                    <td>@Dash(row.Classification)</td>
-                                    <td>
-                                        @if (row.Classification == "managed")
-                                        {
-                                            <select class="license-source" value="@row.LicenseSourceOverride" @onchange="@(e => SaveLicenseSourceAsync(detail.DeviceCode, row.Name, e.Value?.ToString()))">
-                                                <option value="">기본값</option>
-                                                <option value="company">회사</option>
-                                                <option value="byo">BYO</option>
-                                            </select>
-                                        }
-                                        else
-                                        {
-                                            @LicenseLabel(row.LicenseSource)
-                                        }
-                                    </td>
-                                    <td>@Dash(row.DiscoveryScope)</td>
-                                </tr>
-                            }
-                        }
-                    </tbody>
-                </table>
-            }
-            else if (_drawerKind == "software")
-            {
-                <div class="drawer-form">
-                    <label>분류
-                        <select @bind="_drawerClassifyAs">
-                            <option value="white">white</option>
-                            <option value="managed">managed</option>
-                            <option value="black">black</option>
-                        </select>
-                    </label>
-                    @if (ShowDrawerClassifyLicense)
-                    {
-                        <label>기본 라이선스
-                            <select class="license-source" @bind="_drawerLicense">
-                                <option value="">미지정</option>
-                                <option value="company">회사</option>
-                                <option value="byo">BYO</option>
-                            </select>
-                        </label>
-                    }
-                    <button type="button" class="primary" @onclick="SaveDrawerClassificationAsync">분류 저장</button>
-                </div>
-                <p class="meta">설치 PC @_drawerSoftwareTotal 대</p>
-                <table class="data">
-                    <thead>
-                        <tr>
-                            <th>자산코드</th><th>호스트</th><th>OS</th><th>버전</th><th>게시자</th><th>분류</th><th>라이선스</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        @if (_drawerSoftwareDevices.Count == 0)
-                        {
-                            <tr><td class="empty" colspan="7">항목이 없습니다.</td></tr>
-                        }
-                        else
-                        {
-                            @foreach (var row in _drawerSoftwareDevices)
-                            {
-                                <tr>
-                                    <td>@Dash(row.DeviceCode)</td>
-                                    <td>@Dash(row.HostName)</td>
-                                    <td>@Dash(row.OperatingSystem)</td>
-                                    <td>@Dash(row.Version)</td>
-                                    <td>@Dash(row.Publisher)</td>
-                                    <td>@Dash(row.Classification)</td>
-                                    <td>
-                                        @if (row.Classification == "managed")
-                                        {
-                                            <select class="license-source" value="@row.LicenseSourceOverride" @onchange="@(e => SaveLicenseSourceAsync(row.DeviceCode, _drawerKey, e.Value?.ToString()))">
-                                                <option value="">기본값</option>
-                                                <option value="company">회사</option>
-                                                <option value="byo">BYO</option>
-                                            </select>
-                                        }
-                                        else
-                                        {
-                                            @LicenseLabel(row.LicenseSource)
-                                        }
-                                    </td>
-                                </tr>
-                            }
-                        }
-                    </tbody>
-                </table>
-            }
-        </div>
-    </aside>
 }

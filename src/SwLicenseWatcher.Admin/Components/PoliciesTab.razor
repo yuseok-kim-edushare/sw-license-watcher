@@ -1,0 +1,188 @@
+@inherits AdminTabComponent
+@using static DashboardPresentation
+@inject IJSRuntime Js
+
+<div class="toolbar">
+    <label>검색
+        <input type="search" maxlength="256" @bind="Search" @bind:event="oninput" @onkeydown="OnSearchKey" />
+    </label>
+    <label>분류
+        <select @bind="_classFilter">
+            @foreach (var value in PolicyClasses)
+            {
+                <option value="@value">@(value == "" ? "전체" : value)</option>
+            }
+        </select>
+    </label>
+    <button type="button" class="primary" @onclick="QueryAsync">조회</button>
+    <button type="button" @onclick="@(() => DownloadCsvAsync("/api/policies", "policies.csv"))">CSV 다운로드</button>
+</div>
+@if (!string.IsNullOrEmpty(Error))
+{
+    <p class="error">@Error</p>
+}
+<p class="meta">@Meta</p>
+<table class="data">
+    <thead><tr><th>ID</th><th>제품</th><th>게시자</th><th>버전 패턴</th><th>분류</th><th>기본 라이선스</th><th>사용</th><th>수정 시각</th></tr></thead>
+    <tbody>
+        @if (_policies.Count == 0)
+        {
+            <tr><td class="empty" colspan="8">항목이 없습니다.</td></tr>
+        }
+        else
+        {
+            @foreach (var row in _policies)
+            {
+                <tr>
+                    <td>@row.Id</td>
+                    <td><button type="button" class="linkish" @onclick="@(() => FillForm(row))">@Dash(row.ProductName)</button></td>
+                    <td>@Dash(row.Publisher)</td><td>@Dash(row.VersionPattern)</td><td>@Dash(ClassificationStorage(row.Classification))</td>
+                    <td>@LicenseLabel(row.DefaultLicenseSource)</td><td>@(row.Enabled ? "사용" : "중지")</td><td>@FormatTime(row.UpdatedAtUtc)</td>
+                </tr>
+            }
+        }
+    </tbody>
+</table>
+<Pagination From="PageFrom" To="PageTo" Total="TotalCount" CanPrev="CanPrev" CanNext="CanNext"
+            Previous="PrevPageAsync" Next="NextPageAsync" />
+
+<section class="card">
+    <h2>@(_id is null ? "정책 생성" : "정책 수정")</h2>
+    @if (!string.IsNullOrEmpty(_policyError))
+    {
+        <p class="error">@_policyError</p>
+    }
+    <div class="form-grid">
+        <label>제품 이름<input maxlength="256" @bind="_product" /></label>
+        <label>게시자<input maxlength="256" @bind="_publisher" /></label>
+        <label>버전 패턴<input maxlength="64" @bind="_version" /></label>
+        <label>분류
+            <select @bind="_classification">
+                <option value="@SoftwarePolicyClassificationNames.White">white</option>
+                <option value="@SoftwarePolicyClassificationNames.Managed">managed</option>
+                <option value="@SoftwarePolicyClassificationNames.Black">black</option>
+            </select>
+        </label>
+        @if (_classification == SoftwarePolicyClassificationNames.Managed)
+        {
+            <label>기본 라이선스(managed)
+                <select @bind="_license">
+                    <option value="">미지정</option><option value="@LicenseSourceNames.Company">회사</option><option value="@LicenseSourceNames.Byo">BYO</option>
+                </select>
+            </label>
+        }
+        <label class="wide">메모<input maxlength="1024" @bind="_notes" /></label>
+        <label class="check"><input type="checkbox" @bind="_enabled" />사용</label>
+    </div>
+    <div class="form-actions">
+        <button type="button" class="primary" @onclick="SaveAsync">저장</button>
+        <button type="button" @onclick="ResetForm">새로 만들기</button>
+        <button type="button" class="danger" disabled="@(_id is null)" @onclick="DeleteAsync">삭제</button>
+    </div>
+</section>
+
+@code {
+    private string _classFilter = "";
+    private IReadOnlyList<SoftwarePolicyEntry> _policies = [];
+    private string _policyError = "";
+    private long? _id;
+    private string _product = "";
+    private string _publisher = "";
+    private string _version = "";
+    private string _classification = SoftwarePolicyClassificationNames.Black;
+    private string _license = "";
+    private string _notes = "";
+    private bool _enabled = true;
+
+    public override Task RefreshAsync() => LoadAsync(async () =>
+    {
+        var data = await Api.GetPoliciesAsync(PagingQuery());
+        _policies = data.Items ?? [];
+        TotalCount = data.TotalCount;
+    });
+
+    protected override void AddFilters(List<string> parts)
+    {
+        if (!string.IsNullOrWhiteSpace(_classFilter))
+        {
+            parts.Add("classification=" + Uri.EscapeDataString(_classFilter));
+        }
+    }
+
+    private void FillForm(SoftwarePolicyEntry row)
+    {
+        _policyError = "";
+        _id = row.Id;
+        _product = row.ProductName;
+        _publisher = row.Publisher ?? "";
+        _version = row.VersionPattern ?? "";
+        _classification = ClassificationStorage(row.Classification);
+        _license = row.DefaultLicenseSource ?? "";
+        _notes = row.Notes ?? "";
+        _enabled = row.Enabled;
+    }
+
+    private void ResetForm()
+    {
+        _id = null;
+        _product = "";
+        _publisher = "";
+        _version = "";
+        _classification = SoftwarePolicyClassificationNames.Black;
+        _license = "";
+        _notes = "";
+        _enabled = true;
+        _policyError = "";
+    }
+
+    private async Task SaveAsync()
+    {
+        _policyError = "";
+        if (!SoftwarePolicyClassificationNames.TryParse(_classification, out var classification))
+        {
+            _policyError = "분류를 선택하세요.";
+            return;
+        }
+
+        var request = new SoftwarePolicyWriteRequest(
+            _product.Trim(),
+            EmptyToNull(_publisher),
+            EmptyToNull(_version),
+            classification,
+            EmptyToNull(_notes),
+            _enabled,
+            LicenseSourceNames.ForManagedPolicy(classification, EmptyToNull(_license)));
+        var succeeded = await Requests.RunAsync(async () =>
+        {
+            if (_id is { } id)
+            {
+                await Api.UpdatePolicyAsync(id, request);
+            }
+            else
+            {
+                await Api.CreatePolicyAsync(request);
+            }
+        }, message => _policyError = message);
+        if (succeeded)
+        {
+            ResetForm();
+            await RefreshAsync();
+        }
+    }
+
+    private async Task DeleteAsync()
+    {
+        if (_id is not { } id || !await Js.InvokeAsync<bool>("confirm", "이 정책을 삭제할까요?"))
+        {
+            return;
+        }
+
+        _policyError = "";
+        var succeeded = await Requests.RunAsync(() => Api.DeletePolicyAsync(id), message => _policyError = message);
+        if (succeeded)
+        {
+            ResetForm();
+            await RefreshAsync();
+        }
+    }
+}

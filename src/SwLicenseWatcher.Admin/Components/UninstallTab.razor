@@ -1,0 +1,72 @@
+@inherits AdminTabComponent
+@using static DashboardPresentation
+
+<div class="toolbar">
+    <label>검색
+        <input type="search" maxlength="256" @bind="Search" @bind:event="oninput" @onkeydown="OnSearchKey" />
+    </label>
+    <button type="button" class="primary" @onclick="QueryAsync">조회</button>
+</div>
+<p class="hint">승인하면 해당 PC 제거기에 일회용 해제 코드가 표시됩니다. 대시보드에는 코드를 보여 주지 않습니다.</p>
+@if (!string.IsNullOrEmpty(Error))
+{
+    <p class="error">@Error</p>
+}
+<p class="meta">@Meta</p>
+<table class="data">
+    <thead><tr><th>ID</th><th>자산코드</th><th>호스트</th><th>상태</th><th>요청</th><th>승인</th><th>만료</th><th>처리</th></tr></thead>
+    <tbody>
+        @if (_requests.Count == 0)
+        {
+            <tr><td class="empty" colspan="8">항목이 없습니다.</td></tr>
+        }
+        else
+        {
+            @foreach (var row in _requests)
+            {
+                <tr>
+                    <td>@row.Id</td><td>@Dash(row.DeviceCode)</td><td>@Dash(row.HostName)</td><td>@Dash(row.Status)</td>
+                    <td>@FormatTime(row.RequestedAtUtc)</td><td>@FormatTime(row.ApprovedAtUtc)</td><td>@FormatTime(row.ExpiresAtUtc)</td>
+                    <td>
+                        @if (string.Equals(row.Status, "pending", StringComparison.OrdinalIgnoreCase))
+                        {
+                            <div class="row-actions">
+                                <button type="button" @onclick="@(() => DecideAsync(row.Id, true))">승인</button>
+                                <button type="button" class="dangerish" @onclick="@(() => DecideAsync(row.Id, false))">거절</button>
+                            </div>
+                        }
+                        else
+                        {
+                            <text>-</text>
+                        }
+                    </td>
+                </tr>
+            }
+        }
+    </tbody>
+</table>
+<Pagination From="PageFrom" To="PageTo" Total="TotalCount" CanPrev="CanPrev" CanNext="CanNext"
+            Previous="PrevPageAsync" Next="NextPageAsync" />
+
+@code {
+    private IReadOnlyList<AdminUninstallRequest> _requests = [];
+
+    public override Task RefreshAsync() => LoadAsync(async () =>
+    {
+        var data = await Api.GetUninstallRequestsAsync(PagingQuery());
+        _requests = data.Items ?? [];
+        TotalCount = data.TotalCount;
+    });
+
+    private async Task DecideAsync(long id, bool approve)
+    {
+        Error = "";
+        var succeeded = await Requests.RunAsync(
+            () => approve ? Api.ApproveUninstallAsync(id) : Api.DenyUninstallAsync(id),
+            message => Error = message);
+        if (succeeded)
+        {
+            await RefreshAsync();
+        }
+    }
+}
