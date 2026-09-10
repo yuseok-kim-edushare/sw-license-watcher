@@ -1,0 +1,110 @@
+using Microsoft.Extensions.Options;
+using SwLicenseWatcher.Core;
+using SwLicenseWatcher.Infrastructure;
+
+namespace SwLicenseWatcher.Api;
+
+internal static class ApiServiceCollectionExtensions
+{
+    internal static IServiceCollection AddApiOptions(
+        this IServiceCollection services,
+        IConfiguration configuration)
+    {
+        services.AddOptions<SqlServerStorageOptions>()
+            .Bind(configuration.GetSection("Storage:SqlServer"))
+            .Validate(
+                options => !string.IsNullOrWhiteSpace(options.ConnectionString),
+                "Storage:SqlServer:ConnectionString is required.")
+            .Validate(options =>
+            {
+                try
+                {
+                    SqlIdentifierValidator.Validate(options);
+                    return true;
+                }
+                catch (ArgumentException)
+                {
+                    return false;
+                }
+            }, "All SQL identifiers must use letters, digits, and underscores, start with a letter or underscore, and be at most 128 characters.")
+            .ValidateOnStart();
+
+        services.AddOptions<DatabaseOptions>()
+            .Bind(configuration.GetSection("Database"));
+        services.AddOptions<ApiSecurityOptions>()
+            .Bind(configuration.GetSection("Security"))
+            .Validate(
+                ApiSecurityOptionsValidator.HasAtLeastOneUsableToken,
+                "At least one of Security:Token, Security:AgentToken, or Security:AdminToken must contain at least 32 characters.")
+            .Validate(
+                ApiSecurityOptionsValidator.HasValidConfiguredTokenLengths,
+                "Every configured Security token (Token, AgentToken, AdminToken) must contain at least 32 characters.")
+            .Validate(
+                ApiSecurityOptionsValidator.HasDistinctRoleTokens,
+                "Security:AgentToken must differ from Security:AdminToken and from Security:Token.")
+            .ValidateOnStart();
+        services.AddOptions<UpdateManifestOptions>()
+            .Bind(configuration.GetSection("Updates:Worker"))
+            .Validate(
+                options => !string.IsNullOrWhiteSpace(options.PackageUrl),
+                "Updates:Worker:PackageUrl is required.")
+            .Validate(
+                options => Uri.TryCreate(options.PackageUrl, UriKind.Absolute, out _),
+                "Updates:Worker:PackageUrl must be an absolute URI.")
+            .ValidateOnStart();
+        services.AddOptions<NotificationOptions>()
+            .Bind(configuration.GetSection("Notifications"))
+            .Validate(
+                options => !options.Webhook.Enabled
+                    || (Uri.TryCreate(options.Webhook.Url, UriKind.Absolute, out var webhookUri)
+                        && (webhookUri.Scheme == Uri.UriSchemeHttps || webhookUri.Scheme == Uri.UriSchemeHttp)),
+                "Notifications:Webhook:Url must be an absolute HTTP or HTTPS URI when webhook notifications are enabled.")
+            .Validate(
+                options => !options.Webhook.Enabled || options.Webhook.Timeout > TimeSpan.Zero,
+                "Notifications:Webhook:Timeout must be positive when webhook notifications are enabled.")
+            .Validate(
+                options => !options.Smtp.Enabled || !string.IsNullOrWhiteSpace(options.Smtp.Host),
+                "Notifications:Smtp:Host is required when SMTP notifications are enabled.")
+            .Validate(
+                options => !options.Smtp.Enabled || options.Smtp.Port is >= 1 and <= 65535,
+                "Notifications:Smtp:Port must be between 1 and 65535 when SMTP notifications are enabled.")
+            .Validate(
+                options => !options.Smtp.Enabled || !string.IsNullOrWhiteSpace(options.Smtp.From),
+                "Notifications:Smtp:From is required when SMTP notifications are enabled.")
+            .Validate(
+                options => !options.Smtp.Enabled || options.Smtp.Recipients.Any(recipient => !string.IsNullOrWhiteSpace(recipient)),
+                "Notifications:Smtp:Recipients must contain at least one address when SMTP notifications are enabled.")
+            .Validate(
+                options => options.StaleHeartbeatThreshold > TimeSpan.Zero,
+                "Notifications:StaleHeartbeatThreshold must be positive.")
+            .Validate(
+                options => options.StaleHeartbeatCheckInterval > TimeSpan.Zero,
+                "Notifications:StaleHeartbeatCheckInterval must be positive.")
+            .ValidateOnStart();
+
+        return services;
+    }
+
+    internal static IServiceCollection AddApiServices(this IServiceCollection services)
+    {
+        services.ConfigureHttpJsonOptions(options =>
+        {
+            options.SerializerOptions.TypeInfoResolverChain.Insert(0, ApiJsonSerializerContext.Default);
+            options.SerializerOptions.TypeInfoResolverChain.Insert(1, InventoryJsonSerializerContext.Default);
+        });
+        services.AddSingleton<InventoryMemoryStore>();
+        services.AddSwLicenseWatcherInfrastructure();
+        services.AddSingleton<WorkerUpdatePinService>();
+        services.AddHttpClient(WebhookNotificationSender.HttpClientName, (sp, client) =>
+        {
+            var timeout = sp.GetRequiredService<IOptions<NotificationOptions>>().Value.Webhook.Timeout;
+            client.Timeout = timeout > TimeSpan.Zero ? timeout : TimeSpan.FromSeconds(10);
+        });
+        services.AddSingleton<INotificationSender, WebhookNotificationSender>();
+        services.AddSingleton<INotificationSender, SmtpNotificationSender>();
+        services.AddSingleton<NotificationPublisher>();
+        services.AddHostedService<NotificationDispatchService>();
+        services.AddHostedService<StaleHeartbeatMonitor>();
+        return services;
+    }
+}

@@ -35,23 +35,8 @@ public static class BearerTokenAuthenticator
         var matchesLegacy = MatchesConfiguredToken(suppliedHash, security.Token);
         var matchesAgent = MatchesConfiguredToken(suppliedHash, security.AgentToken);
         var matchesAdmin = MatchesConfiguredToken(suppliedHash, security.AdminToken);
-        var agentEndpoint = IsAgentEndpoint(requestPath, httpMethod);
+        var agentEndpoint = EndpointPolicies.IsAgentEndpoint(requestPath, httpMethod);
         return matchesLegacy | matchesAdmin | (matchesAgent & agentEndpoint);
-    }
-
-    internal static bool IsAgentEndpoint(PathString path) =>
-        IsAgentEndpoint(path, HttpMethods.Get);
-
-    internal static bool IsAgentEndpoint(PathString path, string httpMethod)
-    {
-        if (path.Equals("/api/updates/worker/manifest", StringComparison.OrdinalIgnoreCase))
-        {
-            return HttpMethods.IsGet(httpMethod);
-        }
-
-        return path.Equals("/api/inventory/snapshots", StringComparison.OrdinalIgnoreCase) |
-            path.Equals("/api/agents/heartbeats", StringComparison.OrdinalIgnoreCase) |
-            path.StartsWithSegments("/api/agents/uninstall-requests", StringComparison.OrdinalIgnoreCase);
     }
 
     private static bool MatchesConfiguredToken(byte[] suppliedHash, string expectedToken)

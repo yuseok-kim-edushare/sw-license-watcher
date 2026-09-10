@@ -152,7 +152,7 @@ public class BearerTokenAuthenticatorTests
     [InlineData("/API/AGENTS/UNINSTALL-REQUESTS/3/CONSUME")]
     public void IsAgentEndpoint_recognizes_agent_paths_case_insensitively(string path)
     {
-        Assert.True(BearerTokenAuthenticator.IsAgentEndpoint(path));
+        Assert.True(EndpointPolicies.IsAgentEndpoint(path, HttpMethods.Get));
     }
 
     [Theory]
@@ -163,14 +163,14 @@ public class BearerTokenAuthenticatorTests
     [InlineData("/health")]
     public void IsAgentEndpoint_rejects_non_agent_paths(string path)
     {
-        Assert.False(BearerTokenAuthenticator.IsAgentEndpoint(path));
+        Assert.False(EndpointPolicies.IsAgentEndpoint(path, HttpMethods.Get));
     }
 
     [Fact]
     public void IsAgentEndpoint_treats_manifest_put_as_admin_only()
     {
-        Assert.True(BearerTokenAuthenticator.IsAgentEndpoint("/api/updates/worker/manifest", HttpMethods.Get));
-        Assert.False(BearerTokenAuthenticator.IsAgentEndpoint("/api/updates/worker/manifest", HttpMethods.Put));
+        Assert.True(EndpointPolicies.IsAgentEndpoint(AgentPaths.WorkerManifest, HttpMethods.Get));
+        Assert.False(EndpointPolicies.IsAgentEndpoint(AgentPaths.WorkerManifest, HttpMethods.Put));
     }
 
     private static ApiSecurityOptions RoleSeparated() =>
