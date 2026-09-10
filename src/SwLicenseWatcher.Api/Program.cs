@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Http.Features;
 using Microsoft.Extensions.Options;
 using SwLicenseWatcher.Api;
+using SwLicenseWatcher.Application;
 using SwLicenseWatcher.Core;
 
 #if NATIVE_AOT
@@ -91,8 +92,16 @@ builder.Services.AddSingleton<SqlServerSchemaApplicator>();
 builder.Services.AddSingleton<InventoryMemoryStore>();
 builder.Services.AddSingleton(sp => sp.GetRequiredService<IOptions<SqlServerStorageOptions>>().Value);
 builder.Services.AddSingleton<SqlServerInventoryRepository>();
+builder.Services.AddSingleton<IHealthProbe>(sp => sp.GetRequiredService<SqlServerInventoryRepository>());
+builder.Services.AddSingleton<ISnapshotRepository>(sp => sp.GetRequiredService<SqlServerInventoryRepository>());
+builder.Services.AddSingleton<IHeartbeatRepository>(sp => sp.GetRequiredService<SqlServerInventoryRepository>());
+builder.Services.AddSingleton<IDeviceQuery>(sp => sp.GetRequiredService<SqlServerInventoryRepository>());
+builder.Services.AddSingleton<ISoftwareQuery>(sp => sp.GetRequiredService<SqlServerInventoryRepository>());
+builder.Services.AddSingleton<IViolationQuery>(sp => sp.GetRequiredService<SqlServerInventoryRepository>());
+builder.Services.AddSingleton<IPolicyStore>(sp => sp.GetRequiredService<SqlServerInventoryRepository>());
+builder.Services.AddSingleton<IUninstallRequestStore>(sp => sp.GetRequiredService<SqlServerInventoryRepository>());
+builder.Services.AddSingleton<IWorkerUpdatePinStore>(sp => sp.GetRequiredService<SqlServerInventoryRepository>());
 builder.Services.AddSingleton<WorkerUpdatePinService>();
-builder.Services.AddSingleton<IStaleHeartbeatNotificationStore>(sp => sp.GetRequiredService<SqlServerInventoryRepository>());
 builder.Services.AddHttpClient(WebhookNotificationSender.HttpClientName, (sp, client) =>
 {
     var timeout = sp.GetRequiredService<IOptions<NotificationOptions>>().Value.Webhook.Timeout;
@@ -174,13 +183,13 @@ app.UseAdminDashboard();
 
 app.MapGet("/", () => Results.Redirect("/api/design"));
 app.MapGet("/health", async (
-    SqlServerInventoryRepository repository,
+    IHealthProbe healthProbe,
     ILoggerFactory loggerFactory,
     CancellationToken cancellationToken) =>
 {
     try
     {
-        await repository.ProbeAsync(cancellationToken);
+        await healthProbe.ProbeAsync(cancellationToken);
         return Results.Ok(new HealthResponse("Healthy", DateTimeOffset.UtcNow));
     }
     catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -237,7 +246,7 @@ app.MapPut("/api/updates/worker/manifest", async (
 app.MapPost("/api/inventory/snapshots", async (
     InventoryIngestionRequest request,
     InventoryMemoryStore store,
-    SqlServerInventoryRepository repository,
+    ISnapshotRepository repository,
     NotificationPublisher notifications,
     CancellationToken cancellationToken) =>
 {
@@ -258,7 +267,7 @@ app.MapPost("/api/inventory/snapshots", async (
 app.MapPost("/api/agents/heartbeats", async (
     AgentHeartbeat heartbeat,
     InventoryMemoryStore store,
-    SqlServerInventoryRepository repository,
+    IHeartbeatRepository repository,
     CancellationToken cancellationToken) =>
 {
     if (!InventorySnapshotValidator.TryValidate(heartbeat, out var validationError))
@@ -275,14 +284,14 @@ app.MapInventoryQuery();
 app.MapPolicyQuery();
 app.MapUninstallRequests();
 
-app.MapGet("/api/policies/{id:long}", async (long id, SqlServerInventoryRepository repository, CancellationToken cancellationToken) =>
+app.MapGet("/api/policies/{id:long}", async (long id, IPolicyStore repository, CancellationToken cancellationToken) =>
 {
     var policy = await repository.GetPolicyAsync(id, cancellationToken);
     return policy is null ? Results.NotFound() : Results.Ok(policy);
 });
 app.MapPost("/api/policies", async (
     SoftwarePolicyWriteRequest request,
-    SqlServerInventoryRepository repository,
+    IPolicyStore repository,
     CancellationToken cancellationToken) =>
 {
     if (!SoftwarePolicyValidator.TryValidate(request, out var validationError))
@@ -296,7 +305,7 @@ app.MapPost("/api/policies", async (
 app.MapPut("/api/policies/{id:long}", async (
     long id,
     SoftwarePolicyWriteRequest request,
-    SqlServerInventoryRepository repository,
+    IPolicyStore repository,
     CancellationToken cancellationToken) =>
 {
     if (!SoftwarePolicyValidator.TryValidate(request, out var validationError))
@@ -307,7 +316,7 @@ app.MapPut("/api/policies/{id:long}", async (
     var updated = await repository.UpdatePolicyAsync(id, request, cancellationToken);
     return updated is null ? Results.NotFound() : Results.Ok(updated);
 });
-app.MapDelete("/api/policies/{id:long}", async (long id, SqlServerInventoryRepository repository, CancellationToken cancellationToken) =>
+app.MapDelete("/api/policies/{id:long}", async (long id, IPolicyStore repository, CancellationToken cancellationToken) =>
     await repository.DeletePolicyAsync(id, cancellationToken) ? Results.NoContent() : Results.NotFound());
 
 await app.Services.GetRequiredService<SqlServerSchemaApplicator>()

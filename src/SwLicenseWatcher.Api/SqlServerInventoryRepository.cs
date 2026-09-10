@@ -1,11 +1,21 @@
 using System.Collections.Concurrent;
 using System.Data;
 using Microsoft.Data.SqlClient;
+using SwLicenseWatcher.Application;
 using SwLicenseWatcher.Core;
 
 namespace SwLicenseWatcher.Api;
 
-public sealed class SqlServerInventoryRepository(SqlServerStorageOptions options) : IStaleHeartbeatNotificationStore
+public sealed class SqlServerInventoryRepository(SqlServerStorageOptions options) :
+    IHealthProbe,
+    ISnapshotRepository,
+    IHeartbeatRepository,
+    IDeviceQuery,
+    ISoftwareQuery,
+    IViolationQuery,
+    IPolicyStore,
+    IUninstallRequestStore,
+    IWorkerUpdatePinStore
 {
     public async Task ProbeAsync(CancellationToken cancellationToken)
     {

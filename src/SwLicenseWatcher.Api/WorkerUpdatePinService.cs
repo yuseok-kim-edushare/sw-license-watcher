@@ -1,11 +1,12 @@
 using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.Options;
+using SwLicenseWatcher.Application;
 using SwLicenseWatcher.Core;
 
 namespace SwLicenseWatcher.Api;
 
 public sealed class WorkerUpdatePinService(
-    SqlServerInventoryRepository repository,
+    IWorkerUpdatePinStore repository,
     IOptions<UpdateManifestOptions> options,
     IOptions<SqlServerStorageOptions> storage,
     ILogger<WorkerUpdatePinService> logger)

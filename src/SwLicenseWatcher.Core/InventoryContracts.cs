@@ -125,3 +125,17 @@ public sealed record UpdateManifest(
     string Sha256,
     bool RequireAuthenticode,
     int RollbackAfterMinutes);
+
+public sealed record NewBlacklistViolation(
+    InstalledSoftwareEntry Software,
+    SoftwarePolicyEntry Policy);
+
+public sealed record SnapshotSaveResult(
+    bool Applied,
+    IReadOnlyList<InstalledSoftwareEntry> PreviousSoftware,
+    IReadOnlyList<NewBlacklistViolation> NewViolations);
+
+public sealed record StalePcHeartbeat(
+    string DeviceCode,
+    string HostName,
+    DateTimeOffset LastHeartbeatUtc);

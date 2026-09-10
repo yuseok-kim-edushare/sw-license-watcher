@@ -2,6 +2,7 @@ using System.Collections.Concurrent;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using SwLicenseWatcher.Api;
+using SwLicenseWatcher.Application;
 using SwLicenseWatcher.Core;
 
 namespace SwLicenseWatcher.Api.Tests;
@@ -193,7 +194,7 @@ public class StaleHeartbeatMonitorTests
     private static DateTimeOffset Utc(int year, int month, int day, int hour = 0) =>
         new(year, month, day, hour, 0, 0, TimeSpan.Zero);
 
-    internal sealed class InMemoryStaleHeartbeatStore : IStaleHeartbeatNotificationStore
+    internal sealed class InMemoryStaleHeartbeatStore : IHeartbeatRepository
     {
         private readonly object _gate = new();
         private readonly Dictionary<string, StalePcHeartbeat> _pcs = new(StringComparer.OrdinalIgnoreCase);
@@ -229,6 +230,26 @@ public class StaleHeartbeatMonitorTests
             lock (_gate)
             {
                 return _notifiedAt.TryGetValue(deviceCode, out var notifiedAt) ? notifiedAt : null;
+            }
+        }
+
+        public Task SaveHeartbeatAsync(AgentHeartbeat heartbeat, CancellationToken cancellationToken)
+        {
+            RecordHeartbeat(heartbeat.DeviceCode, heartbeat.HostName, heartbeat.ReportedAtUtc);
+            return Task.CompletedTask;
+        }
+
+        public Task<List<StalePcHeartbeat>> GetStaleHeartbeatsAsync(
+            DateTimeOffset cutoff,
+            CancellationToken cancellationToken)
+        {
+            lock (_gate)
+            {
+                return Task.FromResult(_pcs.Values
+                    .Where(pc => pc.LastHeartbeatUtc < cutoff)
+                    .OrderBy(pc => pc.LastHeartbeatUtc)
+                    .ThenBy(pc => pc.DeviceCode, StringComparer.OrdinalIgnoreCase)
+                    .ToList());
             }
         }
 

@@ -1,11 +1,12 @@
 using System.Collections.Concurrent;
 using Microsoft.Extensions.Options;
+using SwLicenseWatcher.Application;
 using SwLicenseWatcher.Core;
 
 namespace SwLicenseWatcher.Api;
 
 public sealed class StaleHeartbeatMonitor(
-    IStaleHeartbeatNotificationStore store,
+    IHeartbeatRepository store,
     NotificationPublisher publisher,
     IOptions<NotificationOptions> options,
     ILogger<StaleHeartbeatMonitor> logger) : BackgroundService

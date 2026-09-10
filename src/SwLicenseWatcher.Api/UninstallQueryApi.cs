@@ -1,3 +1,4 @@
+using SwLicenseWatcher.Application;
 using SwLicenseWatcher.Core;
 
 namespace SwLicenseWatcher.Api;
@@ -8,7 +9,7 @@ internal static class UninstallQueryApi
     {
         app.MapPost("/api/agents/uninstall-requests", async (
             UninstallRequestCreateRequest request,
-            SqlServerInventoryRepository repository,
+            IUninstallRequestStore repository,
             CancellationToken cancellationToken) =>
         {
             if (!TryValidateDeviceCode(request.DeviceCode, out var deviceCode, out var error))
@@ -25,7 +26,7 @@ internal static class UninstallQueryApi
         app.MapGet("/api/agents/uninstall-requests/{id:long}", async (
             long id,
             string? deviceCode,
-            SqlServerInventoryRepository repository,
+            IUninstallRequestStore repository,
             CancellationToken cancellationToken) =>
         {
             if (!TryValidateDeviceCode(deviceCode, out var normalizedDeviceCode, out var error))
@@ -40,7 +41,7 @@ internal static class UninstallQueryApi
         app.MapPost("/api/agents/uninstall-requests/{id:long}/consume", async (
             long id,
             UninstallRequestConsumeRequest request,
-            SqlServerInventoryRepository repository,
+            IUninstallRequestStore repository,
             CancellationToken cancellationToken) =>
         {
             if (!TryValidateDeviceCode(request.DeviceCode, out var deviceCode, out var deviceError))
@@ -59,7 +60,7 @@ internal static class UninstallQueryApi
         });
 
         app.MapGet("/api/uninstall-requests", async (
-            SqlServerInventoryRepository repository,
+            IUninstallRequestStore repository,
             int? skip,
             int? take,
             string? search,
@@ -78,7 +79,7 @@ internal static class UninstallQueryApi
 
         app.MapPost("/api/uninstall-requests/{id:long}/approve", async (
             long id,
-            SqlServerInventoryRepository repository,
+            IUninstallRequestStore repository,
             CancellationToken cancellationToken) =>
             await repository.ApproveUninstallRequestAsync(id, cancellationToken)
                 ? Results.NoContent()
@@ -86,7 +87,7 @@ internal static class UninstallQueryApi
 
         app.MapPost("/api/uninstall-requests/{id:long}/deny", async (
             long id,
-            SqlServerInventoryRepository repository,
+            IUninstallRequestStore repository,
             CancellationToken cancellationToken) =>
             await repository.DenyUninstallRequestAsync(id, cancellationToken)
                 ? Results.NoContent()

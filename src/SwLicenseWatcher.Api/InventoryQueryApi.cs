@@ -1,3 +1,4 @@
+using SwLicenseWatcher.Application;
 using SwLicenseWatcher.Core;
 
 namespace SwLicenseWatcher.Api;
@@ -12,7 +13,7 @@ internal static class InventoryQueryApi
     public static void MapInventoryQuery(this WebApplication app)
     {
         app.MapGet("/api/inventory/devices", async (
-            SqlServerInventoryRepository repository,
+            IDeviceQuery repository,
             int? skip,
             int? take,
             string? search,
@@ -59,7 +60,7 @@ internal static class InventoryQueryApi
         app.MapGet("/api/inventory/snapshots/{deviceCode}", GetDeviceAsync);
 
         app.MapGet("/api/inventory/software", async (
-            SqlServerInventoryRepository repository,
+            ISoftwareQuery repository,
             int? skip,
             int? take,
             string? search,
@@ -104,7 +105,7 @@ internal static class InventoryQueryApi
 
         app.MapGet("/api/inventory/software/{name}/devices", async (
             string name,
-            SqlServerInventoryRepository repository,
+            ISoftwareQuery repository,
             int? skip,
             int? take,
             string? classification,
@@ -159,7 +160,7 @@ internal static class InventoryQueryApi
 
         app.MapPut("/api/inventory/software/classifications", async (
             SoftwareClassificationBatchWriteRequest request,
-            SqlServerInventoryRepository repository,
+            IPolicyStore repository,
             CancellationToken cancellationToken) =>
         {
             if (!SoftwarePolicyValidator.TryValidateClassificationBatch(request, out var items, out var validationError))
@@ -174,7 +175,7 @@ internal static class InventoryQueryApi
         app.MapPut("/api/inventory/software/{name}/classification", async (
             string name,
             SoftwareClassificationWriteRequest request,
-            SqlServerInventoryRepository repository,
+            IPolicyStore repository,
             CancellationToken cancellationToken) =>
         {
             if (!SoftwarePolicyValidator.TryValidateSoftwareName(name, out var productName, out var nameError))
@@ -195,7 +196,7 @@ internal static class InventoryQueryApi
             string deviceCode,
             string name,
             DeviceSoftwareLicenseSourceWriteRequest request,
-            SqlServerInventoryRepository repository,
+            IPolicyStore repository,
             CancellationToken cancellationToken) =>
         {
             if (string.IsNullOrWhiteSpace(deviceCode))
@@ -222,7 +223,7 @@ internal static class InventoryQueryApi
 
     private static async Task<IResult> GetDeviceAsync(
         string deviceCode,
-        SqlServerInventoryRepository repository,
+        IDeviceQuery repository,
         string? classification,
         string? format,
         CancellationToken cancellationToken)

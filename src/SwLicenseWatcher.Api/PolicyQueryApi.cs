@@ -1,4 +1,5 @@
 using System.Globalization;
+using SwLicenseWatcher.Application;
 using SwLicenseWatcher.Core;
 
 namespace SwLicenseWatcher.Api;
@@ -8,7 +9,7 @@ internal static class PolicyQueryApi
     public static void MapPolicyQuery(this WebApplication app)
     {
         app.MapGet("/api/policies", async (
-            SqlServerInventoryRepository repository,
+            IPolicyStore repository,
             int? skip,
             int? take,
             string? search,
@@ -43,7 +44,7 @@ internal static class PolicyQueryApi
         });
 
         app.MapGet("/api/violations", async (
-            SqlServerInventoryRepository repository,
+            IViolationQuery repository,
             int? skip,
             int? take,
             string? search,
