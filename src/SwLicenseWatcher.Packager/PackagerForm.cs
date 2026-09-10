@@ -4,16 +4,17 @@ namespace SwLicenseWatcher.Packager;
 
 internal sealed class PackagerForm : Form
 {
+    private readonly PackagingWorkflow _workflow;
     private readonly TextBox _serverUrl;
     private readonly TextBox _agentToken;
     private readonly TextBox _releaseZip;
     private readonly TextBox _output;
     private readonly Label _status;
     private readonly Button _build;
-    private string? _extractedAgents;
 
-    public PackagerForm()
+    public PackagerForm(PackagingWorkflow workflow)
     {
+        _workflow = workflow;
         Text = "SW License Watcher 패키저";
         FormBorderStyle = FormBorderStyle.FixedDialog;
         MaximizeBox = false;
@@ -117,53 +118,13 @@ internal sealed class PackagerForm : Form
         try
         {
             var searchRoot = Path.GetDirectoryName(Environment.ProcessPath) ?? AppContext.BaseDirectory;
-            PackagerPaths.TryDiscover(searchRoot, out var bundle, out _);
-            PackagerPaths.TryDiscover(AppContext.BaseDirectory, out var baseBundle, out _);
-
-            var launcher = bundle.LauncherStubPath ?? baseBundle.LauncherStubPath;
-            var setupUi = bundle.SetupUiPath ?? baseBundle.SetupUiPath;
-            var worker = bundle.WorkerDirectory ?? baseBundle.WorkerDirectory;
-            var watchdog = bundle.WatchdogDirectory ?? baseBundle.WatchdogDirectory;
-
-            if (!string.IsNullOrWhiteSpace(_releaseZip.Text))
-            {
-                _extractedAgents?.LetCleanup();
-                var extractDir = Path.Combine(Path.GetTempPath(), "SwLicenseWatcher-packager", Guid.NewGuid().ToString("N"));
-                ReleaseLayout.ExtractAgentsFromReleaseZip(_releaseZip.Text.Trim(), extractDir);
-                ReleaseLayout.TryFindAgents(extractDir, out var extractedWorker, out var extractedWatchdog);
-                worker = extractedWorker;
-                watchdog = extractedWatchdog;
-                _extractedAgents = extractDir;
-            }
-
-            if (string.IsNullOrWhiteSpace(launcher) || !File.Exists(launcher))
-            {
-                throw new InvalidOperationException("런처 뼈대(SwLicenseWatcher-Setup.exe)를 패키저 옆에서 찾지 못했습니다.");
-            }
-
-            if (AttachedPayload.HasPayload(launcher))
-            {
-                throw new InvalidOperationException("선택한 Setup.exe에 이미 페이로드가 붙어 있습니다. 릴리스의 빈 런처 스텁을 쓰세요.");
-            }
-
-            if (string.IsNullOrWhiteSpace(setupUi) || !File.Exists(setupUi))
-            {
-                throw new InvalidOperationException("setup-ui/SwLicenseWatcher.Setup.exe 를 찾지 못했습니다.");
-            }
-
-            if (string.IsNullOrWhiteSpace(worker) || string.IsNullOrWhiteSpace(watchdog))
-            {
-                throw new InvalidOperationException("에이전트 폴더 또는 공식 Release ZIP이 필요합니다.");
-            }
-
-            CompanyPackager.Build(
+            _workflow.Build(new PackagingRequest(
                 _serverUrl.Text,
                 _agentToken.Text,
-                launcher,
-                setupUi,
-                worker,
-                watchdog,
-                _output.Text.Trim());
+                _releaseZip.Text,
+                _output.Text,
+                searchRoot,
+                AppContext.BaseDirectory));
 
             _status.ForeColor = Color.DarkGreen;
             _status.Text = "만들었습니다: " + _output.Text.Trim();
@@ -185,12 +146,6 @@ internal sealed class PackagerForm : Form
         }
     }
 
-    protected override void OnFormClosed(FormClosedEventArgs e)
-    {
-        _extractedAgents?.LetCleanup();
-        base.OnFormClosed(e);
-    }
-
     private static Label LabelAt(int x, int y, string text) => new()
     {
         AutoSize = true,
@@ -203,24 +158,4 @@ internal sealed class PackagerForm : Form
         Location = new Point(x, y),
         Size = new Size(width, 27)
     };
-}
-
-file static class DirectoryCleanup
-{
-    public static void LetCleanup(this string path)
-    {
-        try
-        {
-            if (Directory.Exists(path))
-            {
-                Directory.Delete(path, recursive: true);
-            }
-        }
-        catch (IOException)
-        {
-        }
-        catch (UnauthorizedAccessException)
-        {
-        }
-    }
 }

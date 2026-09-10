@@ -5,7 +5,7 @@ using System.Text.Json;
 
 namespace SwLicenseWatcher.Setup.Core;
 
-public sealed class UninstallApiClient(HttpClient httpClient)
+public sealed class UninstallApiClient(HttpClient httpClient) : IUninstallApiClient
 {
     public async Task<UninstallRequestCreated> CreateAsync(string deviceCode, CancellationToken cancellationToken)
     {

@@ -25,6 +25,17 @@ catch (Exception ex)
     return;
 }
 
-Application.Run(arguments.Uninstall
-    ? new UninstallForm(settings, arguments)
-    : new InstallForm(settings, arguments, payloadDirectory));
+var setup = new AgentSetupOrchestrator(new WindowsAgentMachineIntegration());
+if (arguments.Uninstall)
+{
+    using var http = UninstallApiClient.Create(settings.ServerBaseUrl, settings.AgentToken);
+    var uninstall = new UninstallOrchestrator(
+        new UninstallApiClient(http),
+        new InstalledDeviceCodeReader(),
+        setup);
+    Application.Run(new UninstallForm(uninstall));
+}
+else
+{
+    Application.Run(new InstallForm(settings, payloadDirectory, arguments.SourceExePath, setup));
+}

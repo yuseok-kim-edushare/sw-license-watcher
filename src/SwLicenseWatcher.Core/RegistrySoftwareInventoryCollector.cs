@@ -6,11 +6,6 @@ using System.Security.Principal;
 
 namespace SwLicenseWatcher.Core;
 
-public interface ISoftwareInventoryCollector
-{
-    Task<IReadOnlyCollection<InstalledSoftwareEntry>> CollectAsync(CancellationToken cancellationToken);
-}
-
 public sealed class RegistrySoftwareInventoryCollector(ILogger<RegistrySoftwareInventoryCollector> logger) : ISoftwareInventoryCollector
 {
     public Task<IReadOnlyCollection<InstalledSoftwareEntry>> CollectAsync(CancellationToken cancellationToken)

@@ -5,18 +5,24 @@ namespace SwLicenseWatcher.Setup;
 internal sealed class InstallForm : Form
 {
     private readonly CompanySettings _settings;
-    private readonly SetupArguments _arguments;
+    private readonly AgentSetupOrchestrator _setup;
+    private readonly string? _sourceExePath;
     private readonly string _payloadDirectory;
     private readonly TextBox _assetCode;
     private readonly Label _preview;
     private readonly Label _status;
     private readonly Button _install;
 
-    public InstallForm(CompanySettings settings, SetupArguments arguments, string payloadDirectory)
+    public InstallForm(
+        CompanySettings settings,
+        string payloadDirectory,
+        string? sourceExePath,
+        AgentSetupOrchestrator setup)
     {
         _settings = settings;
-        _arguments = arguments;
         _payloadDirectory = payloadDirectory;
+        _sourceExePath = sourceExePath;
+        _setup = setup;
 
         Text = SetupPaths.ProductName + " 설치";
         FormBorderStyle = FormBorderStyle.FixedDialog;
@@ -106,7 +112,7 @@ internal sealed class InstallForm : Form
         UseWaitCursor = true;
         try
         {
-            AgentSetupService.Install(_settings, _payloadDirectory, deviceCode, _arguments.SourceExePath);
+            _setup.Install(_settings, _payloadDirectory, deviceCode, _sourceExePath);
             _status.ForeColor = Color.DarkGreen;
             _status.Text = "설치가 끝났습니다. 서비스가 실행 중입니다.";
             MessageBox.Show(

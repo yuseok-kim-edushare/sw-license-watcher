@@ -4,12 +4,6 @@ using System.Runtime.Versioning;
 
 namespace SwLicenseWatcher.Core;
 
-public interface ILocalStateProtector
-{
-    string Protect(string plaintext);
-    string Unprotect(string protectedPayload);
-}
-
 public sealed class DpapiLocalStateProtector : ILocalStateProtector
 {
     private readonly LocalStateStoreOptions _options;

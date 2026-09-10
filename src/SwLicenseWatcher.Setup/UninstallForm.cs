@@ -4,16 +4,15 @@ namespace SwLicenseWatcher.Setup;
 
 internal sealed class UninstallForm : Form
 {
-    private readonly CompanySettings _settings;
+    private readonly UninstallOrchestrator _uninstall;
     private readonly Label _status;
     private readonly Button _start;
     private readonly Button _cancelWait;
     private CancellationTokenSource? _wait;
 
-    public UninstallForm(CompanySettings settings, SetupArguments arguments)
+    public UninstallForm(UninstallOrchestrator uninstall)
     {
-        _settings = settings;
-        _ = arguments;
+        _uninstall = uninstall;
 
         Text = SetupPaths.ProductName + " 제거";
         FormBorderStyle = FormBorderStyle.FixedDialog;
@@ -68,53 +67,16 @@ internal sealed class UninstallForm : Form
         var token = _wait.Token;
         try
         {
-            var deviceCode = AgentSetupService.ReadInstalledDeviceCode(Environment.MachineName);
-            using var http = UninstallApiClient.Create(_settings.ServerBaseUrl, _settings.AgentToken);
-            var client = new UninstallApiClient(http);
-            _status.Text = "제거 요청을 보내는 중입니다...";
-            var created = await client.CreateAsync(deviceCode, token);
-            _status.Text = $"관리자 승인 대기 중 (요청 {created.Id}, {deviceCode})...";
-
-            var deadline = DateTime.UtcNow.AddHours(2);
-            while (DateTime.UtcNow < deadline)
-            {
-                token.ThrowIfCancellationRequested();
-                var status = await client.GetAsync(created.Id, deviceCode, token);
-                if (string.Equals(status.Status, "approved", StringComparison.OrdinalIgnoreCase))
-                {
-                    if (string.IsNullOrWhiteSpace(status.Code))
-                    {
-                        throw new InvalidOperationException("승인은 되었지만 해제 코드가 없습니다.");
-                    }
-
-                    await client.ConsumeAsync(created.Id, deviceCode, status.Code, token);
-                    AgentSetupService.RemoveInstalledFiles(removeState: false);
-                    _status.ForeColor = Color.DarkGreen;
-                    _status.Text = "제거가 끝났습니다.";
-                    MessageBox.Show(
-                        "서비스와 설치 파일을 제거했습니다.",
-                        SetupPaths.ProductName,
-                        MessageBoxButtons.OK,
-                        MessageBoxIcon.Information);
-                    Close();
-                    return;
-                }
-
-                if (string.Equals(status.Status, "denied", StringComparison.OrdinalIgnoreCase))
-                {
-                    throw new InvalidOperationException("제거 요청이 거절되었습니다. 서비스는 그대로입니다.");
-                }
-
-                if (string.Equals(status.Status, "expired", StringComparison.OrdinalIgnoreCase) ||
-                    string.Equals(status.Status, "consumed", StringComparison.OrdinalIgnoreCase))
-                {
-                    throw new InvalidOperationException($"제거 권한이 {status.Status} 상태입니다. 서비스는 그대로입니다.");
-                }
-
-                await Task.Delay(TimeSpan.FromSeconds(3), token);
-            }
-
-            throw new TimeoutException("관리자 승인 대기 시간이 지났습니다. 서비스는 그대로입니다.");
+            var progress = new Progress<UninstallProgress>(update => _status.Text = update.Message);
+            await _uninstall.RequestAndUninstallAsync(Environment.MachineName, progress, token);
+            _status.ForeColor = Color.DarkGreen;
+            _status.Text = "제거가 끝났습니다.";
+            MessageBox.Show(
+                "서비스와 설치 파일을 제거했습니다.",
+                SetupPaths.ProductName,
+                MessageBoxButtons.OK,
+                MessageBoxIcon.Information);
+            Close();
         }
         catch (OperationCanceledException)
         {

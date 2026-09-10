@@ -6,6 +6,7 @@ namespace SwLicenseWatcher.Setup.Core;
     PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase,
     PropertyNameCaseInsensitive = true,
     WriteIndented = true)]
+[JsonSerializable(typeof(string))]
 [JsonSerializable(typeof(CompanySettings))]
 [JsonSerializable(typeof(UninstallRequestCreateBody))]
 [JsonSerializable(typeof(UninstallRequestCreated))]
