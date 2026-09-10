@@ -53,7 +53,7 @@ public sealed class LocalSnapshotQueue(
                 var protectedPayload = await File.ReadAllTextAsync(path, cancellationToken);
                 var json = protector.Unprotect(protectedPayload);
                 var snapshot = ReadValidatedSnapshot(json);
-                var publishResult = await apiClient.PublishSnapshotAsync(snapshot, cancellationToken);
+                var publishResult = (await apiClient.PublishSnapshotAsync(snapshot, cancellationToken)).Result;
                 if (publishResult == AgentPublishResult.RetryableFailure)
                 {
                     return false;

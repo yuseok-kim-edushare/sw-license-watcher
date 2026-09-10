@@ -260,6 +260,27 @@ button.dangerish:hover:not(:disabled) { color: var(--danger); border-color: var(
 
 .drawer-form button { min-width: 72px; }
 
+.drawer-form.stack {
+  flex-direction: column;
+  align-items: stretch;
+}
+
+.drawer-form-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: flex-end;
+}
+
+.drawer-form textarea {
+  display: block;
+  width: 100%;
+  min-height: 72px;
+  resize: vertical;
+}
+
+.drawer-form .wide { width: 100%; }
+
 select.license-source { min-width: 120px; }
 
 @media (max-width: 700px) {

@@ -41,6 +41,15 @@ public interface IDeviceQuery
         string deviceCode,
         string? classification,
         CancellationToken cancellationToken);
+
+    Task<string?> GetAssignedHostNameAsync(
+        string deviceCode,
+        CancellationToken cancellationToken);
+
+    Task<bool> UpdateDeviceProfileAsync(
+        string deviceCode,
+        DeviceProfileWriteRequest request,
+        CancellationToken cancellationToken);
 }
 
 public interface ISoftwareQuery

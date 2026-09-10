@@ -144,7 +144,7 @@ internal sealed partial class SqlServerDataContext
             request.Publisher,
             VersionPattern: null,
             request.Classification,
-            Notes: null,
+            Notes: request.Notes,
             Enabled: true,
             defaultLicenseSource);
 
@@ -156,7 +156,11 @@ internal sealed partial class SqlServerDataContext
         }
         else
         {
-            write = write with { Notes = existing.Notes, VersionPattern = existing.VersionPattern };
+            write = write with
+            {
+                Notes = request.Notes is null ? existing.Notes : NullIfWhiteSpace(request.Notes),
+                VersionPattern = existing.VersionPattern
+            };
             saved = await UpdatePolicyRowAsync(connection, transaction, existing.Id, existing, write, cancellationToken)
                 ?? throw new InvalidOperationException("The software classification update did not return a row.");
         }
@@ -560,7 +564,7 @@ internal sealed partial class SqlServerDataContext
                 COUNT(*) OVER() AS total_count,
                 v.{Name(violation.PrimaryKeyColumn)} AS id,
                 p.{Name(pc.DeviceCodeColumn)} AS deviceCode,
-                p.{Name(pc.HostNameColumn)} AS hostName,
+                {DisplayHostNameSql("p")} AS hostName,
                 v.{Name(violation.DisplayNameColumn)} AS softwareName,
                 v.{Name(violation.DisplayVersionColumn)} AS softwareVersion,
                 v.{Name(violation.PublisherColumn)} AS publisher,
@@ -575,8 +579,7 @@ internal sealed partial class SqlServerDataContext
             INNER JOIN {Name(options.SchemaName, policy.TableName)} AS pol
                 ON pol.{Name(policy.PrimaryKeyColumn)} = v.{Name(violation.PolicyForeignKeyColumn)}
             WHERE (@search IS NULL
-                OR p.{Name(pc.DeviceCodeColumn)} LIKE @search
-                OR p.{Name(pc.HostNameColumn)} LIKE @search
+                OR {HostNameSearchSql("p")}
                 OR v.{Name(violation.DisplayNameColumn)} LIKE @search)
               AND (@since IS NULL OR v.{Name(violation.DetectedAtUtcColumn)} >= @since)
             ORDER BY v.{Name(violation.LastSeenAtUtcColumn)} DESC, v.{Name(violation.PrimaryKeyColumn)} DESC

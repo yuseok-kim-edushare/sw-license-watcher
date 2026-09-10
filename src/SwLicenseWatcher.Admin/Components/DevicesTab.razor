@@ -19,7 +19,7 @@
 <p class="meta">@Meta</p>
 
 <table class="data">
-    <thead><tr><th>자산코드</th><th>호스트</th><th>도메인</th><th>OS</th><th>에이전트</th><th>heartbeat</th><th>inventory</th></tr></thead>
+    <thead><tr><th>자산코드</th><th>PC 명</th><th>도메인</th><th>OS</th><th>에이전트</th><th>heartbeat</th><th>inventory</th></tr></thead>
     <tbody>
         @if (_devices.Count == 0)
         {
@@ -31,7 +31,7 @@
             {
                 <tr>
                     <td><button type="button" class="linkish" @onclick="@(() => _drawer.OpenDeviceAsync(row.DeviceCode))">@Dash(row.DeviceCode)</button></td>
-                    <td>@Dash(row.HostName)</td><td>@Dash(row.DomainName)</td><td>@Dash(row.OperatingSystem)</td>
+                    <td><button type="button" class="linkish" @onclick="@(() => _drawer.OpenDeviceAsync(row.DeviceCode))">@Dash(PcName(row.HostName, row.AssignedHostName))</button></td><td>@Dash(row.DomainName)</td><td>@Dash(row.OperatingSystem)</td>
                     <td>@Dash(row.AgentVersion)</td><td>@FormatTime(row.LastHeartbeatUtc)</td><td>@FormatTime(row.LastInventoryUtc)</td>
                 </tr>
             }

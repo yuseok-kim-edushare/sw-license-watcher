@@ -26,4 +26,29 @@ public sealed record DesignResponse(
 public sealed record SnapshotAcceptedResponse(
     string DeviceCode,
     int InstalledSoftwareCount,
-    DateTimeOffset CollectedAtUtc);
+    DateTimeOffset CollectedAtUtc,
+    string? AssignedHostName = null);
+
+public sealed record AgentHeartbeatAcceptedResponse(
+    string DeviceCode,
+    string HostName,
+    string ServiceName,
+    string Version,
+    DateTimeOffset ReportedAtUtc,
+    string Status,
+    string? AssignedHostName);
+
+public sealed record SchemaStatusResponse(
+    bool ApplyOnStartup,
+    bool ApplyInBackground,
+    bool? LastSucceeded,
+    int LastBatchCount,
+    DateTimeOffset? LastAttemptUtc,
+    DateTimeOffset? LastSucceededUtc,
+    string? LastError);
+
+public sealed record SchemaApplyResponse(
+    bool Applied,
+    int BatchCount,
+    DateTimeOffset Utc,
+    string? Error = null);

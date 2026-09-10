@@ -33,6 +33,12 @@ public class SqlServerSchemaScriptBuilderTests
         Assert.Contains("CONSTRAINT [PK_worker_update_pin] PRIMARY KEY ([target_service_name])", sql);
         Assert.Contains("IF COL_LENGTH(N'[inventory].[software_policy_list]', N'default_license_source') IS NULL", sql);
         Assert.Contains("ALTER TABLE [inventory].[software_policy_list] ADD [default_license_source] NVARCHAR(16) NULL;", sql);
+        Assert.Contains("[assigned_host_name] NVARCHAR(128) NULL", sql);
+        Assert.Contains("[admin_notes] NVARCHAR(1024) NULL", sql);
+        Assert.Contains("IF COL_LENGTH(N'[inventory].[pc_entity]', N'assigned_host_name') IS NULL", sql);
+        Assert.Contains("ALTER TABLE [inventory].[pc_entity] ADD [assigned_host_name] NVARCHAR(128) NULL;", sql);
+        Assert.Contains("IF COL_LENGTH(N'[inventory].[pc_entity]', N'admin_notes') IS NULL", sql);
+        Assert.Contains("ALTER TABLE [inventory].[pc_entity] ADD [admin_notes] NVARCHAR(1024) NULL;", sql);
         Assert.Contains("CREATE TABLE [inventory].[software_violation]", sql);
         Assert.Contains("CONSTRAINT [UX_software_violation_pc_id_display_name] UNIQUE ([pc_id], [display_name])", sql);
         Assert.Contains("CREATE TABLE [inventory].[stale_heartbeat_notification]", sql);
@@ -230,6 +236,18 @@ public class SqlIdentifierValidatorTests
         var options = new SqlServerStorageOptions
         {
             WorkerUpdatePinTable = new WorkerUpdatePinTableOptions { TableName = "worker-update-pin" }
+        };
+
+        var ex = Assert.Throws<ArgumentException>(() => SqlIdentifierValidator.Validate(options));
+        Assert.Contains("SQL identifiers must start with a letter or underscore", ex.Message);
+    }
+
+    [Fact]
+    public void Validate_rejects_invalid_assigned_host_name_column()
+    {
+        var options = new SqlServerStorageOptions
+        {
+            PcTable = new PcTableOptions { AssignedHostNameColumn = "assigned-host" }
         };
 
         var ex = Assert.Throws<ArgumentException>(() => SqlIdentifierValidator.Validate(options));

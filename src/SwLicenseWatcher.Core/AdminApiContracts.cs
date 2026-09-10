@@ -15,7 +15,9 @@ public sealed record DeviceSummary(
     string OperatingSystem,
     string AgentVersion,
     DateTimeOffset? LastHeartbeatUtc,
-    DateTimeOffset? LastInventoryUtc);
+    DateTimeOffset? LastInventoryUtc,
+    string? AssignedHostName = null,
+    string? AdminNotes = null);
 
 public sealed record DeviceListResponse(
     int Skip,
@@ -31,7 +33,9 @@ public sealed record DeviceDetail(
     string AgentVersion,
     DateTimeOffset? LastHeartbeatUtc,
     DateTimeOffset? LastInventoryUtc,
-    IReadOnlyList<InstalledSoftwareEntry> InstalledSoftware);
+    IReadOnlyList<InstalledSoftwareEntry> InstalledSoftware,
+    string? AssignedHostName = null,
+    string? AdminNotes = null);
 
 public sealed record SoftwareAggregate(
     string Name,
@@ -60,7 +64,8 @@ public sealed record SoftwareDevice(
     string? Publisher,
     string Classification,
     string? LicenseSource = null,
-    string? LicenseSourceOverride = null);
+    string? LicenseSourceOverride = null,
+    string? AssignedHostName = null);
 
 public sealed record SoftwareDeviceListResponse(
     string Name,
@@ -115,3 +120,7 @@ public sealed record AgentUninstallRequestResponse(
     string? Code);
 
 public sealed record UninstallRequestConsumeRequest(string DeviceCode, string Code);
+
+public sealed record DeviceProfileWriteRequest(
+    string? AssignedHostName,
+    string? AdminNotes);

@@ -14,7 +14,7 @@
 }
 <p class="meta">@Meta</p>
 <table class="data">
-    <thead><tr><th>ID</th><th>자산코드</th><th>호스트</th><th>상태</th><th>요청</th><th>승인</th><th>만료</th><th>처리</th></tr></thead>
+    <thead><tr><th>ID</th><th>자산코드</th><th>PC 명</th><th>상태</th><th>요청</th><th>승인</th><th>만료</th><th>처리</th></tr></thead>
     <tbody>
         @if (_requests.Count == 0)
         {
@@ -25,7 +25,9 @@
             @foreach (var row in _requests)
             {
                 <tr>
-                    <td>@row.Id</td><td>@Dash(row.DeviceCode)</td><td>@Dash(row.HostName)</td><td>@Dash(row.Status)</td>
+                    <td>@row.Id</td>
+                    <td><button type="button" class="linkish" @onclick="@(() => _drawer.OpenDeviceAsync(row.DeviceCode))">@Dash(row.DeviceCode)</button></td>
+                    <td><button type="button" class="linkish" @onclick="@(() => _drawer.OpenDeviceAsync(row.DeviceCode))">@Dash(row.HostName)</button></td><td>@Dash(row.Status)</td>
                     <td>@FormatTime(row.RequestedAtUtc)</td><td>@FormatTime(row.ApprovedAtUtc)</td><td>@FormatTime(row.ExpiresAtUtc)</td>
                     <td>
                         @if (string.Equals(row.Status, "pending", StringComparison.OrdinalIgnoreCase))
@@ -47,16 +49,25 @@
 </table>
 <Pagination From="PageFrom" To="PageTo" Total="TotalCount" CanPrev="CanPrev" CanNext="CanNext"
             Previous="PrevPageAsync" Next="NextPageAsync" />
+<DetailDrawer @ref="_drawer" Changed="RefreshAsync" />
 
 @code {
     private IReadOnlyList<AdminUninstallRequest> _requests = [];
+    private DetailDrawer _drawer = default!;
 
-    public override Task RefreshAsync() => LoadAsync(async () =>
+    public override async Task RefreshAsync()
     {
-        var data = await Api.GetUninstallRequestsAsync(PagingQuery());
-        _requests = data.Items ?? [];
-        TotalCount = data.TotalCount;
-    });
+        await LoadAsync(async () =>
+        {
+            var data = await Api.GetUninstallRequestsAsync(PagingQuery());
+            _requests = data.Items ?? [];
+            TotalCount = data.TotalCount;
+        });
+        if (_drawer?.IsOpen == true)
+        {
+            await _drawer.RefreshAsync();
+        }
+    }
 
     private async Task DecideAsync(long id, bool approve)
     {

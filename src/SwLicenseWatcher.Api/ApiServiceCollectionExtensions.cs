@@ -108,6 +108,7 @@ internal static class ApiServiceCollectionExtensions
         services.AddSingleton<NotificationPublisher>();
         services.AddHostedService<NotificationDispatchService>();
         services.AddHostedService<StaleHeartbeatMonitor>();
+        services.AddHostedService<SchemaReconcileService>();
         return services;
     }
 }

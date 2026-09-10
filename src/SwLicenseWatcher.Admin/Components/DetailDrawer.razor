@@ -25,9 +25,20 @@
         <div>
             @if (_kind == "device" && _device is { } detail)
             {
-                <p>@Dash(detail.HostName) / @Dash(detail.DomainName)</p>
-                <p class="meta">@Dash(detail.OperatingSystem) · 에이전트 @Dash(detail.AgentVersion)</p>
-                <p class="meta">heartbeat @FormatTime(detail.LastHeartbeatUtc) · inventory @FormatTime(detail.LastInventoryUtc)</p>
+                <div class="drawer-form stack">
+                    <label>PC 명
+                        <input maxlength="128" @bind="_assignedHostName" />
+                    </label>
+                    <p class="meta">보고 호스트 @Dash(detail.HostName) · 자산코드 @Dash(detail.DeviceCode)</p>
+                    <p>@Dash(detail.DomainName)</p>
+                    <p class="meta">@Dash(detail.OperatingSystem) · 에이전트 @Dash(detail.AgentVersion)</p>
+                    <p class="meta">heartbeat @FormatTime(detail.LastHeartbeatUtc) · inventory @FormatTime(detail.LastInventoryUtc)</p>
+                    <label class="wide">메모
+                        <textarea maxlength="1024" @bind="_deviceNotes"></textarea>
+                    </label>
+                    <p class="hint">PC 명을 저장하면 다음 heartbeat부터 해당 클라이언트에 부여됩니다. 비우면 클라이언트가 보고한 호스트명을 사용합니다.</p>
+                    <button type="button" class="primary" @onclick="SaveDeviceProfileAsync">PC 명·메모 저장</button>
+                </div>
                 <table class="data">
                     <thead><tr><th>이름</th><th>버전</th><th>게시자</th><th>분류</th><th>라이선스</th><th>범위</th></tr></thead>
                     <tbody>
@@ -40,7 +51,8 @@
                             @foreach (var row in detail.InstalledSoftware)
                             {
                                 <tr>
-                                    <td>@Dash(row.Name)</td><td>@Dash(row.Version)</td><td>@Dash(row.Publisher)</td>
+                                    <td><button type="button" class="linkish" @onclick="@(() => OpenSoftwareAsync(row.Name, row.Classification, row.Publisher))">@Dash(row.Name)</button></td>
+                                    <td>@Dash(row.Version)</td><td>@Dash(row.Publisher)</td>
                                     <td>@Dash(row.Classification)</td>
                                     <td>
                                         @if (row.Classification == SoftwarePolicyClassificationNames.Managed)
@@ -63,27 +75,32 @@
             }
             else if (_kind == "software")
             {
-                <div class="drawer-form">
-                    <label>분류
-                        <select @bind="_classifyAs">
-                            <option value="@SoftwarePolicyClassificationNames.White">white</option>
-                            <option value="@SoftwarePolicyClassificationNames.Managed">managed</option>
-                            <option value="@SoftwarePolicyClassificationNames.Black">black</option>
-                        </select>
-                    </label>
-                    @if (_classifyAs == SoftwarePolicyClassificationNames.Managed)
-                    {
-                        <label>기본 라이선스
-                            <select class="license-source" @bind="_license">
-                                <option value="">미지정</option><option value="@LicenseSourceNames.Company">회사</option><option value="@LicenseSourceNames.Byo">BYO</option>
+                <div class="drawer-form stack">
+                    <div class="drawer-form-row">
+                        <label>분류
+                            <select @bind="_classifyAs">
+                                <option value="@SoftwarePolicyClassificationNames.White">white</option>
+                                <option value="@SoftwarePolicyClassificationNames.Managed">managed</option>
+                                <option value="@SoftwarePolicyClassificationNames.Black">black</option>
                             </select>
                         </label>
-                    }
-                    <button type="button" class="primary" @onclick="SaveClassificationAsync">분류 저장</button>
+                        @if (_classifyAs == SoftwarePolicyClassificationNames.Managed)
+                        {
+                            <label>기본 라이선스
+                                <select class="license-source" @bind="_license">
+                                    <option value="">미지정</option><option value="@LicenseSourceNames.Company">회사</option><option value="@LicenseSourceNames.Byo">BYO</option>
+                                </select>
+                            </label>
+                        }
+                    </div>
+                    <label class="wide">메모
+                        <textarea maxlength="1024" @bind="_softwareNotes"></textarea>
+                    </label>
+                    <button type="button" class="primary" @onclick="SaveClassificationAsync">분류·메모 저장</button>
                 </div>
                 <p class="meta">설치 PC @_softwareTotal 대</p>
                 <table class="data">
-                    <thead><tr><th>자산코드</th><th>호스트</th><th>OS</th><th>버전</th><th>게시자</th><th>분류</th><th>라이선스</th></tr></thead>
+                    <thead><tr><th>자산코드</th><th>PC 명</th><th>OS</th><th>버전</th><th>게시자</th><th>분류</th><th>라이선스</th></tr></thead>
                     <tbody>
                         @if (_softwareDevices.Count == 0)
                         {
@@ -94,7 +111,9 @@
                             @foreach (var row in _softwareDevices)
                             {
                                 <tr>
-                                    <td>@Dash(row.DeviceCode)</td><td>@Dash(row.HostName)</td><td>@Dash(row.OperatingSystem)</td>
+                                    <td><button type="button" class="linkish" @onclick="@(() => OpenDeviceAsync(row.DeviceCode))">@Dash(row.DeviceCode)</button></td>
+                                    <td><button type="button" class="linkish" @onclick="@(() => OpenDeviceAsync(row.DeviceCode))">@Dash(PcName(row.HostName, row.AssignedHostName))</button></td>
+                                    <td>@Dash(row.OperatingSystem)</td>
                                     <td>@Dash(row.Version)</td><td>@Dash(row.Publisher)</td><td>@Dash(row.Classification)</td>
                                     <td>
                                         @if (row.Classification == SoftwarePolicyClassificationNames.Managed)
@@ -129,37 +148,43 @@
     private string _classifyAs = SoftwarePolicyClassificationNames.Managed;
     private string _license = "";
     private string _error = "";
+    private string _assignedHostName = "";
+    private string _deviceNotes = "";
+    private string _softwareNotes = "";
     private DeviceDetail? _device;
     private IReadOnlyList<SoftwareDevice> _softwareDevices = [];
     private int _softwareTotal;
 
     public bool IsOpen => _kind is not null;
 
-    public async Task OpenDeviceAsync(string deviceCode)
+    public Task OpenDeviceAsync(string deviceCode)
     {
         _kind = "device";
         _key = deviceCode;
         _title = deviceCode;
         _classFilter = "";
         _error = "";
-        await RefreshAsync();
+        return RefreshAsync();
     }
 
-    public async Task OpenSoftwareAsync(SoftwareAggregate row)
+    public Task OpenSoftwareAsync(string name, string? classification = null, string? publisher = null)
     {
         _kind = "software";
-        _key = row.Name;
-        _title = row.Name;
-        _publisher = "";
+        _key = name;
+        _title = name;
+        _publisher = publisher ?? "";
         _classFilter = "";
-        _classifyAs = SoftwarePolicyClassificationNames.TryParse(row.Classification, out var classification)
-            ? SoftwarePolicyClassificationNames.ToStorage(classification)
+        _classifyAs = SoftwarePolicyClassificationNames.TryParse(classification, out var parsed)
+            ? SoftwarePolicyClassificationNames.ToStorage(parsed)
             : SoftwarePolicyClassificationNames.Managed;
         _license = "";
+        _softwareNotes = "";
         _error = "";
-        await RefreshAsync();
-        await LoadPolicyDefaultAsync();
+        return LoadSoftwareAsync();
     }
+
+    public Task OpenSoftwareAsync(SoftwareAggregate row) =>
+        OpenSoftwareAsync(row.Name, row.Classification);
 
     public async Task RefreshAsync()
     {
@@ -174,6 +199,9 @@
             if (_kind == "device")
             {
                 _device = await Api.GetDeviceAsync(_key, EmptyToNull(_classFilter));
+                _title = PcName(_device.HostName, _device.AssignedHostName);
+                _assignedHostName = _device.AssignedHostName ?? "";
+                _deviceNotes = _device.AdminNotes ?? "";
             }
             else
             {
@@ -203,6 +231,12 @@
         _error = "";
     }
 
+    private async Task LoadSoftwareAsync()
+    {
+        await RefreshAsync();
+        await LoadPolicyDefaultAsync();
+    }
+
     private async Task LoadPolicyDefaultAsync()
     {
         await Requests.RunAsync(async () =>
@@ -213,8 +247,25 @@
             if (match is not null)
             {
                 _license = match.DefaultLicenseSource ?? "";
+                _softwareNotes = match.Notes ?? "";
+                _classifyAs = SoftwarePolicyClassificationNames.ToStorage(match.Classification);
             }
         }, _ => { });
+    }
+
+    private async Task SaveDeviceProfileAsync()
+    {
+        _error = "";
+        var succeeded = await Requests.RunAsync(
+            () => Api.PutDeviceProfileAsync(_key, new DeviceProfileWriteRequest(
+                EmptyToNull(_assignedHostName),
+                EmptyToNull(_deviceNotes))),
+            message => _error = message);
+        if (succeeded)
+        {
+            await Changed.InvokeAsync();
+            await RefreshAsync();
+        }
     }
 
     private async Task SaveClassificationAsync()
@@ -231,7 +282,8 @@
             await Api.PutClassificationAsync(_key, new SoftwareClassificationWriteRequest(
                 classification,
                 EmptyToNull(_publisher),
-                LicenseSourceNames.ForManagedPolicy(classification, EmptyToNull(_license))));
+                LicenseSourceNames.ForManagedPolicy(classification, EmptyToNull(_license)),
+                _softwareNotes ?? ""));
         }, message => _error = message);
         if (succeeded)
         {

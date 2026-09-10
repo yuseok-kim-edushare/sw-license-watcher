@@ -18,7 +18,7 @@
   - SQL Server 트랜잭션 기반 PC UPSERT 및 설치 소프트웨어 교체 저장(정책 매칭 분류 포함)
   - Bearer 토큰 인증(에이전트/관리자 역할 분리), 원격 요청 HTTPS 강제, 수집 POST 본문 크기 제한(스냅샷 8 MiB, 하트비트 64 KiB)
   - 헬스체크: `/health`(인증 제외)는 SQL Server에 `SELECT 1`로 연결을 확인하고, 실패 시 503과 일반화된 사유만 반환
-  - 설계/스키마 API: `/api/design`, `/api/schema/sql`
+  - 설계/스키마 API: `/api/design`, `/api/schema`, `GET`/`POST` `/api/schema/sql`. 기동 후 백그라운드에서 없는 테이블/컬럼을 맞춤
   - 업데이트 manifest API: `/api/updates/worker/manifest`
   - 소프트웨어 정책 CRUD: `/api/policies` (목록은 페이징·검색·분류 필터·CSV)
   - 블랙리스트 위반 목록: `/api/violations` (페이징·검색·기간 필터·CSV)
@@ -184,16 +184,20 @@ Watchdog__ApiToken=<agent-token>
 
 수집 POST 본문은 경로별로 상한을 둡니다. 스냅샷(`/api/inventory/snapshots`)은 8 MiB, 하트비트(`/api/agents/heartbeats`)는 64 KiB입니다. Native AOT slim builder는 MVC `RequestSizeLimit`를 쓰지 않으므로, 인증 미들웨어가 `IHttpMaxRequestBodySizeFeature`로 적용합니다. 한도를 넘기면 413입니다.
 
-스키마는 `GET /api/schema/sql`이 반환하는 idempotent DDL입니다. SSMS에서 손으로 실행하는 대신 [deploy/scripts/Apply-DbSchema.ps1](deploy/scripts/Apply-DbSchema.ps1)로 적용합니다. `-WhatIf`로 배치를 미리 볼 수 있습니다. API가 아직 기동 전이면 스크립트에 로컬 `.sql` 파일을 넘기거나, 기동 후 API에서 DDL을 받아 적용합니다.
+스키마 DDL은 idempotent입니다. 없는 테이블은 `IF OBJECT_ID`로 만들고, 없는 컬럼은 `IF COL_LENGTH`로 `ALTER TABLE ... ADD` 합니다. API는 기동 후 백그라운드에서 이 스크립트를 SQL Server에 적용합니다(기본 `Database:ApplySchemaInBackground=true`). 연결이 안 되면 30초마다 재시도하고, 성공하면 그 프로세스에서는 멈춥니다. 기동을 막지 않으므로 SQL이 늦게 떠도 API는 뜹니다.
+
+즉시 적용하려면 관리자 토큰으로 `POST /api/schema/sql`을 호출합니다. 적용 상태는 `GET /api/schema`입니다. `GET /api/schema/sql`은 같은 DDL을 `text/plain`으로만 내려 줍니다(미리보기·[Apply-DbSchema.ps1](deploy/scripts/Apply-DbSchema.ps1)용). DBA가 직접 적용하려면 스크립트에 로컬 `.sql`을 넘기면 됩니다.
 
 ```powershell
-# 실행 중인 API에서 DDL을 받아 적용 (AdminToken)
-.\deploy\scripts\Apply-DbSchema.ps1 `
-  -ConnectionString $env:Storage__SqlServer__ConnectionString `
-  -ApiBaseUrl http://127.0.0.1:5080 `
-  -ApiToken $env:Security__AdminToken
+# 실행 중인 API에 즉시 적용 (AdminToken)
+Invoke-RestMethod -Method POST -Uri http://127.0.0.1:5080/api/schema/sql `
+  -Headers @{ Authorization = "Bearer $env:Security__AdminToken" }
 
-# 로컬 파일로 적용
+# 적용 상태
+Invoke-RestMethod -Uri http://127.0.0.1:5080/api/schema `
+  -Headers @{ Authorization = "Bearer $env:Security__AdminToken" }
+
+# 로컬 파일로 적용 (API 기동 전·DBA 작업)
 .\deploy\scripts\Apply-DbSchema.ps1 `
   -Server sql.contoso.local `
   -Database SwLicenseWatcher `
@@ -203,10 +207,11 @@ Watchdog__ApiToken=<agent-token>
 .\deploy\scripts\Apply-DbSchema.ps1 -ConnectionString $cs -SqlPath .\schema.sql -WhatIf
 ```
 
-API가 스스로 적용하게 하려면 `Database:ApplySchemaOnStartup`을 `true`로 둡니다(기본 `false`). 켜면 기동 시 `SqlServerSchemaScriptBuilder` DDL을 연결 문자열의 DB에 적용한 뒤 요청을 받습니다. 실패하면 로그를 남기고 기동하지 않습니다. DDL이 이미 있으면 건너뛰므로 재기동해도 안전합니다. 컬럼 확장 같은 기존 DB 마이그레이션은 이 옵션이 대신하지 않습니다.
+기동 전에 반드시 스키마가 있어야 하면 `Database:ApplySchemaOnStartup=true`로 둡니다. 켜면 요청을 받기 전에 같은 DDL을 적용하고, 실패하면 기동하지 않습니다.
 
 ```text
-Database__ApplySchemaOnStartup=true
+Database__ApplySchemaInBackground=true
+Database__ApplySchemaOnStartup=false
 ```
 
 기존 스키마를 사용 중이라면 `discovery_scope` 컬럼이 `NVARCHAR(256)`으로 확장되었으므로 다음과 같이 마이그레이션합니다(테이블/컬럼 이름은 설정값에 맞게 변경).
@@ -311,7 +316,9 @@ dotnet run --project src/SwLicenseWatcher.Api
 API 실행 후:
 
 - `GET /api/design`: 전체 설계 요약
-- `GET /api/schema/sql`: 현재 설정 기준 SQL Server DDL
+- `GET /api/schema`: 스키마 자동 적용 상태(백그라운드/기동 시 적용 여부, 마지막 성공·오류)
+- `GET /api/schema/sql`: 현재 설정 기준 SQL Server DDL (`text/plain`)
+- `POST /api/schema/sql`: 같은 DDL을 SQL Server에 즉시 적용
 - `GET /health`: SQL Server 연결 확인(인증 불필요). 실패 시 503
 - `GET /api/inventory/devices`: 수집된 PC 목록 (페이징·검색·stale heartbeat 필터)
 - `GET /api/inventory/software`: 소프트웨어별 설치 PC 수 집계 (`?classification=`으로 분류 필터)
@@ -320,11 +327,12 @@ API 실행 후:
 
 | 메서드 | 경로 | 설명 | 주요 쿼리 |
 | --- | --- | --- | --- |
-| GET | `/api/inventory/devices` | PC 목록 (자산코드, 호스트명, 도메인, OS, 에이전트 버전, 마지막 heartbeat/inventory 시각) | `skip`, `take`, `search`(호스트명 또는 자산코드), `staleAfterHours`, `format=csv` |
+| GET | `/api/inventory/devices` | PC 목록 (자산코드, 호스트명, 관리자 PC 명, 메모, 도메인, OS, 에이전트 버전, 마지막 heartbeat/inventory 시각) | `skip`, `take`, `search`(호스트명·지정 PC 명 또는 자산코드), `staleAfterHours`, `format=csv` |
 | GET | `/api/inventory/devices/{deviceCode}` | 단일 PC 상세와 설치 소프트웨어 전체(항목별 `classification`) | `classification`, `format=csv` |
+| PUT | `/api/inventory/devices/{deviceCode}` | 관리자 PC 명(`assignedHostName`)과 메모(`adminNotes`). 지정한 PC 명은 다음 스냅샷/하트비트 응답으로 클라이언트에 부여됨 | 본문 `assignedHostName?`, `adminNotes?` |
 | GET | `/api/inventory/software` | SW 이름/버전/분류별 설치 PC 수. `managed`는 `companyCount` / `byoCount` / `unassignedCount` | `skip`, `take`, `search`(이름), `classification`, `format=csv` |
 | GET | `/api/inventory/software/{name}/devices` | 해당 SW가 설치된 PC 목록. 항목별 유효 `licenseSource`와 PC 할당 `licenseSourceOverride` | `skip`, `take`, `classification`, `format=csv` |
-| PUT | `/api/inventory/software/{name}/classification` | 정확 일치 활성 정책을 만들거나 갱신한 뒤, 이미 모인 설치 행의 분류를 즉시 다시 칠함 | 본문 `classification`, `publisher?`, `defaultLicenseSource?` |
+| PUT | `/api/inventory/software/{name}/classification` | 정확 일치 활성 정책을 만들거나 갱신한 뒤, 이미 모인 설치 행의 분류를 즉시 다시 칠함 | 본문 `classification`, `publisher?`, `defaultLicenseSource?`, `notes?` |
 | PUT | `/api/inventory/software/classifications` | 소프트웨어 분류를 한 번에 여러 개 지정(최대 100). 한 트랜잭션 | 본문 `items: [{ name, classification, publisher?, defaultLicenseSource? }]` |
 | PUT | `/api/inventory/devices/{deviceCode}/software/{name}/license-source` | PC별 회사/BYO 할당. `null`이면 할당을 지워 정책 기본값으로 복귀 | 본문 `licenseSource`: `company` \| `byo` \| `null` |
 
@@ -334,7 +342,7 @@ API 실행 후:
 
 ## 관리자 대시보드
 
-브라우저에서 `https://<server>/admin` 으로 관리자 화면을 엽니다. UI는 Blazor WebAssembly이며, Interactive Server/Auto 회로는 쓰지 않습니다. API가 같은 출처의 `/admin/_framework`를 제공하므로 외부 CDN이 없습니다. curl이나 CSV 없이 PC 목록, 소프트웨어 집계, 위반, 정책, 제거 요청을 조회하고 정책을 만들고 고칠 수 있습니다. 소프트웨어 목록에서 행을 체크한 뒤 `white` / `managed` / `black`을 현재 페이지 선택 항목에 일괄 지정할 수 있고, 서랍에서는 개별 분류와 `managed`의 정책 기본 라이선스(회사/BYO)·PC별 덮어쓰기를 편집합니다.
+브라우저에서 `https://<server>/admin` 으로 관리자 화면을 엽니다. UI는 Blazor WebAssembly이며, Interactive Server/Auto 회로는 쓰지 않습니다. API가 같은 출처의 `/admin/_framework`를 제공하므로 외부 CDN이 없습니다. curl이나 CSV 없이 PC 목록, 소프트웨어 집계, 위반, 정책, 제거 요청을 조회하고 정책을 만들고 고칠 수 있습니다. 자산코드·PC 명·소프트웨어 이름을 누르면 서랍에서 관련 목록을 보고, PC 명·메모를 남기거나 소프트웨어 분류·메모를 저장할 수 있습니다. 관리자가 지정한 PC 명은 다음 에이전트 heartbeat/스냅샷 응답으로 클라이언트에 부여됩니다. 소프트웨어 목록에서 행을 체크한 뒤 `white` / `managed` / `black`을 현재 페이지 선택 항목에 일괄 지정할 수 있고, 서랍에서는 개별 분류와 `managed`의 정책 기본 라이선스(회사/BYO)·PC별 덮어쓰기를 편집합니다.
 
 정적 파일(`/admin`, `/admin/`, CSS, `_framework`)은 인증 없이 내려갑니다. 비밀은 없고, 인벤토리·정책 데이터는 모두 `AdminToken`이 있어야 합니다. 토큰은 브라우저 `sessionStorage`에만 두고, 탭을 닫으면 사라집니다. 쿠키와 `localStorage`는 쓰지 않습니다.
 

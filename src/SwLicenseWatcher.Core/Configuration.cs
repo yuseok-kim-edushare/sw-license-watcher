@@ -131,6 +131,10 @@ public sealed class UpdateManifestOptions
 public sealed class DatabaseOptions
 {
     public bool ApplySchemaOnStartup { get; set; }
+
+    public bool ApplySchemaInBackground { get; set; } = true;
+
+    public TimeSpan SchemaReconcileRetry { get; set; } = TimeSpan.FromSeconds(30);
 }
 
 public sealed class SqlServerStorageOptions
@@ -176,6 +180,10 @@ public sealed class PcTableOptions
     public string LastHeartbeatUtcColumn { get; set; } = "last_heartbeat_utc";
 
     public string LastInventoryUtcColumn { get; set; } = "last_inventory_utc";
+
+    public string AssignedHostNameColumn { get; set; } = "assigned_host_name";
+
+    public string AdminNotesColumn { get; set; } = "admin_notes";
 }
 
 public sealed class InstalledSoftwareTableOptions

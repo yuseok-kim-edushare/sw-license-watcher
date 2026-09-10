@@ -54,4 +54,7 @@ internal static class DashboardPresentation
 
     internal static string? EmptyToNull(string? value) =>
         string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+
+    internal static string PcName(string hostName, string? assignedHostName) =>
+        PcDisplayNames.Resolve(hostName, assignedHostName);
 }

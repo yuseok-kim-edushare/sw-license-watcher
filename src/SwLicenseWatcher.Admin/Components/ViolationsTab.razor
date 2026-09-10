@@ -17,7 +17,7 @@
 }
 <p class="meta">@Meta</p>
 <table class="data">
-    <thead><tr><th>PC</th><th>호스트</th><th>소프트웨어</th><th>버전</th><th>정책</th><th>분류</th><th>최초 적발</th><th>마지막 발견</th></tr></thead>
+    <thead><tr><th>PC</th><th>PC 명</th><th>소프트웨어</th><th>버전</th><th>정책</th><th>분류</th><th>최초 적발</th><th>마지막 발견</th></tr></thead>
     <tbody>
         @if (_violations.Count == 0)
         {
@@ -28,7 +28,9 @@
             @foreach (var row in _violations)
             {
                 <tr>
-                    <td>@Dash(row.DeviceCode)</td><td>@Dash(row.HostName)</td><td>@Dash(row.SoftwareName)</td><td>@Dash(row.SoftwareVersion)</td>
+                    <td><button type="button" class="linkish" @onclick="@(() => _drawer.OpenDeviceAsync(row.DeviceCode))">@Dash(row.DeviceCode)</button></td>
+                    <td><button type="button" class="linkish" @onclick="@(() => _drawer.OpenDeviceAsync(row.DeviceCode))">@Dash(row.HostName)</button></td>
+                    <td><button type="button" class="linkish" @onclick="@(() => _drawer.OpenSoftwareAsync(row.SoftwareName))">@Dash(row.SoftwareName)</button></td><td>@Dash(row.SoftwareVersion)</td>
                     <td>@Dash(row.PolicyProductName)</td><td>@Dash(ClassificationStorage(row.Classification))</td>
                     <td>@FormatTime(row.DetectedAtUtc)</td><td>@FormatTime(row.LastSeenAtUtc)</td>
                 </tr>
@@ -38,17 +40,26 @@
 </table>
 <Pagination From="PageFrom" To="PageTo" Total="TotalCount" CanPrev="CanPrev" CanNext="CanNext"
             Previous="PrevPageAsync" Next="NextPageAsync" />
+<DetailDrawer @ref="_drawer" Changed="RefreshAsync" />
 
 @code {
     private string _since = "";
     private IReadOnlyList<SoftwareViolationEntry> _violations = [];
+    private DetailDrawer _drawer = default!;
 
-    public override Task RefreshAsync() => LoadAsync(async () =>
+    public override async Task RefreshAsync()
     {
-        var data = await Api.GetViolationsAsync(PagingQuery());
-        _violations = data.Items ?? [];
-        TotalCount = data.TotalCount;
-    });
+        await LoadAsync(async () =>
+        {
+            var data = await Api.GetViolationsAsync(PagingQuery());
+            _violations = data.Items ?? [];
+            TotalCount = data.TotalCount;
+        });
+        if (_drawer?.IsOpen == true)
+        {
+            await _drawer.RefreshAsync();
+        }
+    }
 
     protected override void AddFilters(List<string> parts)
     {

@@ -15,6 +15,19 @@ public class SqlServerSchemaApplicatorTests
             applyOnStartup: false);
 
         await applicator.ApplyIfEnabledAsync(CancellationToken.None);
+        Assert.Null(applicator.Last.Succeeded);
+    }
+
+    [Fact]
+    public async Task ApplyAsync_records_missing_connection_string()
+    {
+        var applicator = CreateApplicator(new SqlServerStorageOptions(), applyOnStartup: false);
+
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(
+            () => applicator.ApplyAsync(CancellationToken.None));
+        Assert.Contains("ConnectionString is required", ex.Message, StringComparison.Ordinal);
+        Assert.False(applicator.Last.Succeeded);
+        Assert.Equal("Storage:SqlServer:ConnectionString is empty.", applicator.Last.LastError);
     }
 
     [Fact]

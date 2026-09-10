@@ -82,14 +82,15 @@ API는 서버에서만 호스팅합니다. PC 에이전트 설치 대상이 아�
 | `Security:RequireHttps` | | 운영은 `true`. 원격 HTTP는 거부, loopback HTTP는 허용 |
 | `Storage:SqlServer:ConnectionString` | 예 | `TrustServerCertificate=False` 권장 |
 | `Storage:SqlServer:SchemaName` 및 테이블/컬럼 | 예 | 기본 예시는 `inventory.company_pc`, `inventory.company_stale_heartbeat_notification`, `inventory.company_pc_uninstall_request`, `inventory.company_pc_sw_license`, `inventory.company_worker_update_pin` 등. 정책 테이블에는 `default_license_source` 컬럼이 있습니다. 식별자는 영문·숫자·밑줄만 |
-| `Database:ApplySchemaOnStartup` | | 기본 `false`. `true`면 API 기동 시 idempotent DDL을 적용하고, 실패하면 기동하지 않음 |
+| `Database:ApplySchemaInBackground` | | 기본 `true`. 기동 후 백그라운드에서 없는 테이블/컬럼을 `CREATE`/`ALTER TABLE ADD`. 실패 시 재시도 |
+| `Database:ApplySchemaOnStartup` | | 기본 `false`. `true`면 요청을 받기 전에 같은 DDL을 적용하고, 실패하면 기동하지 않음 |
 | `Updates:Worker:PackageUrl` | 예 | 기동 시드용 절대 HTTPS URI. 살아 있는 핀은 DB이며 `/admin` **업데이트** 또는 `PUT /api/updates/worker/manifest`로 바꿈 |
 | `Updates:Worker:Sha256` | | 시드용. 64자 hex 또는 플레이스홀더. 첫 패키지 전까지 플레이스홀더라도 API는 기동함 |
 | `Updates:Worker:Version` | | 시드용. Watchdog는 DB 핀의 Version을 Worker `.version`과 비교 |
 | `Updates:Worker:RequireAuthenticode` | | 시드용. 운영 핀은 `true` |
 | `Kestrel:Endpoints` | AOT만 | Kestrel 단독 호스트의 HTTPS 바인딩. **IIS에서는 넣지 않습니다.** 인증서와 포트는 IIS 사이트 바인딩으로 엽니다. |
 
-환경 변수 예: `Security__AgentToken`, `Security__AdminToken`, `Storage__SqlServer__ConnectionString`, `Database__ApplySchemaOnStartup`.
+환경 변수 예: `Security__AgentToken`, `Security__AdminToken`, `Storage__SqlServer__ConnectionString`, `Database__ApplySchemaInBackground`.
 
 ```powershell
 $agentToken = .\New-ApiToken.ps1
@@ -125,7 +126,7 @@ Invoke-RestMethod -Uri "https://license-watcher.contoso.local/health"
 
 브라우저에서 `https://license-watcher.contoso.local/admin` 에 접속합니다. 경로는 그대로이며 화면은 API가 같이 제공하는 Blazor WebAssembly입니다. 데이터 조회에는 `AdminToken`이 필요합니다.
 
-`-ListenUrl`을 생략하면 템플릿의 `Kestrel:Endpoints:Https:Url`을 유지합니다. `-FirewallPort`를 주면 인바운드 TCP 허용 규칙(`SW License Watcher API`)을 만듭니다. `-ApplySchemaOnStartup`을 주면 기동 시 스키마를 적용합니다.
+`-ListenUrl`을 생략하면 템플릿의 `Kestrel:Endpoints:Https:Url`을 유지합니다. `-FirewallPort`를 주면 인바운드 TCP 허용 규칙(`SW License Watcher API`)을 만듭니다. 스키마는 기본으로 백그라운드에서 맞춥니다. `-ApplySchemaOnStartup`을 주면 기동을 스키마 적용에 묶습니다.
 
 HTTPS 인증서는 스크립트가 설치하지 않습니다. 서버 인증서를 `LocalMachine\My`에 넣고, `appsettings.json`의 `Kestrel:Endpoints:Https:Certificate:Subject`(예: `CN=license-watcher.contoso.local`)와 맞춥니다. LocalSystem이 개인 키를 읽을 수 있어야 합니다. 진단용으로 콘솔에서 직접 실행할 때만:
 
@@ -153,11 +154,12 @@ Native AOT는 IIS in-process를 지원하지 않습니다. `api/iis/win-x64`를 
 
 IIS가 TLS를 종료하므로 에이전트의 `ServerBaseUrl`은 사이트 HTTPS 주소입니다.
 
-스키마는 다음 중 한 가지로 적용합니다. `/health`는 Bearer가 필요 없습니다.
+스키마는 API가 백그라운드에서 맞춥니다. `/health`는 Bearer가 필요 없습니다. 테이블이 아직 없으면 `/health`는 503일 수 있고, 적용이 끝나면 200이 됩니다.
 
-1. API를 기동한 뒤 [Apply-DbSchema.ps1](../deploy/scripts/Apply-DbSchema.ps1)이 `GET /api/schema/sql`을 받아 DB에 실행합니다. 스키마가 없을 때 `/health`는 503일 수 있습니다.
-2. `Database:ApplySchemaOnStartup`을 `true`로 두면 API가 기동 시 idempotent DDL을 적용합니다. 실패하면 기동하지 않습니다.
-3. 이미 저장해 둔 `.sql`이 있으면 `-SqlPath`로 적용합니다. `-WhatIf`로 배치를 검토할 수 있습니다.
+1. 기본: `Database:ApplySchemaInBackground=true`. 기동 후 없는 테이블/컬럼을 추가하고, SQL이 안 되면 재시도합니다.
+2. 즉시 적용: `POST /api/schema/sql` (AdminToken). 상태는 `GET /api/schema`.
+3. 기동을 스키마에 묶으려면 `Database:ApplySchemaOnStartup=true`. 실패하면 기동하지 않습니다.
+4. DBA가 직접 적용하려면 [Apply-DbSchema.ps1](../deploy/scripts/Apply-DbSchema.ps1)에 `-SqlPath`를 넘깁니다. `-WhatIf`로 배치를 검토할 수 있습니다.
 
 ```powershell
 $headers = @{ Authorization = "Bearer $adminToken" }

@@ -40,11 +40,13 @@ internal static class InventoryQueryApi
             {
                 return InventoryCsv.File(
                     "devices.csv",
-                    ["DeviceCode", "HostName", "DomainName", "OperatingSystem", "AgentVersion", "LastHeartbeatUtc", "LastInventoryUtc"],
+                    ["DeviceCode", "HostName", "AssignedHostName", "AdminNotes", "DomainName", "OperatingSystem", "AgentVersion", "LastHeartbeatUtc", "LastInventoryUtc"],
                     items.Select(device => new[]
                     {
                         device.DeviceCode,
                         device.HostName,
+                        device.AssignedHostName,
+                        device.AdminNotes,
                         device.DomainName,
                         device.OperatingSystem,
                         device.AgentVersion,
@@ -136,12 +138,13 @@ internal static class InventoryQueryApi
             {
                 return InventoryCsv.File(
                     $"software-{InventoryCsv.SafeFileName(name)}-devices.csv",
-                    ["Name", "DeviceCode", "HostName", "DomainName", "OperatingSystem", "AgentVersion", "LastHeartbeatUtc", "LastInventoryUtc", "Version", "Publisher", "Classification", "LicenseSource", "LicenseSourceOverride"],
+                    ["Name", "DeviceCode", "HostName", "AssignedHostName", "DomainName", "OperatingSystem", "AgentVersion", "LastHeartbeatUtc", "LastInventoryUtc", "Version", "Publisher", "Classification", "LicenseSource", "LicenseSourceOverride"],
                     items.Select(device => new[]
                     {
                         name,
                         device.DeviceCode,
                         device.HostName,
+                        device.AssignedHostName,
                         device.DomainName,
                         device.OperatingSystem,
                         device.AgentVersion,
@@ -219,6 +222,40 @@ internal static class InventoryQueryApi
                 ? Results.NoContent()
                 : Results.NotFound();
         });
+
+        app.MapPut("/api/inventory/devices/{deviceCode}", async (
+            string deviceCode,
+            DeviceProfileWriteRequest request,
+            IDeviceQuery repository,
+            CancellationToken cancellationToken) =>
+        {
+            if (string.IsNullOrWhiteSpace(deviceCode))
+            {
+                return Results.BadRequest("deviceCode is required.");
+            }
+
+            if (request is null)
+            {
+                return Results.BadRequest("The device profile payload is required.");
+            }
+
+            if (!PcDisplayNames.TryNormalizeAssignedHostName(request.AssignedHostName, out var assignedHostName, out var nameError))
+            {
+                return Results.BadRequest(nameError);
+            }
+
+            if (!PcDisplayNames.TryNormalizeAdminNotes(request.AdminNotes, out var adminNotes, out var notesError))
+            {
+                return Results.BadRequest(notesError);
+            }
+
+            return await repository.UpdateDeviceProfileAsync(
+                deviceCode,
+                new DeviceProfileWriteRequest(assignedHostName, adminNotes),
+                cancellationToken)
+                ? Results.NoContent()
+                : Results.NotFound();
+        });
     }
 
     private static async Task<IResult> GetDeviceAsync(
@@ -251,7 +288,7 @@ internal static class InventoryQueryApi
                 : detail.InstalledSoftware.Select(entry => DeviceSoftwareRow(detail, entry));
             return InventoryCsv.File(
                 $"device-{InventoryCsv.SafeFileName(detail.DeviceCode)}.csv",
-                ["DeviceCode", "HostName", "DomainName", "OperatingSystem", "AgentVersion", "LastHeartbeatUtc", "LastInventoryUtc", "Name", "Version", "Publisher", "InstallLocation", "DiscoveryScope", "DiscoverySource", "Classification", "LicenseSource", "LicenseSourceOverride"],
+                ["DeviceCode", "HostName", "AssignedHostName", "AdminNotes", "DomainName", "OperatingSystem", "AgentVersion", "LastHeartbeatUtc", "LastInventoryUtc", "Name", "Version", "Publisher", "InstallLocation", "DiscoveryScope", "DiscoverySource", "Classification", "LicenseSource", "LicenseSourceOverride"],
                 rows);
         }
 
@@ -262,6 +299,8 @@ internal static class InventoryQueryApi
     [
         detail.DeviceCode,
         detail.HostName,
+        detail.AssignedHostName,
+        detail.AdminNotes,
         detail.DomainName,
         detail.OperatingSystem,
         detail.AgentVersion,

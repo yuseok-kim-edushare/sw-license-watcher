@@ -174,6 +174,24 @@ internal sealed partial class SqlServerDataContext(SqlServerStorageOptions optio
 
     internal static string Name(params string[] parts) =>
         string.Join('.', parts.Select(part => $"[{part.Replace("]", "]]", StringComparison.Ordinal)}]"));
+
+    internal string DisplayHostNameSql(string? tableAlias = null)
+    {
+        var table = options.PcTable;
+        var prefix = string.IsNullOrEmpty(tableAlias) ? "" : tableAlias + ".";
+        return $"COALESCE(NULLIF({prefix}{Name(table.AssignedHostNameColumn)}, N''), {prefix}{Name(table.HostNameColumn)})";
+    }
+
+    internal string HostNameSearchSql(string? tableAlias = null)
+    {
+        var table = options.PcTable;
+        var prefix = string.IsNullOrEmpty(tableAlias) ? "" : tableAlias + ".";
+        return $"""
+            {prefix}{Name(table.DeviceCodeColumn)} LIKE @search
+            OR {prefix}{Name(table.HostNameColumn)} LIKE @search
+            OR {prefix}{Name(table.AssignedHostNameColumn)} LIKE @search
+            """;
+    }
 }
 
 internal sealed class SoftwareAggregateKeyComparer : IEqualityComparer<(string Name, string? Version)>

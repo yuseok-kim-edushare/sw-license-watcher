@@ -74,4 +74,12 @@ public class DatabaseOptionsTests
     {
         Assert.False(new DatabaseOptions().ApplySchemaOnStartup);
     }
+
+    [Fact]
+    public void ApplySchemaInBackground_defaults_to_true()
+    {
+        var options = new DatabaseOptions();
+        Assert.True(options.ApplySchemaInBackground);
+        Assert.Equal(TimeSpan.FromSeconds(30), options.SchemaReconcileRetry);
+    }
 }

@@ -19,4 +19,15 @@ internal sealed class SqlServerDeviceQueryRepository(SqlServerDataContext contex
         CancellationToken cancellationToken) =>
         context.GetDeviceAsync(deviceCode, classification, cancellationToken);
 
+    public Task<string?> GetAssignedHostNameAsync(
+        string deviceCode,
+        CancellationToken cancellationToken) =>
+        context.GetAssignedHostNameAsync(deviceCode, cancellationToken);
+
+    public Task<bool> UpdateDeviceProfileAsync(
+        string deviceCode,
+        DeviceProfileWriteRequest request,
+        CancellationToken cancellationToken) =>
+        context.UpdateDeviceProfileAsync(deviceCode, request, cancellationToken);
+
 }

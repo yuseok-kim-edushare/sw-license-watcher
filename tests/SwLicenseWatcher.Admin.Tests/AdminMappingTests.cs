@@ -66,6 +66,14 @@ public class AdminMappingTests
     }
 
     [Theory]
+    [InlineData("DESKTOP-1", null, "DESKTOP-1")]
+    [InlineData("DESKTOP-1", "마케팅-01", "마케팅-01")]
+    public void PcName_prefers_assigned_host_name(string hostName, string? assigned, string expected)
+    {
+        Assert.Equal(expected, DashboardPresentation.PcName(hostName, assigned));
+    }
+
+    [Theory]
     [InlineData("WHITE", SoftwarePolicyClassification.Whitelist)]
     [InlineData("blacklist", SoftwarePolicyClassification.Blacklist)]
     [InlineData("managed", SoftwarePolicyClassification.Managed)]

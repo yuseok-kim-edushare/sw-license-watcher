@@ -9,6 +9,7 @@ namespace SwLicenseWatcher.Core;
 [JsonSerializable(typeof(AgentHeartbeat))]
 [JsonSerializable(typeof(UpdateManifest))]
 [JsonSerializable(typeof(WorkerHealthReport))]
+[JsonSerializable(typeof(StoredAgentAssignment))]
 [JsonSerializable(typeof(SoftwarePolicyEntry))]
 [JsonSerializable(typeof(SoftwarePolicyEntry[]))]
 [JsonSerializable(typeof(List<SoftwarePolicyEntry>))]

@@ -1,5 +1,6 @@
 using Microsoft.Extensions.Options;
 using SwLicenseWatcher.Core;
+using SwLicenseWatcher.Infrastructure.SqlServer;
 
 namespace SwLicenseWatcher.Api;
 
@@ -8,10 +9,45 @@ internal static class DesignEndpoints
     internal static IEndpointRouteBuilder MapDesignEndpoints(this IEndpointRouteBuilder endpoints)
     {
         endpoints.MapGet("/", () => Results.Redirect("/api/design"));
+        endpoints.MapGet("/api/schema", (
+            IOptions<DatabaseOptions> database,
+            SqlServerSchemaApplicator applicator) =>
+        {
+            var last = applicator.Last;
+            return Results.Ok(new SchemaStatusResponse(
+                database.Value.ApplySchemaOnStartup,
+                database.Value.ApplySchemaInBackground,
+                last.Succeeded,
+                last.BatchCount,
+                last.LastAttemptUtc,
+                last.LastSucceededUtc,
+                last.LastError));
+        });
         endpoints.MapGet("/api/schema/sql", (
             IOptions<SqlServerStorageOptions> options,
             SqlServerSchemaScriptBuilder schemaBuilder) =>
             Results.Text(schemaBuilder.Build(options.Value), "text/plain"));
+        endpoints.MapPost("/api/schema/sql", async (
+            SqlServerSchemaApplicator applicator,
+            CancellationToken cancellationToken) =>
+        {
+            try
+            {
+                var batchCount = await applicator.ApplyAsync(cancellationToken);
+                return Results.Ok(new SchemaApplyResponse(true, batchCount, DateTimeOffset.UtcNow));
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                return TypedResults.Json(
+                    new SchemaApplyResponse(false, 0, DateTimeOffset.UtcNow, ex.Message),
+                    ApiJsonSerializerContext.Default.SchemaApplyResponse,
+                    statusCode: StatusCodes.Status503ServiceUnavailable);
+            }
+        });
         endpoints.MapGet("/api/design", async (
             IOptions<SqlServerStorageOptions> sqlOptions,
             WorkerUpdatePinService workerPin,

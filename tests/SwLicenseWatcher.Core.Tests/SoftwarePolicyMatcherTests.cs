@@ -185,6 +185,10 @@ public class SoftwarePolicyValidatorTests
             new SoftwareClassificationWriteRequest(SoftwarePolicyClassification.Managed, null, "personal"),
             out error));
         Assert.Equal("The policy default license source must be company or byo.", error);
+        Assert.False(SoftwarePolicyValidator.TryValidateClassification(
+            new SoftwareClassificationWriteRequest(SoftwarePolicyClassification.Managed, "Microsoft", "company", new string('n', 1025)),
+            out error));
+        Assert.Equal("The policy exceeds persisted field limits.", error);
     }
 
     [Fact]

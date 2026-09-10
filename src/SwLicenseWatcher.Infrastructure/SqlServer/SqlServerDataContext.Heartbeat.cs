@@ -74,7 +74,7 @@ internal sealed partial class SqlServerDataContext
     {
         var table = options.PcTable;
         return $"""
-            SELECT {Name(table.DeviceCodeColumn)}, {Name(table.HostNameColumn)}, {Name(table.LastHeartbeatUtcColumn)}
+            SELECT {Name(table.DeviceCodeColumn)}, {DisplayHostNameSql()} AS {Name(table.HostNameColumn)}, {Name(table.LastHeartbeatUtcColumn)}
             FROM {Name(options.SchemaName, table.TableName)}
             WHERE {Name(table.LastHeartbeatUtcColumn)} IS NOT NULL
               AND {Name(table.LastHeartbeatUtcColumn)} < @cutoff

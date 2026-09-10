@@ -27,13 +27,13 @@ public sealed class AgentApiClient
         _options = options.Value;
     }
 
-    public Task<AgentPublishResult> PublishSnapshotAsync(InventoryIngestionRequest snapshot, CancellationToken cancellationToken) =>
+    public Task<AgentPublishOutcome> PublishSnapshotAsync(InventoryIngestionRequest snapshot, CancellationToken cancellationToken) =>
         PostAsync(_options.SnapshotPath, snapshot, InventoryJsonSerializerContext.Default.InventoryIngestionRequest, cancellationToken);
 
-    public Task<AgentPublishResult> PublishHeartbeatAsync(AgentHeartbeat heartbeat, CancellationToken cancellationToken) =>
+    public Task<AgentPublishOutcome> PublishHeartbeatAsync(AgentHeartbeat heartbeat, CancellationToken cancellationToken) =>
         PostAsync(_options.HeartbeatPath, heartbeat, InventoryJsonSerializerContext.Default.AgentHeartbeat, cancellationToken);
 
-    private async Task<AgentPublishResult> PostAsync<TPayload>(string path, TPayload payload, JsonTypeInfo<TPayload> typeInfo, CancellationToken cancellationToken)
+    private async Task<AgentPublishOutcome> PostAsync<TPayload>(string path, TPayload payload, JsonTypeInfo<TPayload> typeInfo, CancellationToken cancellationToken)
     {
         try
         {
@@ -45,7 +45,9 @@ public sealed class AgentApiClient
             using var response = await _httpClient.SendAsync(request, cancellationToken);
             if (response.IsSuccessStatusCode)
             {
-                return AgentPublishResult.Succeeded;
+                var json = await response.Content.ReadAsStringAsync(cancellationToken);
+                AgentAssignmentStore.TryReadAssignedHostName(json, out var assignmentSpecified, out var assignedHostName);
+                return new AgentPublishOutcome(AgentPublishResult.Succeeded, assignmentSpecified, assignedHostName);
             }
 
             var statusCode = (int)response.StatusCode;
@@ -56,7 +58,7 @@ public sealed class AgentApiClient
                     path,
                     _httpClient.BaseAddress,
                     statusCode);
-                return AgentPublishResult.RetryableFailure;
+                return new AgentPublishOutcome(AgentPublishResult.RetryableFailure, false, null);
             }
 
             if (response.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden)
@@ -66,7 +68,7 @@ public sealed class AgentApiClient
                     path,
                     _httpClient.BaseAddress,
                     statusCode);
-                return AgentPublishResult.NonRetryableFailure;
+                return new AgentPublishOutcome(AgentPublishResult.NonRetryableFailure, false, null);
             }
 
             _logger.LogError(
@@ -74,7 +76,7 @@ public sealed class AgentApiClient
                 path,
                 _httpClient.BaseAddress,
                 statusCode);
-            return AgentPublishResult.NonRetryableFailure;
+            return new AgentPublishOutcome(AgentPublishResult.NonRetryableFailure, false, null);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -83,7 +85,7 @@ public sealed class AgentApiClient
         catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException)
         {
             _logger.LogWarning(ex, "Failed to POST {Path} to {BaseAddress}.", path, _httpClient.BaseAddress);
-            return AgentPublishResult.RetryableFailure;
+            return new AgentPublishOutcome(AgentPublishResult.RetryableFailure, false, null);
         }
     }
 }

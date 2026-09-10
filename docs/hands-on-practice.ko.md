@@ -60,7 +60,7 @@ Server=localhost\SQLEXPRESS;Database=SwLicenseWatcher;Trusted_Connection=True;Tr
 
 운영 문서의 `TrustServerCertificate=False`는 집 자체 서명 SQL 인증서에서는 자주 막힙니다. 테스트에서만 `True`로 두면 됩니다.
 
-스키마는 API `Database:ApplySchemaOnStartup`을 `true`로 두는 것이 가장 쉽습니다. 기동 시 DDL을 적용하고, 실패하면 사이트가 뜨지 않습니다.
+스키마는 기본으로 API가 백그라운드에서 맞춥니다(`Database:ApplySchemaInBackground=true`). 없는 테이블/컬럼은 `CREATE`/`ALTER TABLE ADD` 합니다. 기동을 스키마에 묶으려면 `ApplySchemaOnStartup`을 `true`로 두면 되고, 실패하면 사이트가 뜨지 않습니다.
 
 ## 2. IIS + HTTPS
 
@@ -116,7 +116,7 @@ $adminToken = .\deploy\scripts\New-ApiToken.ps1
 | `Security:AgentToken` / `AdminToken` | 위에서 만든 32자 이상, **서로 다름** |
 | `Security:RequireHttps` | `true` (IIS가 TLS 종료) |
 | `Storage:SqlServer:ConnectionString` | Express 연결 문자열 |
-| `Database:ApplySchemaOnStartup` | `true` |
+| `Database:ApplySchemaInBackground` | `true` (기본). 기동 후 테이블/컬럼을 맞춤 |
 | `Notifications:Webhook/Smtp:Enabled` | `false` |
 | `Updates:Worker:RequireAuthenticode` | 시드값. 서명 없는 빌드면 **`false`** (이후 `/admin` 업데이트 탭에서도 바꿀 수 있음) |
 | `Updates:Worker:PackageUrl` | 시드용. 자체 패치를 안 하면 플레이스홀더 HTTPS URL로 기동은 됩니다 |
@@ -225,7 +225,7 @@ Watchdog은 설치 폴더의 `appsettings.json`을 패치 후에도 유지합니
 | 증상 | 원인 |
 | --- | --- |
 | IIS 500.30 / 500.31 | Hosting Bundle 없음, 앱 풀이 CLR 있음, **AOT 폴더를 가리킴** |
-| API가 바로 죽음 | AgentToken=AdminToken, 토큰 32자 미만, 남아 있는 `Security:Token`, SQL 연결 실패, `ApplySchemaOnStartup` 실패 |
+| API가 바로 죽음 | AgentToken=AdminToken, 토큰 32자 미만, 남아 있는 `Security:Token`, `ApplySchemaOnStartup`이 켜진 채 SQL 연결/권한 실패 |
 | 에이전트 즉시 종료 | 빈 `ApiToken`, 비-loopback HTTP URL |
 | 401 | PC `ApiToken` ≠ 서버 `AgentToken` |
 | TLS/SSL 오류 | 자체 서명을 Root에 안 넣음, 호스트 이름 불일치 |

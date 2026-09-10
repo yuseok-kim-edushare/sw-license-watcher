@@ -74,6 +74,16 @@ public sealed class AdminApiClient(HttpClient http, IJSRuntime js)
             request,
             cancellationToken);
 
+    public Task PutDeviceProfileAsync(
+        string deviceCode,
+        DeviceProfileWriteRequest request,
+        CancellationToken cancellationToken = default) =>
+        SendAsync(
+            HttpMethod.Put,
+            $"/api/inventory/devices/{Uri.EscapeDataString(deviceCode)}",
+            request,
+            cancellationToken);
+
     public Task<ViolationListResponse> GetViolationsAsync(string query, CancellationToken cancellationToken = default) =>
         GetAsync<ViolationListResponse>($"/api/violations?{query}", cancellationToken);
 

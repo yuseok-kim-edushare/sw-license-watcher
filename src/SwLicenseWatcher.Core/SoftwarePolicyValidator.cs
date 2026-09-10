@@ -46,7 +46,8 @@ public static class SoftwarePolicyValidator
             return false;
         }
 
-        if ((request.Publisher?.Length ?? 0) > 256)
+        if ((request.Publisher?.Length ?? 0) > 256 ||
+            (request.Notes?.Length ?? 0) > 1024)
         {
             error = "The policy exceeds persisted field limits.";
             return false;

@@ -72,6 +72,7 @@ public class BearerTokenAuthenticatorTests
     [InlineData("/api/uninstall-requests/12/approve")]
     [InlineData("/api/uninstall-requests/12/deny")]
     [InlineData("/api/design")]
+    [InlineData("/api/schema")]
     [InlineData("/api/schema/sql")]
     public void IsAuthorized_admin_token_is_accepted_on_admin_endpoints(string path)
     {

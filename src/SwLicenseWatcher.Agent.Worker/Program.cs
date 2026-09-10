@@ -32,6 +32,15 @@ builder.Services.AddSingleton(sp => sp.GetRequiredService<IOptions<LocalStateSto
 builder.Services.AddSingleton<ILocalStateProtector, DpapiLocalStateProtector>();
 builder.Services.AddSingleton<ISoftwareInventoryCollector, RegistrySoftwareInventoryCollector>();
 builder.Services.AddSingleton<LocalSnapshotQueue>();
+builder.Services.AddSingleton(sp =>
+{
+    var healthPath = sp.GetRequiredService<IOptions<WorkerAgentOptions>>().Value.HealthFilePath;
+    var directory = Path.GetDirectoryName(healthPath);
+    var path = string.IsNullOrEmpty(directory)
+        ? "assigned-host-name.json"
+        : Path.Combine(directory, "assigned-host-name.json");
+    return new AgentAssignmentStore(path);
+});
 builder.Services.AddHttpClient<AgentApiClient>((sp, client) =>
 {
     var options = sp.GetRequiredService<IOptions<WorkerAgentOptions>>().Value;

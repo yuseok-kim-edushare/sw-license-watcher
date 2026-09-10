@@ -82,7 +82,8 @@ internal sealed partial class SqlServerDataContext
                 p.{Name(pc.LastHeartbeatUtcColumn)}, p.{Name(pc.LastInventoryUtcColumn)},
                 s.{Name(software.DisplayVersionColumn)}, s.{Name(software.PublisherColumn)},
                 s.{Name(software.ClassificationColumn)},
-                l.{Name(license.LicenseSourceColumn)} AS license_source_override
+                l.{Name(license.LicenseSourceColumn)} AS license_source_override,
+                p.{Name(pc.AssignedHostNameColumn)}
             FROM {Name(options.SchemaName, software.TableName)} AS s
             INNER JOIN {Name(options.SchemaName, pc.TableName)} AS p
                 ON p.{Name(pc.PrimaryKeyColumn)} = s.{Name(software.PcForeignKeyColumn)}
@@ -91,7 +92,7 @@ internal sealed partial class SqlServerDataContext
                AND l.{Name(license.SoftwareNameColumn)} = s.{Name(software.DisplayNameColumn)}
             WHERE s.{Name(software.DisplayNameColumn)} = @name
               AND (@classification IS NULL OR s.{Name(software.ClassificationColumn)} = @classification)
-            ORDER BY p.{Name(pc.HostNameColumn)}, p.{Name(pc.DeviceCodeColumn)}
+            ORDER BY {DisplayHostNameSql("p")}, p.{Name(pc.DeviceCodeColumn)}
             OFFSET @skip ROWS FETCH NEXT @take ROWS ONLY;
             """;
         await using var command = new SqlCommand(sql, connection);
@@ -123,7 +124,8 @@ internal sealed partial class SqlServerDataContext
                 ReadNullableString(reader, software.PublisherColumn),
                 storedClassification,
                 LicenseSource: null,
-                LicenseSourceOverride: overrideSource));
+                LicenseSourceOverride: overrideSource,
+                AssignedHostName: ReadNullableString(reader, pc.AssignedHostNameColumn)));
         }
 
         await reader.CloseAsync();

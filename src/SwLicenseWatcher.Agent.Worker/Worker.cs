@@ -12,6 +12,7 @@ public sealed class Worker(
     LocalSnapshotQueue snapshotQueue,
     IOptions<WorkerAgentOptions> options,
     IOptions<LocalStateStoreOptions> localStateOptions,
+    AgentAssignmentStore assignmentStore,
     IHostApplicationLifetime applicationLifetime) : BackgroundService
 {
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -41,7 +42,12 @@ public sealed class Worker(
                 var publishResult = AgentPublishResult.RetryableFailure;
                 if (queueDrained)
                 {
-                    publishResult = await apiClient.PublishSnapshotAsync(snapshot, stoppingToken);
+                    var snapshotOutcome = await apiClient.PublishSnapshotAsync(snapshot, stoppingToken);
+                    publishResult = snapshotOutcome.Result;
+                    await assignmentStore.ApplyAsync(
+                        snapshotOutcome.AssignmentSpecified,
+                        snapshotOutcome.AssignedHostName,
+                        stoppingToken);
                     if (publishResult == AgentPublishResult.RetryableFailure)
                     {
                         await snapshotQueue.EnqueueAsync(snapshot, stoppingToken);
@@ -52,7 +58,7 @@ public sealed class Worker(
                     await snapshotQueue.EnqueueAsync(snapshot, stoppingToken);
                 }
 
-                await apiClient.PublishHeartbeatAsync(
+                var heartbeatOutcome = await apiClient.PublishHeartbeatAsync(
                     new AgentHeartbeat(
                         snapshot.Pc.DeviceCode,
                         snapshot.Pc.HostName,
@@ -60,6 +66,10 @@ public sealed class Worker(
                         snapshot.Pc.AgentVersion,
                         DateTimeOffset.UtcNow,
                         HeartbeatStatus.Resolve(queueDrained, publishResult)),
+                    stoppingToken);
+                await assignmentStore.ApplyAsync(
+                    heartbeatOutcome.AssignmentSpecified,
+                    heartbeatOutcome.AssignedHostName,
                     stoppingToken);
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
@@ -143,7 +153,7 @@ public sealed class Worker(
         var software = await inventoryCollector.CollectAsync(cancellationToken);
         var identity = new PcIdentity(
             agentOptions.DeviceCode,
-            Environment.MachineName,
+            assignmentStore.ResolveHostName(Environment.MachineName),
             agentOptions.DomainName,
             WindowsOsDescription.Resolve(logger),
             ResolveInstalledVersion());

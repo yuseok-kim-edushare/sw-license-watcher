@@ -249,7 +249,8 @@ internal sealed partial class SqlServerDataContext
         return $"""
             SELECT
                 COUNT(*) OVER() AS total_count,
-                r.{Name(table.PrimaryKeyColumn)}, p.{Name(pc.DeviceCodeColumn)}, p.{Name(pc.HostNameColumn)},
+                r.{Name(table.PrimaryKeyColumn)}, p.{Name(pc.DeviceCodeColumn)},
+                {DisplayHostNameSql("p")} AS {Name(pc.HostNameColumn)},
                 r.{Name(table.StatusColumn)}, r.{Name(table.RequestedAtUtcColumn)},
                 r.{Name(table.ApprovedAtUtcColumn)}, r.{Name(table.ConsumedAtUtcColumn)},
                 r.{Name(table.ExpiresAtUtcColumn)}
@@ -257,8 +258,7 @@ internal sealed partial class SqlServerDataContext
             INNER JOIN {Name(options.SchemaName, pc.TableName)} AS p
                 ON p.{Name(pc.PrimaryKeyColumn)} = r.{Name(table.PcForeignKeyColumn)}
             WHERE (@search IS NULL
-                OR p.{Name(pc.DeviceCodeColumn)} LIKE @search
-                OR p.{Name(pc.HostNameColumn)} LIKE @search
+                OR {HostNameSearchSql("p")}
                 OR r.{Name(table.StatusColumn)} LIKE @search)
             ORDER BY CASE WHEN r.{Name(table.StatusColumn)} = N'{UninstallGrant.Pending}' THEN 0 ELSE 1 END,
                      r.{Name(table.RequestedAtUtcColumn)} DESC

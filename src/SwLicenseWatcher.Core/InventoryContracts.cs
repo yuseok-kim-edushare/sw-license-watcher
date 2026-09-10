@@ -70,7 +70,9 @@ public sealed record SoftwarePolicyWriteRequest(
 public sealed record SoftwareClassificationWriteRequest(
     SoftwarePolicyClassification? Classification,
     string? Publisher = null,
-    string? DefaultLicenseSource = null);
+    string? DefaultLicenseSource = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    string? Notes = null);
 
 public sealed record SoftwareClassificationItemWriteRequest(
     string? Name,
@@ -117,6 +119,8 @@ public sealed record WorkerHealthReport(
     string ServiceName,
     string Version,
     DateTimeOffset ReportedAtUtc);
+
+public sealed record StoredAgentAssignment(string? AssignedHostName);
 
 public sealed record UpdateManifest(
     string TargetServiceName,

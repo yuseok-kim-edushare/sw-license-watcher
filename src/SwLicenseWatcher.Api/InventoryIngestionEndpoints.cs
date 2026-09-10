@@ -11,6 +11,7 @@ internal static class InventoryIngestionEndpoints
             InventoryIngestionRequest request,
             InventoryMemoryStore store,
             ISnapshotRepository repository,
+            IDeviceQuery devices,
             NotificationPublisher notifications,
             CancellationToken cancellationToken) =>
         {
@@ -23,15 +24,18 @@ internal static class InventoryIngestionEndpoints
             store.RecordSnapshot(request);
             notifications.EnqueueNewSoftwareIfNeeded(request, saveResult);
             notifications.EnqueueBlacklistViolationsIfNeeded(request, saveResult);
+            var assignedHostName = await devices.GetAssignedHostNameAsync(request.Pc.DeviceCode, cancellationToken);
             return Results.Accepted($"/api/inventory/devices/{request.Pc.DeviceCode}", new SnapshotAcceptedResponse(
                 request.Pc.DeviceCode,
                 request.InstalledSoftware.Count,
-                request.CollectedAtUtc));
+                request.CollectedAtUtc,
+                assignedHostName));
         });
         endpoints.MapPost(AgentPaths.Heartbeats, async (
             AgentHeartbeat heartbeat,
             InventoryMemoryStore store,
             IHeartbeatRepository repository,
+            IDeviceQuery devices,
             CancellationToken cancellationToken) =>
         {
             if (!InventorySnapshotValidator.TryValidate(heartbeat, out var validationError))
@@ -41,7 +45,15 @@ internal static class InventoryIngestionEndpoints
 
             await repository.SaveHeartbeatAsync(heartbeat, cancellationToken);
             store.RecordHeartbeat(heartbeat);
-            return Results.Accepted($"/api/agents/heartbeats/{heartbeat.DeviceCode}", heartbeat);
+            var assignedHostName = await devices.GetAssignedHostNameAsync(heartbeat.DeviceCode, cancellationToken);
+            return Results.Accepted($"/api/agents/heartbeats/{heartbeat.DeviceCode}", new AgentHeartbeatAcceptedResponse(
+                heartbeat.DeviceCode,
+                heartbeat.HostName,
+                heartbeat.ServiceName,
+                heartbeat.Version,
+                heartbeat.ReportedAtUtc,
+                heartbeat.Status,
+                assignedHostName));
         });
 
         return endpoints;

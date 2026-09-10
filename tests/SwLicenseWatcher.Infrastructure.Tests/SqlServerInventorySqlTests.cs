@@ -82,6 +82,7 @@ public class SqlServerInventorySqlTests
         Assert.Contains("OFFSET @skip ROWS FETCH NEXT @take ROWS ONLY", sql, StringComparison.Ordinal);
         Assert.Contains("p.[device_code] LIKE @search", sql, StringComparison.Ordinal);
         Assert.Contains("p.[host_name] LIKE @search", sql, StringComparison.Ordinal);
+        Assert.Contains("p.[assigned_host_name] LIKE @search", sql, StringComparison.Ordinal);
         Assert.Contains("v.[display_name] LIKE @search", sql, StringComparison.Ordinal);
         Assert.Contains("v.[detected_at_utc] >= @since", sql, StringComparison.Ordinal);
         Assert.Contains("[inventory].[software_violation]", sql, StringComparison.Ordinal);
@@ -102,7 +103,7 @@ public class SqlServerInventorySqlTests
     public void BuildGetStaleHeartbeatsSql_selects_pcs_whose_last_heartbeat_is_older_than_the_cutoff()
     {
         var sql = new SqlServerDataContext(new SqlServerStorageOptions()).BuildGetStaleHeartbeatsSql();
-        Assert.Contains("SELECT [device_code], [host_name], [last_heartbeat_utc]", sql, StringComparison.Ordinal);
+        Assert.Contains("SELECT [device_code], COALESCE(NULLIF([assigned_host_name], N''), [host_name]) AS [host_name], [last_heartbeat_utc]", sql, StringComparison.Ordinal);
         Assert.Contains("FROM [inventory].[pc_entity]", sql, StringComparison.Ordinal);
         Assert.Contains("[last_heartbeat_utc] IS NOT NULL", sql, StringComparison.Ordinal);
         Assert.Contains("[last_heartbeat_utc] < @cutoff", sql, StringComparison.Ordinal);
