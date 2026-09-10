@@ -4,7 +4,9 @@
     <Project Path="src/SwLicenseWatcher.Agent.Watchdog/SwLicenseWatcher.Agent.Watchdog.csproj" />
     <Project Path="src/SwLicenseWatcher.Agent.Worker/SwLicenseWatcher.Agent.Worker.csproj" />
     <Project Path="src/SwLicenseWatcher.Api/SwLicenseWatcher.Api.csproj" />
+    <Project Path="src/SwLicenseWatcher.Application/SwLicenseWatcher.Application.csproj" />
     <Project Path="src/SwLicenseWatcher.Core/SwLicenseWatcher.Core.csproj" />
+    <Project Path="src/SwLicenseWatcher.Infrastructure/SwLicenseWatcher.Infrastructure.csproj" />
     <Project Path="src/SwLicenseWatcher.Packager/SwLicenseWatcher.Packager.csproj" />
     <Project Path="src/SwLicenseWatcher.Setup/SwLicenseWatcher.Setup.csproj" />
     <Project Path="src/SwLicenseWatcher.Setup.Core/SwLicenseWatcher.Setup.Core.csproj" />

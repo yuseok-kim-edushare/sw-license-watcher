@@ -19,7 +19,13 @@
   <ItemGroup>
     <PackageReference Include="Microsoft.Data.SqlClient" />
     <PackageReference Include="Microsoft.Extensions.Hosting.WindowsServices" />
+    <ProjectReference
+      Include="..\SwLicenseWatcher.Application\SwLicenseWatcher.Application.csproj"
+      GlobalPropertiesToRemove="PublishAot;PublishTrimmed;RuntimeIdentifier;SelfContained" />
     <ProjectReference Include="..\SwLicenseWatcher.Core\SwLicenseWatcher.Core.csproj" GlobalPropertiesToRemove="PublishAot;PublishTrimmed;RuntimeIdentifier;SelfContained" />
+    <ProjectReference
+      Include="..\SwLicenseWatcher.Infrastructure\SwLicenseWatcher.Infrastructure.csproj"
+      GlobalPropertiesToRemove="PublishAot;PublishTrimmed;RuntimeIdentifier;SelfContained" />
   </ItemGroup>
 
   <ItemGroup>
