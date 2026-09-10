@@ -49,15 +49,18 @@
 
 ## 프로젝트 구조
 
-- `/src/SwLicenseWatcher.Core`: 계약, 옵션, 레지스트리 수집기, DPAPI 보호기, SQL Server DDL 생성기
-- `/src/SwLicenseWatcher.Admin`: `/admin` Blazor WebAssembly (API `wwwroot/admin`으로 publish)
+- `/src/SwLicenseWatcher.Core`: 에이전트·API·Admin이 공유하는 요청/응답 계약과 옵션, 검증·정책 매칭·수집 등 공통 기능
+- `/src/SwLicenseWatcher.Application`: 저장 기술과 분리된 애플리케이션 결정 로직 및 snapshot, heartbeat, 조회, 정책, 위반, 제거 요청, 업데이트 핀별 persistence port
+- `/src/SwLicenseWatcher.Infrastructure`: Application port의 SQL Server 구현, 데이터 컨텍스트, 스키마 적용 및 DI 등록
+- `/src/SwLicenseWatcher.Api`: 인증·HTTP endpoint·호스팅을 구성하고 Application/Infrastructure를 조립하는 ASP.NET Core API
+- `/src/SwLicenseWatcher.Admin`: 기능별 Devices/Software/Policies/Violations/Uninstall/Updates 컴포넌트와 공통 drawer·pagination으로 구성된 `/admin` Blazor WebAssembly (API `wwwroot/admin`으로 publish)
 - `/src/SwLicenseWatcher.Agent.Worker`: inventory 수집 Windows Service
-- `/src/SwLicenseWatcher.Agent.Watchdog`: self-update Windows Service
-- `/src/SwLicenseWatcher.Api`: ASP.NET Core API
-- `/src/SwLicenseWatcher.Setup.Core`: 회사 Setup 페이로드(SWLWPAY1 overlay)와 검증
+- `/src/SwLicenseWatcher.Agent.Watchdog`: manifest 조회·다운로드·검증·안전한 압축 해제·서비스 제어·배포·health 확인/롤백 collaborator로 구성된 self-update Windows Service
+- `/src/SwLicenseWatcher.Setup.Core`: 페이로드 생성/검증과 회사 설정, 에이전트 설치·서비스 등록, 관리자 승인 기반 제거를 조율하는 공통 orchestration
 - `/src/SwLicenseWatcher.Setup.Launcher`: Native AOT 런처. 뒤에 붙은 zip을 풀어 설치 GUI를 실행
 - `/src/SwLicenseWatcher.Setup`: 직원용 WinForms 설치/제거
 - `/src/SwLicenseWatcher.Packager`: IT용 WinForms 패키저. 런처에 회사 설정을 붙여 Setup.exe 하나를 만듦
+- `/tests/SwLicenseWatcher.*.Tests`: Core, Application, Infrastructure, API, Admin, 에이전트와 Setup 계층별 테스트
 - `/deploy/examples`: 서버 API·PC 에이전트용 `appsettings.json` 템플릿
 - `/deploy/scripts`: 서버 API(Kestrel Windows Service) 및 PC Worker·Watchdog 설치/제거 스크립트, SQL Server 스키마 적용 스크립트
 - `/docs/company-deployment.md`: 서버 설정 예시와 회사 PC 클라이언트 배포 절차
@@ -66,6 +69,8 @@
 - `.github/workflows/ci.yaml`: CI (빌드/테스트, Native AOT publish 검증, Dependabot auto-merge 트리거)
 - `.github/workflows/auto-merge.yaml`: Dependabot PR 자동 머지
 - `.github/workflows/cd.yaml`: CD (버전 스탬프 후 publish, GitHub Release에 통합 ZIP·Worker 자체 패치 ZIP·Packager ZIP·SHA256SUMS)
+
+의존성 방향은 `Core <- Application <- Infrastructure`이며, API가 persistence 구현을 주입합니다. Admin과 에이전트는 Core의 공유 계약을 사용하고, Setup/Packager UI는 Setup.Core의 orchestration을 호출합니다.
 
 ## CI/CD
 
