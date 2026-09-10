@@ -28,9 +28,9 @@
             @foreach (var row in _violations)
             {
                 <tr>
-                    <td><button type="button" class="linkish" @onclick="@(() => _drawer.OpenDeviceAsync(row.DeviceCode))">@Dash(row.DeviceCode)</button></td>
-                    <td><button type="button" class="linkish" @onclick="@(() => _drawer.OpenDeviceAsync(row.DeviceCode))">@Dash(row.HostName)</button></td>
-                    <td><button type="button" class="linkish" @onclick="@(() => _drawer.OpenSoftwareAsync(row.SoftwareName))">@Dash(row.SoftwareName)</button></td><td>@Dash(row.SoftwareVersion)</td>
+                    <td><button type="button" class="linkish" @onclick="@(() => Drawer.OpenDeviceAsync(row.DeviceCode))">@Dash(row.DeviceCode)</button></td>
+                    <td><button type="button" class="linkish" @onclick="@(() => Drawer.OpenDeviceAsync(row.DeviceCode))">@Dash(row.HostName)</button></td>
+                    <td><button type="button" class="linkish" @onclick="@(() => Drawer.OpenSoftwareAsync(row.SoftwareName))">@Dash(row.SoftwareName)</button></td><td>@Dash(row.SoftwareVersion)</td>
                     <td>@Dash(row.PolicyProductName)</td><td>@Dash(ClassificationStorage(row.Classification))</td>
                     <td>@FormatTime(row.DetectedAtUtc)</td><td>@FormatTime(row.LastSeenAtUtc)</td>
                 </tr>
@@ -40,12 +40,10 @@
 </table>
 <Pagination From="PageFrom" To="PageTo" Total="TotalCount" CanPrev="CanPrev" CanNext="CanNext"
             Previous="PrevPageAsync" Next="NextPageAsync" />
-<DetailDrawer @ref="_drawer" Changed="RefreshAsync" />
 
 @code {
     private string _since = "";
     private IReadOnlyList<SoftwareViolationEntry> _violations = [];
-    private DetailDrawer _drawer = default!;
 
     public override async Task RefreshAsync()
     {
@@ -55,9 +53,9 @@
             _violations = data.Items ?? [];
             TotalCount = data.TotalCount;
         });
-        if (_drawer?.IsOpen == true)
+        if (Drawer.IsOpen)
         {
-            await _drawer.RefreshAsync();
+            await Drawer.RefreshAsync();
         }
     }
 

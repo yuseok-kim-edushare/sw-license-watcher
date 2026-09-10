@@ -1,15 +1,22 @@
 @using static DashboardPresentation
+@implements IDisposable
 @inject AdminApiClient Api
 @inject AdminRequestHandler Requests
+@inject DetailDrawerHost Host
 
 @if (_kind is not null)
 {
+    <div class="overlay" role="dialog" aria-modal="true" aria-labelledby="drawer-title">
     <div class="backdrop" @onclick="Close"></div>
     <aside class="drawer">
         <div class="drawer-head">
-            <h2>@_title</h2>
+            <h2 id="drawer-title">@_title</h2>
             <button type="button" @onclick="Close">닫기</button>
         </div>
+        @if (_loading)
+        {
+            <p class="meta">불러오는 중...</p>
+        }
         @if (!string.IsNullOrEmpty(_error))
         {
             <p class="error">@_error</p>
@@ -135,6 +142,7 @@
             }
         </div>
     </aside>
+    </div>
 }
 
 @code {
@@ -154,20 +162,34 @@
     private DeviceDetail? _device;
     private IReadOnlyList<SoftwareDevice> _softwareDevices = [];
     private int _softwareTotal;
+    private bool _loading;
 
     public bool IsOpen => _kind is not null;
 
-    public Task OpenDeviceAsync(string deviceCode)
+    protected override void OnInitialized()
+    {
+        Host.Attach(this);
+    }
+
+    public void Dispose()
+    {
+        Host.Detach(this);
+    }
+
+    public async Task OpenDeviceAsync(string deviceCode)
     {
         _kind = "device";
         _key = deviceCode;
         _title = deviceCode;
         _classFilter = "";
         _error = "";
-        return RefreshAsync();
+        _device = null;
+        _loading = true;
+        await InvokeAsync(StateHasChanged);
+        await RefreshAsync();
     }
 
-    public Task OpenSoftwareAsync(string name, string? classification = null, string? publisher = null)
+    public async Task OpenSoftwareAsync(string name, string? classification = null, string? publisher = null)
     {
         _kind = "software";
         _key = name;
@@ -180,7 +202,11 @@
         _license = "";
         _softwareNotes = "";
         _error = "";
-        return LoadSoftwareAsync();
+        _softwareDevices = [];
+        _softwareTotal = 0;
+        _loading = true;
+        await InvokeAsync(StateHasChanged);
+        await LoadSoftwareAsync();
     }
 
     public Task OpenSoftwareAsync(SoftwareAggregate row) =>
@@ -220,6 +246,8 @@
                 }
             }
         }, message => _error = message);
+        _loading = false;
+        await InvokeAsync(StateHasChanged);
     }
 
     public void Close()
@@ -229,6 +257,8 @@
         _device = null;
         _softwareDevices = [];
         _error = "";
+        _loading = false;
+        _ = InvokeAsync(StateHasChanged);
     }
 
     private async Task LoadSoftwareAsync()

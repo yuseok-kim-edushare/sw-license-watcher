@@ -67,7 +67,7 @@
                 var key = SoftwareKey(row);
                 <tr>
                     <td class="check"><input type="checkbox" checked="@_selectedKeys.Contains(key)" @onchange="@(args => ToggleRow(row, args))" /></td>
-                    <td><button type="button" class="linkish" @onclick="@(() => _drawer.OpenSoftwareAsync(row))">@Dash(row.Name)</button></td>
+                    <td><button type="button" class="linkish" @onclick="@(() => Drawer.OpenSoftwareAsync(row))">@Dash(row.Name)</button></td>
                     <td>@Dash(row.Version)</td><td>@Dash(row.Classification)</td><td>@row.DeviceCount</td>
                     <td>@row.CompanyCount</td><td>@row.ByoCount</td><td>@row.UnassignedCount</td>
                 </tr>
@@ -77,7 +77,6 @@
 </table>
 <Pagination From="PageFrom" To="PageTo" Total="TotalCount" CanPrev="CanPrev" CanNext="CanNext"
             Previous="PrevPageAsync" Next="NextPageAsync" />
-<DetailDrawer @ref="_drawer" Changed="RefreshAsync" />
 
 @code {
     private string _classFilter = "";
@@ -86,7 +85,6 @@
     private string _bulkClassification = SoftwarePolicyClassificationNames.Managed;
     private string _bulkLicense = "";
     private string _bulkError = "";
-    private DetailDrawer _drawer = default!;
 
     private bool AllPageSelected => _software.Count > 0 && _software.All(row => _selectedKeys.Contains(SoftwareKey(row)));
     private int SelectedNameCount => SelectedNames().Count;
@@ -101,9 +99,9 @@
             var pageKeys = _software.Select(SoftwareKey).ToHashSet(StringComparer.Ordinal);
             _selectedKeys.RemoveWhere(key => !pageKeys.Contains(key));
         });
-        if (_drawer?.IsOpen == true)
+        if (Drawer.IsOpen)
         {
-            await _drawer.RefreshAsync();
+            await Drawer.RefreshAsync();
         }
     }
 

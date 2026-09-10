@@ -26,8 +26,8 @@
             {
                 <tr>
                     <td>@row.Id</td>
-                    <td><button type="button" class="linkish" @onclick="@(() => _drawer.OpenDeviceAsync(row.DeviceCode))">@Dash(row.DeviceCode)</button></td>
-                    <td><button type="button" class="linkish" @onclick="@(() => _drawer.OpenDeviceAsync(row.DeviceCode))">@Dash(row.HostName)</button></td><td>@Dash(row.Status)</td>
+                    <td><button type="button" class="linkish" @onclick="@(() => Drawer.OpenDeviceAsync(row.DeviceCode))">@Dash(row.DeviceCode)</button></td>
+                    <td><button type="button" class="linkish" @onclick="@(() => Drawer.OpenDeviceAsync(row.DeviceCode))">@Dash(row.HostName)</button></td><td>@Dash(row.Status)</td>
                     <td>@FormatTime(row.RequestedAtUtc)</td><td>@FormatTime(row.ApprovedAtUtc)</td><td>@FormatTime(row.ExpiresAtUtc)</td>
                     <td>
                         @if (string.Equals(row.Status, "pending", StringComparison.OrdinalIgnoreCase))
@@ -49,11 +49,9 @@
 </table>
 <Pagination From="PageFrom" To="PageTo" Total="TotalCount" CanPrev="CanPrev" CanNext="CanNext"
             Previous="PrevPageAsync" Next="NextPageAsync" />
-<DetailDrawer @ref="_drawer" Changed="RefreshAsync" />
 
 @code {
     private IReadOnlyList<AdminUninstallRequest> _requests = [];
-    private DetailDrawer _drawer = default!;
 
     public override async Task RefreshAsync()
     {
@@ -63,9 +61,9 @@
             _requests = data.Items ?? [];
             TotalCount = data.TotalCount;
         });
-        if (_drawer?.IsOpen == true)
+        if (Drawer.IsOpen)
         {
-            await _drawer.RefreshAsync();
+            await Drawer.RefreshAsync();
         }
     }
 

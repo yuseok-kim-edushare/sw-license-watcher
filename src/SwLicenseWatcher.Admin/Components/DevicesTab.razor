@@ -30,8 +30,8 @@
             @foreach (var row in _devices)
             {
                 <tr>
-                    <td><button type="button" class="linkish" @onclick="@(() => _drawer.OpenDeviceAsync(row.DeviceCode))">@Dash(row.DeviceCode)</button></td>
-                    <td><button type="button" class="linkish" @onclick="@(() => _drawer.OpenDeviceAsync(row.DeviceCode))">@Dash(PcName(row.HostName, row.AssignedHostName))</button></td><td>@Dash(row.DomainName)</td><td>@Dash(row.OperatingSystem)</td>
+                    <td><button type="button" class="linkish" @onclick="@(() => Drawer.OpenDeviceAsync(row.DeviceCode))">@Dash(row.DeviceCode)</button></td>
+                    <td><button type="button" class="linkish" @onclick="@(() => Drawer.OpenDeviceAsync(row.DeviceCode))">@Dash(PcName(row.HostName, row.AssignedHostName))</button></td><td>@Dash(row.DomainName)</td><td>@Dash(row.OperatingSystem)</td>
                     <td>@Dash(row.AgentVersion)</td><td>@FormatTime(row.LastHeartbeatUtc)</td><td>@FormatTime(row.LastInventoryUtc)</td>
                 </tr>
             }
@@ -40,12 +40,10 @@
 </table>
 <Pagination From="PageFrom" To="PageTo" Total="TotalCount" CanPrev="CanPrev" CanNext="CanNext"
             Previous="PrevPageAsync" Next="NextPageAsync" />
-<DetailDrawer @ref="_drawer" Changed="RefreshAsync" />
 
 @code {
     private string _staleHours = "";
     private IReadOnlyList<DeviceSummary> _devices = [];
-    private DetailDrawer _drawer = default!;
 
     public override async Task RefreshAsync()
     {
@@ -55,9 +53,9 @@
             _devices = data.Items ?? [];
             TotalCount = data.TotalCount;
         });
-        if (_drawer?.IsOpen == true)
+        if (Drawer.IsOpen)
         {
-            await _drawer.RefreshAsync();
+            await Drawer.RefreshAsync();
         }
     }
 

@@ -16,6 +16,7 @@ public partial class App : IAsyncDisposable
     [Inject] private AdminRequestHandler Requests { get; set; } = default!;
     [Inject] private IJSRuntime Js { get; set; } = default!;
     [Inject] private NavigationManager Nav { get; set; } = default!;
+    [Inject] private DetailDrawerHost Drawer { get; set; } = default!;
 
     private bool _ready;
     private bool _hasToken;
@@ -119,6 +120,7 @@ public partial class App : IAsyncDisposable
         _hasToken = false;
         _tokenError = "";
         _tabs.Reset();
+        Drawer.Close();
         ClearTabReferences();
     }
 
@@ -149,12 +151,21 @@ public partial class App : IAsyncDisposable
         _lastRefreshedAt = DateTimeOffset.Now;
     }
 
+    private async Task OnDrawerChangedAsync()
+    {
+        if (ActiveTab is { } tab)
+        {
+            await tab.RefreshAsync();
+        }
+    }
+
     private async Task HandleUnauthorizedAsync()
     {
         StopAutoRefreshLoop();
         _hasToken = false;
         _tokenError = "인증에 실패했습니다. 관리자 토큰을 다시 입력하세요.";
         _tabs.Reset();
+        Drawer.Close();
         ClearTabReferences();
         await InvokeAsync(StateHasChanged);
     }

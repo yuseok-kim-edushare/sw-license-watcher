@@ -15,6 +15,7 @@ public abstract class AdminTabComponent : ComponentBase, IAdminTab
 
     [Inject] protected AdminApiClient Api { get; set; } = default!;
     [Inject] protected AdminRequestHandler Requests { get; set; } = default!;
+    [Inject] protected DetailDrawerHost Drawer { get; set; } = default!;
     [Parameter] public EventCallback Refreshed { get; set; }
 
     protected int Skip { get; set; }
