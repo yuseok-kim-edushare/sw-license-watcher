@@ -157,7 +157,10 @@ public class WorkerUpdateManagerTests : IDisposable
         var payload = "worker-package"u8.ToArray();
         await File.WriteAllBytesAsync(path, payload);
 
-        await WorkerUpdateManager.VerifyHashAsync(path, Convert.ToHexString(SHA256.HashData(payload)).ToLowerInvariant(), CancellationToken.None);
+        await new UpdatePackageVerifier().VerifyHashAsync(
+            path,
+            Convert.ToHexString(SHA256.HashData(payload)).ToLowerInvariant(),
+            CancellationToken.None);
     }
 
     [Fact]
@@ -168,7 +171,7 @@ public class WorkerUpdateManagerTests : IDisposable
         await File.WriteAllBytesAsync(path, "worker-package"u8.ToArray());
 
         await Assert.ThrowsAsync<CryptographicException>(
-            () => WorkerUpdateManager.VerifyHashAsync(path, ValidSha256, CancellationToken.None));
+            () => new UpdatePackageVerifier().VerifyHashAsync(path, ValidSha256, CancellationToken.None));
     }
 
     [Fact]
@@ -209,7 +212,7 @@ public class WorkerUpdateManagerTests : IDisposable
             ("payload/readme.txt", "hello"u8.ToArray()),
             ("payload/nested/data.bin", "data"u8.ToArray())));
 
-        await CreateManager().ExtractSafelyAsync(archivePath, destination, CancellationToken.None);
+        await CreateExtractor().ExtractAsync(archivePath, destination, CancellationToken.None);
 
         Assert.Equal("hello", await File.ReadAllTextAsync(Path.Combine(destination, "payload", "readme.txt")));
         Assert.Equal("data", await File.ReadAllTextAsync(Path.Combine(destination, "payload", "nested", "data.bin")));
@@ -226,7 +229,7 @@ public class WorkerUpdateManagerTests : IDisposable
         await File.WriteAllBytesAsync(archivePath, CreateZip((entryName, "pwned"u8.ToArray())));
 
         var ex = await Assert.ThrowsAsync<InvalidDataException>(
-            () => CreateManager().ExtractSafelyAsync(archivePath, destination, CancellationToken.None));
+            () => CreateExtractor().ExtractAsync(archivePath, destination, CancellationToken.None));
 
         Assert.Equal("The update archive contains an unsafe path.", ex.Message);
         Assert.False(File.Exists(Path.Combine(_root, "evil.txt")));
@@ -242,7 +245,7 @@ public class WorkerUpdateManagerTests : IDisposable
         await File.WriteAllBytesAsync(archivePath, CreateZip((absoluteTarget, "pwned"u8.ToArray())));
 
         var ex = await Assert.ThrowsAsync<InvalidDataException>(
-            () => CreateManager().ExtractSafelyAsync(archivePath, destination, CancellationToken.None));
+            () => CreateExtractor().ExtractAsync(archivePath, destination, CancellationToken.None));
 
         Assert.Equal("The update archive contains an unsafe path.", ex.Message);
         Assert.False(File.Exists(absoluteTarget));
@@ -263,6 +266,31 @@ public class WorkerUpdateManagerTests : IDisposable
     }
 
     [Fact]
+    public async Task ApplyAsync_orchestrates_download_verification_extraction_and_deployment()
+    {
+        var downloader = new RecordingDownloader();
+        var verifier = new RecordingVerifier();
+        var extractor = new RecordingExtractor();
+        var deployment = new RecordingDeploymentManager();
+        var manager = CreateManager(
+            downloader: downloader,
+            verifier: verifier,
+            extractor: extractor,
+            deploymentManager: deployment);
+        var manifest = Manifest() with { RequireAuthenticode = true };
+
+        await manager.ApplyAsync(manifest, CancellationToken.None);
+
+        Assert.Equal(new Uri(manifest.PackageUrl), downloader.Uri);
+        Assert.Equal(manifest.Sha256, verifier.ExpectedHash);
+        Assert.True(verifier.AuthenticodeVerified);
+        Assert.Equal(extractor.PayloadDirectory, deployment.Source);
+        Assert.Equal(manifest.Version, deployment.Version);
+        Assert.Equal(TimeSpan.FromMinutes(manifest.RollbackAfterMinutes), deployment.HealthTimeout);
+        Assert.False(Directory.Exists(downloader.OperationDirectory));
+    }
+
+    [Fact]
     public async Task ExtractSafelyAsync_rejects_an_archive_that_exceeds_the_extraction_limit()
     {
         var archivePath = Path.Combine(_root, "large.zip");
@@ -271,8 +299,8 @@ public class WorkerUpdateManagerTests : IDisposable
         await File.WriteAllBytesAsync(archivePath, CreateZip(("payload.bin", new byte[64])));
 
         var ex = await Assert.ThrowsAsync<InvalidDataException>(
-            () => CreateManager(configure: options => options.MaxExtractedBytes = 32)
-                .ExtractSafelyAsync(archivePath, destination, CancellationToken.None));
+            () => CreateExtractor(options => options.MaxExtractedBytes = 32)
+                .ExtractAsync(archivePath, destination, CancellationToken.None));
 
         Assert.Equal("The update package exceeds the configured extraction limit.", ex.Message);
     }
@@ -285,7 +313,7 @@ public class WorkerUpdateManagerTests : IDisposable
         Directory.CreateDirectory(payload);
         File.WriteAllText(Path.Combine(payload, WorkerExeName), "exe");
 
-        Assert.Equal(payload, WorkerUpdateManager.ResolveWorkerPayload(extracted));
+        Assert.Equal(payload, new WorkerUpdateFileSystem().ResolveWorkerPayload(extracted));
     }
 
     [Fact]
@@ -293,13 +321,14 @@ public class WorkerUpdateManagerTests : IDisposable
     {
         var extracted = Path.Combine(_root, "extracted");
         Directory.CreateDirectory(extracted);
-        var missing = Assert.Throws<InvalidDataException>(() => WorkerUpdateManager.ResolveWorkerPayload(extracted));
+        var fileSystem = new WorkerUpdateFileSystem();
+        var missing = Assert.Throws<InvalidDataException>(() => fileSystem.ResolveWorkerPayload(extracted));
         Assert.Equal("The package must contain exactly one Worker executable.", missing.Message);
 
         File.WriteAllText(Path.Combine(extracted, WorkerExeName), "one");
         Directory.CreateDirectory(Path.Combine(extracted, "nested"));
         File.WriteAllText(Path.Combine(extracted, "nested", WorkerExeName), "two");
-        var duplicated = Assert.Throws<InvalidDataException>(() => WorkerUpdateManager.ResolveWorkerPayload(extracted));
+        var duplicated = Assert.Throws<InvalidDataException>(() => fileSystem.ResolveWorkerPayload(extracted));
         Assert.Equal("The package must contain exactly one Worker executable.", duplicated.Message);
     }
 
@@ -317,10 +346,11 @@ public class WorkerUpdateManagerTests : IDisposable
         File.WriteAllText(Path.Combine(payload, "appsettings.json"), """{"Agent":{"DeviceCode":"pc-demo-001"}}""");
         File.WriteAllText(Path.Combine(payload, WorkerExeName), "exe");
 
-        WorkerUpdateManager.PreserveConfigurationFiles(install, preserve);
-        WorkerUpdateManager.TryDeleteDirectory(install);
-        WorkerUpdateManager.CopyDirectory(payload, install);
-        WorkerUpdateManager.RestoreConfigurationFiles(preserve, install);
+        var fileSystem = new WorkerUpdateFileSystem();
+        fileSystem.PreserveConfigurationFiles(install, preserve);
+        fileSystem.TryDeleteDirectory(install);
+        fileSystem.CopyDirectory(payload, install);
+        fileSystem.RestoreConfigurationFiles(preserve, install);
 
         Assert.Equal("""{"Agent":{"DeviceCode":"pc-prod"}}""", File.ReadAllText(Path.Combine(install, "appsettings.json")));
         Assert.Equal("""{"Agent":{"PollInterval":"01:00:00"}}""", File.ReadAllText(Path.Combine(install, "appsettings.Production.json")));
@@ -339,9 +369,10 @@ public class WorkerUpdateManagerTests : IDisposable
         File.WriteAllText(Path.Combine(payload, "appsettings.json"), """{"dev":true}""");
         File.WriteAllText(Path.Combine(payload, WorkerExeName), "exe");
 
-        WorkerUpdateManager.PreserveConfigurationFiles(install, preserve);
-        WorkerUpdateManager.CopyDirectory(payload, install);
-        WorkerUpdateManager.RestoreConfigurationFiles(preserve, install);
+        var fileSystem = new WorkerUpdateFileSystem();
+        fileSystem.PreserveConfigurationFiles(install, preserve);
+        fileSystem.CopyDirectory(payload, install);
+        fileSystem.RestoreConfigurationFiles(preserve, install);
 
         Assert.Equal("""{"dev":true}""", File.ReadAllText(Path.Combine(install, "appsettings.json")));
         Assert.False(Directory.Exists(preserve));
@@ -355,7 +386,7 @@ public class WorkerUpdateManagerTests : IDisposable
     [InlineData("appsettingsfoo.json", false)]
     public void IsProtectedConfigurationFile_matches_appsettings_json_variants(string fileName, bool expected)
     {
-        Assert.Equal(expected, WorkerUpdateManager.IsProtectedConfigurationFile(fileName));
+        Assert.Equal(expected, new WorkerUpdateFileSystem().IsProtectedConfigurationFile(fileName));
     }
 
     [Fact]
@@ -367,43 +398,44 @@ public class WorkerUpdateManagerTests : IDisposable
         File.WriteAllText(Path.Combine(source, "worker.txt"), "current");
         File.WriteAllText(Path.Combine(source, "nested", "data.bin"), "blob");
 
-        WorkerUpdateManager.CopyDirectory(source, backup);
+        var fileSystem = new WorkerUpdateFileSystem();
+        fileSystem.CopyDirectory(source, backup);
 
         Assert.Equal("current", File.ReadAllText(Path.Combine(backup, "worker.txt")));
         Assert.Equal("blob", File.ReadAllText(Path.Combine(backup, "nested", "data.bin")));
 
         File.WriteAllText(Path.Combine(source, "worker.txt"), "broken");
-        WorkerUpdateManager.TryDeleteDirectory(source);
+        fileSystem.TryDeleteDirectory(source);
         Assert.False(Directory.Exists(source));
 
-        WorkerUpdateManager.CopyDirectory(backup, source);
+        fileSystem.CopyDirectory(backup, source);
         Assert.Equal("current", File.ReadAllText(Path.Combine(source, "worker.txt")));
         Assert.Equal("blob", File.ReadAllText(Path.Combine(source, "nested", "data.bin")));
 
-        WorkerUpdateManager.TryDeleteDirectory(Path.Combine(_root, "missing"));
+        fileSystem.TryDeleteDirectory(Path.Combine(_root, "missing"));
     }
 
     [Fact]
     public void IsWorkerHealthy_requires_a_matching_version_reported_after_the_update_started()
     {
         var startedAt = new DateTimeOffset(2026, 9, 1, 10, 0, 0, TimeSpan.Zero);
-        var manager = CreateManager();
+        var monitor = CreateHealthMonitor();
         var healthPath = CreateWatchdogOptions().WorkerHealthFilePath;
         Directory.CreateDirectory(Path.GetDirectoryName(healthPath)!);
 
-        Assert.False(manager.IsWorkerHealthy("1.2.3", startedAt));
+        Assert.False(monitor.IsWorkerHealthy("1.2.3", startedAt));
 
         File.WriteAllText(healthPath, "{not-json");
-        Assert.False(manager.IsWorkerHealthy("1.2.3", startedAt));
+        Assert.False(monitor.IsWorkerHealthy("1.2.3", startedAt));
 
         WriteHealth("1.2.3", startedAt.AddMinutes(-1));
-        Assert.False(manager.IsWorkerHealthy("1.2.3", startedAt));
+        Assert.False(monitor.IsWorkerHealthy("1.2.3", startedAt));
 
         WriteHealth("1.0.0", startedAt.AddMinutes(1));
-        Assert.False(manager.IsWorkerHealthy("1.2.3", startedAt));
+        Assert.False(monitor.IsWorkerHealthy("1.2.3", startedAt));
 
         WriteHealth("1.2.3", startedAt);
-        Assert.True(manager.IsWorkerHealthy("1.2.3", startedAt));
+        Assert.True(monitor.IsWorkerHealthy("1.2.3", startedAt));
     }
 
     public void Dispose()
@@ -414,15 +446,39 @@ public class WorkerUpdateManagerTests : IDisposable
         }
     }
 
-    private WorkerUpdateManager CreateManager(HttpMessageHandler? handler = null, Action<WatchdogOptions>? configure = null)
+    private WorkerUpdateManager CreateManager(
+        HttpMessageHandler? handler = null,
+        Action<WatchdogOptions>? configure = null,
+        IPackageDownloader? downloader = null,
+        IUpdatePackageVerifier? verifier = null,
+        ISafeZipExtractor? extractor = null,
+        IWorkerDeploymentManager? deploymentManager = null)
     {
         var options = CreateWatchdogOptions();
         configure?.Invoke(options);
+        var wrappedOptions = Options.Create(options);
         return new WorkerUpdateManager(
-            new HttpClient(handler ?? new StaticHandler([])),
-            Options.Create(options),
+            downloader ?? new PackageDownloader(new HttpClient(handler ?? new StaticHandler([])), wrappedOptions),
+            verifier ?? new UpdatePackageVerifier(),
+            extractor ?? new SafeZipExtractor(wrappedOptions),
+            deploymentManager ?? new ThrowingDeploymentManager(),
+            new WorkerUpdateFileSystem(),
+            wrappedOptions,
             NullLogger<WorkerUpdateManager>.Instance);
     }
+
+    private SafeZipExtractor CreateExtractor(Action<WatchdogOptions>? configure = null)
+    {
+        var options = CreateWatchdogOptions();
+        configure?.Invoke(options);
+        return new SafeZipExtractor(Options.Create(options));
+    }
+
+    private WorkerHealthMonitor CreateHealthMonitor() =>
+        new(
+            new StubServiceControl(),
+            Options.Create(CreateWatchdogOptions()),
+            NullLogger<WorkerHealthMonitor>.Instance);
 
     private WatchdogOptions CreateWatchdogOptions() =>
         new()
@@ -487,5 +543,87 @@ public class WorkerUpdateManagerTests : IDisposable
                 Content = new ByteArrayContent(body)
             });
         }
+    }
+
+    private sealed class RecordingDownloader : IPackageDownloader
+    {
+        public Uri? Uri { get; private set; }
+        public string? OperationDirectory { get; private set; }
+
+        public async Task DownloadAsync(Uri uri, string path, CancellationToken cancellationToken)
+        {
+            Uri = uri;
+            OperationDirectory = Path.GetDirectoryName(path);
+            await File.WriteAllBytesAsync(path, [], cancellationToken);
+        }
+    }
+
+    private sealed class RecordingVerifier : IUpdatePackageVerifier
+    {
+        public string? ExpectedHash { get; private set; }
+        public bool AuthenticodeVerified { get; private set; }
+
+        public Task VerifyHashAsync(string path, string expected, CancellationToken cancellationToken)
+        {
+            Assert.True(File.Exists(path));
+            ExpectedHash = expected;
+            return Task.CompletedTask;
+        }
+
+        public void VerifyAuthenticode(string directory)
+        {
+            Assert.True(Directory.Exists(directory));
+            AuthenticodeVerified = true;
+        }
+    }
+
+    private sealed class RecordingExtractor : ISafeZipExtractor
+    {
+        public string? PayloadDirectory { get; private set; }
+
+        public Task ExtractAsync(string archivePath, string destination, CancellationToken cancellationToken)
+        {
+            Assert.True(File.Exists(archivePath));
+            PayloadDirectory = Path.Combine(destination, "payload");
+            Directory.CreateDirectory(PayloadDirectory);
+            File.WriteAllText(Path.Combine(PayloadDirectory, WorkerExeName), "exe");
+            return Task.CompletedTask;
+        }
+    }
+
+    private sealed class RecordingDeploymentManager : IWorkerDeploymentManager
+    {
+        public string? Source { get; private set; }
+        public string? Version { get; private set; }
+        public TimeSpan HealthTimeout { get; private set; }
+
+        public Task DeployAndVerifyAsync(
+            string source,
+            string version,
+            TimeSpan healthTimeout,
+            CancellationToken cancellationToken)
+        {
+            Source = source;
+            Version = version;
+            HealthTimeout = healthTimeout;
+            return Task.CompletedTask;
+        }
+    }
+
+    private sealed class ThrowingDeploymentManager : IWorkerDeploymentManager
+    {
+        public Task DeployAndVerifyAsync(
+            string source,
+            string version,
+            TimeSpan healthTimeout,
+            CancellationToken cancellationToken) =>
+            throw new InvalidOperationException("Deployment was not expected in this test.");
+    }
+
+    private sealed class StubServiceControl : IWorkerServiceControl
+    {
+        public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+        public Task StartAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+        public bool IsRunning() => true;
     }
 }

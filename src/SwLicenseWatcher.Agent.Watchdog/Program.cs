@@ -31,7 +31,14 @@ builder.Services.AddHttpClient<UpdateManifestClient>((sp, client) =>
     var options = sp.GetRequiredService<IOptions<WatchdogOptions>>().Value;
     client.BaseAddress = new Uri(options.ServerBaseUrl);
 });
-builder.Services.AddHttpClient<WorkerUpdateManager>();
+builder.Services.AddHttpClient<IPackageDownloader, PackageDownloader>();
+builder.Services.AddSingleton<IUpdatePackageVerifier, UpdatePackageVerifier>();
+builder.Services.AddSingleton<ISafeZipExtractor, SafeZipExtractor>();
+builder.Services.AddSingleton<WorkerUpdateFileSystem>();
+builder.Services.AddSingleton<IWorkerServiceControl, WorkerServiceControl>();
+builder.Services.AddSingleton<WorkerHealthMonitor>();
+builder.Services.AddSingleton<IWorkerDeploymentManager, WorkerDeploymentManager>();
+builder.Services.AddSingleton<WorkerUpdateManager>();
 builder.Services.AddHostedService<Worker>();
 
 await builder.Build().RunAsync();
