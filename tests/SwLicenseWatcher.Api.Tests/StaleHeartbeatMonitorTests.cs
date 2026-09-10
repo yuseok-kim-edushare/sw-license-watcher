@@ -19,7 +19,7 @@ public class StaleHeartbeatMonitorTests
             Pc("PC-002", "HOST-B")
         };
 
-        var newlyStale = StaleHeartbeatMonitor.TakeNewlyStale(stale, notified);
+        var newlyStale = InventoryDecisions.TakeNewlyStale(stale, notified);
 
         Assert.Equal(["PC-001", "PC-002"], newlyStale.Select(pc => pc.DeviceCode));
         Assert.True(notified.ContainsKey("PC-001"));
@@ -31,9 +31,9 @@ public class StaleHeartbeatMonitorTests
     {
         var notified = NewNotifiedSet();
         var stale = new[] { Pc("PC-001", "HOST-A"), Pc("PC-002", "HOST-B") };
-        StaleHeartbeatMonitor.TakeNewlyStale(stale, notified);
+        InventoryDecisions.TakeNewlyStale(stale, notified);
 
-        var again = StaleHeartbeatMonitor.TakeNewlyStale(stale, notified);
+        var again = InventoryDecisions.TakeNewlyStale(stale, notified);
 
         Assert.Empty(again);
         Assert.Equal(2, notified.Count);
@@ -43,9 +43,9 @@ public class StaleHeartbeatMonitorTests
     public void TakeNewlyStale_treats_device_codes_case_insensitively_when_suppressing_duplicates()
     {
         var notified = NewNotifiedSet();
-        StaleHeartbeatMonitor.TakeNewlyStale([Pc("PC-001", "HOST-A")], notified);
+        InventoryDecisions.TakeNewlyStale([Pc("PC-001", "HOST-A")], notified);
 
-        var again = StaleHeartbeatMonitor.TakeNewlyStale([Pc("pc-001", "HOST-A")], notified);
+        var again = InventoryDecisions.TakeNewlyStale([Pc("pc-001", "HOST-A")], notified);
 
         Assert.Empty(again);
         Assert.True(notified.ContainsKey("PC-001"));
@@ -55,16 +55,16 @@ public class StaleHeartbeatMonitorTests
     public void TakeNewlyStale_forgets_recovered_pcs_and_can_notify_them_again()
     {
         var notified = NewNotifiedSet();
-        StaleHeartbeatMonitor.TakeNewlyStale(
+        InventoryDecisions.TakeNewlyStale(
             [Pc("PC-001", "HOST-A"), Pc("PC-002", "HOST-B")],
             notified);
 
-        var remaining = StaleHeartbeatMonitor.TakeNewlyStale([Pc("PC-002", "HOST-B")], notified);
+        var remaining = InventoryDecisions.TakeNewlyStale([Pc("PC-002", "HOST-B")], notified);
         Assert.Empty(remaining);
         Assert.False(notified.ContainsKey("PC-001"));
         Assert.True(notified.ContainsKey("PC-002"));
 
-        var relapsed = StaleHeartbeatMonitor.TakeNewlyStale(
+        var relapsed = InventoryDecisions.TakeNewlyStale(
             [Pc("PC-001", "HOST-A"), Pc("PC-002", "HOST-B")],
             notified);
 
@@ -77,9 +77,9 @@ public class StaleHeartbeatMonitorTests
     public void TakeNewlyStale_returns_only_pcs_that_were_not_already_notified()
     {
         var notified = NewNotifiedSet();
-        StaleHeartbeatMonitor.TakeNewlyStale([Pc("PC-001", "HOST-A")], notified);
+        InventoryDecisions.TakeNewlyStale([Pc("PC-001", "HOST-A")], notified);
 
-        var newlyStale = StaleHeartbeatMonitor.TakeNewlyStale(
+        var newlyStale = InventoryDecisions.TakeNewlyStale(
             [Pc("PC-001", "HOST-A"), Pc("PC-003", "HOST-C")],
             notified);
 
@@ -92,9 +92,9 @@ public class StaleHeartbeatMonitorTests
     public void TakeNewlyStale_clears_the_notified_set_when_nothing_is_stale()
     {
         var notified = NewNotifiedSet();
-        StaleHeartbeatMonitor.TakeNewlyStale([Pc("PC-001", "HOST-A")], notified);
+        InventoryDecisions.TakeNewlyStale([Pc("PC-001", "HOST-A")], notified);
 
-        Assert.Empty(StaleHeartbeatMonitor.TakeNewlyStale([], notified));
+        Assert.Empty(InventoryDecisions.TakeNewlyStale([], notified));
         Assert.Empty(notified);
     }
 
@@ -271,7 +271,7 @@ public class StaleHeartbeatMonitorTests
                     notified.TryAdd(deviceCode, 0);
                 }
 
-                var newlyStale = StaleHeartbeatMonitor.TakeNewlyStale(stale, notified);
+                var newlyStale = InventoryDecisions.TakeNewlyStale(stale, notified);
                 foreach (var deviceCode in _notifiedAt.Keys.ToList())
                 {
                     if (!notified.ContainsKey(deviceCode))

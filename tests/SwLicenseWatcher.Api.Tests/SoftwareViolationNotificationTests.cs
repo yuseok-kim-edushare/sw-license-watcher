@@ -1,6 +1,7 @@
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using SwLicenseWatcher.Api;
+using SwLicenseWatcher.Application;
 using SwLicenseWatcher.Core;
 
 namespace SwLicenseWatcher.Api.Tests;
@@ -20,7 +21,7 @@ public class SoftwareViolationNotificationTests
             new SoftwarePolicyMatch(managed, Policy("Visual Studio*", SoftwarePolicyClassification.Managed))
         };
 
-        var current = SqlServerInventoryRepository.CollectCurrentViolations(matches);
+        var current = InventoryDecisions.CollectCurrentViolations(matches);
 
         var violation = Assert.Single(current);
         Assert.Equal("uTorrent", violation.Key);
@@ -37,7 +38,7 @@ public class SoftwareViolationNotificationTests
             new SoftwarePolicyMatch(Software("UTORRENT", "3.6"), Blacklist("uTorrent", id: 2))
         };
 
-        var current = SqlServerInventoryRepository.CollectCurrentViolations(matches);
+        var current = InventoryDecisions.CollectCurrentViolations(matches);
 
         var violation = Assert.Single(current);
         Assert.Equal("3.5", violation.Value.Software.Version);
@@ -47,13 +48,13 @@ public class SoftwareViolationNotificationTests
     [Fact]
     public void FindNewlyDetectedViolations_returns_all_current_when_none_existed()
     {
-        var current = SqlServerInventoryRepository.CollectCurrentViolations(
+        var current = InventoryDecisions.CollectCurrentViolations(
         [
             new SoftwarePolicyMatch(Software("uTorrent", "3.5"), Blacklist("*Torrent*")),
             new SoftwarePolicyMatch(Software("BadApp", "1.0"), Blacklist("BadApp"))
         ]);
 
-        var added = SqlServerInventoryRepository.FindNewlyDetectedViolations(current, []);
+        var added = InventoryDecisions.FindNewlyDetectedViolations(current, []);
 
         Assert.Equal(["uTorrent", "BadApp"], added.Select(item => item.Software.Name));
     }
@@ -61,13 +62,13 @@ public class SoftwareViolationNotificationTests
     [Fact]
     public void FindNewlyDetectedViolations_excludes_software_already_recorded_for_the_pc()
     {
-        var current = SqlServerInventoryRepository.CollectCurrentViolations(
+        var current = InventoryDecisions.CollectCurrentViolations(
         [
             new SoftwarePolicyMatch(Software("uTorrent", "3.6"), Blacklist("*Torrent*")),
             new SoftwarePolicyMatch(Software("BadApp", "1.0"), Blacklist("BadApp"))
         ]);
 
-        var added = SqlServerInventoryRepository.FindNewlyDetectedViolations(current, ["UTORRENT"]);
+        var added = InventoryDecisions.FindNewlyDetectedViolations(current, ["UTORRENT"]);
 
         var violation = Assert.Single(added);
         Assert.Equal("BadApp", violation.Software.Name);
@@ -78,12 +79,12 @@ public class SoftwareViolationNotificationTests
     [Fact]
     public void FindNewlyDetectedViolations_returns_empty_when_every_current_violation_already_exists()
     {
-        var current = SqlServerInventoryRepository.CollectCurrentViolations(
+        var current = InventoryDecisions.CollectCurrentViolations(
         [
             new SoftwarePolicyMatch(Software("uTorrent", "3.5"), Blacklist("*Torrent*"))
         ]);
 
-        Assert.Empty(SqlServerInventoryRepository.FindNewlyDetectedViolations(current, ["uTorrent"]));
+        Assert.Empty(InventoryDecisions.FindNewlyDetectedViolations(current, ["uTorrent"]));
     }
 
     [Fact]

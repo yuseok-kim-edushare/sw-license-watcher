@@ -1,4 +1,4 @@
-using Microsoft.Data.SqlClient;
+using System.Data.Common;
 using Microsoft.Extensions.Options;
 using SwLicenseWatcher.Application;
 using SwLicenseWatcher.Core;
@@ -26,7 +26,7 @@ public sealed class WorkerUpdatePinService(
             var stored = await repository.GetWorkerUpdatePinAsync(configured.TargetServiceName, cancellationToken);
             return stored ?? configured;
         }
-        catch (SqlException ex)
+        catch (DbException ex)
         {
             logger.LogWarning(ex, "Worker update pin is unavailable; serving appsettings Updates:Worker.");
             return configured;
@@ -50,7 +50,7 @@ public sealed class WorkerUpdatePinService(
                     configured.Version);
             }
         }
-        catch (SqlException ex)
+        catch (DbException ex)
         {
             logger.LogWarning(ex, "Could not seed Worker update pin from appsettings.");
         }

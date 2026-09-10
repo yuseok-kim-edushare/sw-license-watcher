@@ -3,6 +3,8 @@ using Microsoft.Extensions.Options;
 using SwLicenseWatcher.Api;
 using SwLicenseWatcher.Application;
 using SwLicenseWatcher.Core;
+using SwLicenseWatcher.Infrastructure;
+using SwLicenseWatcher.Infrastructure.SqlServer;
 
 #if NATIVE_AOT
 var builder = WebApplication.CreateSlimBuilder(args);
@@ -87,20 +89,8 @@ builder.Services.AddOptions<NotificationOptions>()
         options => options.StaleHeartbeatCheckInterval > TimeSpan.Zero,
         "Notifications:StaleHeartbeatCheckInterval must be positive.")
     .ValidateOnStart();
-builder.Services.AddSingleton<SqlServerSchemaScriptBuilder>();
-builder.Services.AddSingleton<SqlServerSchemaApplicator>();
 builder.Services.AddSingleton<InventoryMemoryStore>();
-builder.Services.AddSingleton(sp => sp.GetRequiredService<IOptions<SqlServerStorageOptions>>().Value);
-builder.Services.AddSingleton<SqlServerInventoryRepository>();
-builder.Services.AddSingleton<IHealthProbe>(sp => sp.GetRequiredService<SqlServerInventoryRepository>());
-builder.Services.AddSingleton<ISnapshotRepository>(sp => sp.GetRequiredService<SqlServerInventoryRepository>());
-builder.Services.AddSingleton<IHeartbeatRepository>(sp => sp.GetRequiredService<SqlServerInventoryRepository>());
-builder.Services.AddSingleton<IDeviceQuery>(sp => sp.GetRequiredService<SqlServerInventoryRepository>());
-builder.Services.AddSingleton<ISoftwareQuery>(sp => sp.GetRequiredService<SqlServerInventoryRepository>());
-builder.Services.AddSingleton<IViolationQuery>(sp => sp.GetRequiredService<SqlServerInventoryRepository>());
-builder.Services.AddSingleton<IPolicyStore>(sp => sp.GetRequiredService<SqlServerInventoryRepository>());
-builder.Services.AddSingleton<IUninstallRequestStore>(sp => sp.GetRequiredService<SqlServerInventoryRepository>());
-builder.Services.AddSingleton<IWorkerUpdatePinStore>(sp => sp.GetRequiredService<SqlServerInventoryRepository>());
+builder.Services.AddSwLicenseWatcherInfrastructure();
 builder.Services.AddSingleton<WorkerUpdatePinService>();
 builder.Services.AddHttpClient(WebhookNotificationSender.HttpClientName, (sp, client) =>
 {

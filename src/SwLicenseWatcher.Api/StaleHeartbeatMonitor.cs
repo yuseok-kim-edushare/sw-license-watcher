@@ -1,4 +1,3 @@
-using System.Collections.Concurrent;
 using Microsoft.Extensions.Options;
 using SwLicenseWatcher.Application;
 using SwLicenseWatcher.Core;
@@ -54,21 +53,5 @@ public sealed class StaleHeartbeatMonitor(
         {
             logger.LogWarning(ex, "Failed to inspect stale heartbeats.");
         }
-    }
-
-    internal static List<StalePcHeartbeat> TakeNewlyStale(
-        IReadOnlyList<StalePcHeartbeat> stalePcs,
-        ConcurrentDictionary<string, byte> notifiedDeviceCodes)
-    {
-        var staleCodes = new HashSet<string>(stalePcs.Select(pc => pc.DeviceCode), StringComparer.OrdinalIgnoreCase);
-        foreach (var deviceCode in notifiedDeviceCodes.Keys)
-        {
-            if (!staleCodes.Contains(deviceCode))
-            {
-                notifiedDeviceCodes.TryRemove(deviceCode, out _);
-            }
-        }
-
-        return stalePcs.Where(pc => notifiedDeviceCodes.TryAdd(pc.DeviceCode, 0)).ToList();
     }
 }

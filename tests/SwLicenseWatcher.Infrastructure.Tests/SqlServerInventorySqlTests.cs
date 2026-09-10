@@ -1,57 +1,57 @@
-using SwLicenseWatcher.Api;
+using SwLicenseWatcher.Infrastructure.SqlServer;
 using SwLicenseWatcher.Core;
 
-namespace SwLicenseWatcher.Api.Tests;
+namespace SwLicenseWatcher.Infrastructure.Tests;
 
 public class SqlServerInventorySqlTests
 {
     [Fact]
     public void Name_quotes_and_joins_identifiers()
     {
-        Assert.Equal("[inventory].[pc_entity]", SqlServerInventoryRepository.Name("inventory", "pc_entity"));
+        Assert.Equal("[inventory].[pc_entity]", SqlServerDataContext.Name("inventory", "pc_entity"));
     }
 
     [Fact]
     public void Name_escapes_closing_brackets_inside_identifiers()
     {
-        Assert.Equal("[a]]b]", SqlServerInventoryRepository.Name("a]b"));
-        Assert.Equal("[schema]]].[ta]]ble]", SqlServerInventoryRepository.Name("schema]", "ta]ble"));
+        Assert.Equal("[a]]b]", SqlServerDataContext.Name("a]b"));
+        Assert.Equal("[schema]]].[ta]]ble]", SqlServerDataContext.Name("schema]", "ta]ble"));
     }
 
     [Fact]
     public void Truncate_shortens_values_that_exceed_the_limit()
     {
-        Assert.Equal("hel", SqlServerInventoryRepository.Truncate("hello", 3));
+        Assert.Equal("hel", SqlServerDataContext.Truncate("hello", 3));
     }
 
     [Fact]
     public void Truncate_preserves_null_and_short_values()
     {
-        Assert.Null(SqlServerInventoryRepository.Truncate(null, 3));
-        Assert.Equal("hi", SqlServerInventoryRepository.Truncate("hi", 3));
-        Assert.Equal("hey", SqlServerInventoryRepository.Truncate("hey", 3));
+        Assert.Null(SqlServerDataContext.Truncate(null, 3));
+        Assert.Equal("hi", SqlServerDataContext.Truncate("hi", 3));
+        Assert.Equal("hey", SqlServerDataContext.Truncate("hey", 3));
     }
 
     [Fact]
     public void ToContainsPattern_returns_null_for_blank_search()
     {
-        Assert.Null(SqlServerInventoryRepository.ToContainsPattern(null));
-        Assert.Null(SqlServerInventoryRepository.ToContainsPattern(" "));
+        Assert.Null(SqlServerDataContext.ToContainsPattern(null));
+        Assert.Null(SqlServerDataContext.ToContainsPattern(" "));
     }
 
     [Fact]
     public void ToContainsPattern_wraps_and_escapes_like_wildcards()
     {
-        Assert.Equal("%widget%", SqlServerInventoryRepository.ToContainsPattern("widget"));
-        Assert.Equal("%a[[]b]%", SqlServerInventoryRepository.ToContainsPattern("a[b]"));
-        Assert.Equal("%100[%][_]%", SqlServerInventoryRepository.ToContainsPattern("100%_"));
-        Assert.Equal("%trimmed%", SqlServerInventoryRepository.ToContainsPattern("  trimmed  "));
+        Assert.Equal("%widget%", SqlServerDataContext.ToContainsPattern("widget"));
+        Assert.Equal("%a[[]b]%", SqlServerDataContext.ToContainsPattern("a[b]"));
+        Assert.Equal("%100[%][_]%", SqlServerDataContext.ToContainsPattern("100%_"));
+        Assert.Equal("%trimmed%", SqlServerDataContext.ToContainsPattern("  trimmed  "));
     }
 
     [Fact]
     public void BuildListPoliciesSql_pages_and_searches_name_pattern_and_publisher()
     {
-        var repository = new SqlServerInventoryRepository(new SqlServerStorageOptions());
+        var repository = new SqlServerDataContext(new SqlServerStorageOptions());
         var sql = repository.BuildListPoliciesSql();
         Assert.Contains("COUNT(*) OVER() AS total_count", sql, StringComparison.Ordinal);
         Assert.Contains("OFFSET @skip ROWS FETCH NEXT @take ROWS ONLY", sql, StringComparison.Ordinal);
@@ -68,7 +68,7 @@ public class SqlServerInventorySqlTests
         var options = new SqlServerStorageOptions { SchemaName = "inv]entory" };
         options.SoftwarePolicyTable.TableName = "sw]policy";
         options.SoftwarePolicyTable.ProductNameColumn = "name]";
-        var sql = new SqlServerInventoryRepository(options).BuildListPoliciesSql();
+        var sql = new SqlServerDataContext(options).BuildListPoliciesSql();
         Assert.Contains("[inv]]entory].[sw]]policy]", sql, StringComparison.Ordinal);
         Assert.Contains("[name]]]", sql, StringComparison.Ordinal);
     }
@@ -76,7 +76,7 @@ public class SqlServerInventorySqlTests
     [Fact]
     public void BuildListViolationsSql_pages_and_filters_device_software_and_since()
     {
-        var repository = new SqlServerInventoryRepository(new SqlServerStorageOptions());
+        var repository = new SqlServerDataContext(new SqlServerStorageOptions());
         var sql = repository.BuildListViolationsSql();
         Assert.Contains("COUNT(*) OVER() AS total_count", sql, StringComparison.Ordinal);
         Assert.Contains("OFFSET @skip ROWS FETCH NEXT @take ROWS ONLY", sql, StringComparison.Ordinal);
@@ -93,7 +93,7 @@ public class SqlServerInventorySqlTests
         var options = new SqlServerStorageOptions { SchemaName = "inv" };
         options.SoftwareViolationTable.TableName = "sw]violation";
         options.PcTable.TableName = "pc]entity";
-        var sql = new SqlServerInventoryRepository(options).BuildListViolationsSql();
+        var sql = new SqlServerDataContext(options).BuildListViolationsSql();
         Assert.Contains("[inv].[sw]]violation]", sql, StringComparison.Ordinal);
         Assert.Contains("[inv].[pc]]entity]", sql, StringComparison.Ordinal);
     }
@@ -101,7 +101,7 @@ public class SqlServerInventorySqlTests
     [Fact]
     public void BuildGetStaleHeartbeatsSql_selects_pcs_whose_last_heartbeat_is_older_than_the_cutoff()
     {
-        var sql = new SqlServerInventoryRepository(new SqlServerStorageOptions()).BuildGetStaleHeartbeatsSql();
+        var sql = new SqlServerDataContext(new SqlServerStorageOptions()).BuildGetStaleHeartbeatsSql();
         Assert.Contains("SELECT [device_code], [host_name], [last_heartbeat_utc]", sql, StringComparison.Ordinal);
         Assert.Contains("FROM [inventory].[pc_entity]", sql, StringComparison.Ordinal);
         Assert.Contains("[last_heartbeat_utc] IS NOT NULL", sql, StringComparison.Ordinal);
@@ -116,7 +116,7 @@ public class SqlServerInventorySqlTests
         options.PcTable.TableName = "pc]entity";
         options.PcTable.DeviceCodeColumn = "device]code";
         options.PcTable.LastHeartbeatUtcColumn = "last]heartbeat";
-        var sql = new SqlServerInventoryRepository(options).BuildGetStaleHeartbeatsSql();
+        var sql = new SqlServerDataContext(options).BuildGetStaleHeartbeatsSql();
         Assert.Contains("[inv]]entory].[pc]]entity]", sql, StringComparison.Ordinal);
         Assert.Contains("[device]]code]", sql, StringComparison.Ordinal);
         Assert.Contains("[last]]heartbeat] < @cutoff", sql, StringComparison.Ordinal);
@@ -125,7 +125,7 @@ public class SqlServerInventorySqlTests
     [Fact]
     public void BuildGetNotifiedStaleHeartbeatDeviceCodesSql_joins_notification_rows_to_pcs()
     {
-        var sql = new SqlServerInventoryRepository(new SqlServerStorageOptions()).BuildGetNotifiedStaleHeartbeatDeviceCodesSql();
+        var sql = new SqlServerDataContext(new SqlServerStorageOptions()).BuildGetNotifiedStaleHeartbeatDeviceCodesSql();
         Assert.Contains("SELECT p.[device_code]", sql, StringComparison.Ordinal);
         Assert.Contains("FROM [inventory].[stale_heartbeat_notification] AS n", sql, StringComparison.Ordinal);
         Assert.Contains("INNER JOIN [inventory].[pc_entity] AS p", sql, StringComparison.Ordinal);
@@ -135,7 +135,7 @@ public class SqlServerInventorySqlTests
     [Fact]
     public void BuildClearRecoveredStaleHeartbeatNotificationsSql_deletes_pcs_that_are_no_longer_stale()
     {
-        var sql = new SqlServerInventoryRepository(new SqlServerStorageOptions()).BuildClearRecoveredStaleHeartbeatNotificationsSql();
+        var sql = new SqlServerDataContext(new SqlServerStorageOptions()).BuildClearRecoveredStaleHeartbeatNotificationsSql();
         Assert.Contains("DELETE n", sql, StringComparison.Ordinal);
         Assert.Contains("FROM [inventory].[stale_heartbeat_notification] AS n", sql, StringComparison.Ordinal);
         Assert.Contains("[last_heartbeat_utc] IS NULL", sql, StringComparison.Ordinal);
@@ -145,7 +145,7 @@ public class SqlServerInventorySqlTests
     [Fact]
     public void BuildInsertStaleHeartbeatNotificationSql_inserts_by_device_code_when_missing()
     {
-        var sql = new SqlServerInventoryRepository(new SqlServerStorageOptions()).BuildInsertStaleHeartbeatNotificationSql();
+        var sql = new SqlServerDataContext(new SqlServerStorageOptions()).BuildInsertStaleHeartbeatNotificationSql();
         Assert.Contains("INSERT INTO [inventory].[stale_heartbeat_notification]", sql, StringComparison.Ordinal);
         Assert.Contains("([pc_id], [notified_at_utc])", sql, StringComparison.Ordinal);
         Assert.Contains("WHERE p.[device_code] = @deviceCode", sql, StringComparison.Ordinal);
@@ -156,7 +156,7 @@ public class SqlServerInventorySqlTests
     [Fact]
     public void BuildClearStaleHeartbeatNotificationIfHeartbeatAppliedSql_deletes_only_when_heartbeat_matches()
     {
-        var sql = new SqlServerInventoryRepository(new SqlServerStorageOptions()).BuildClearStaleHeartbeatNotificationIfHeartbeatAppliedSql();
+        var sql = new SqlServerDataContext(new SqlServerStorageOptions()).BuildClearStaleHeartbeatNotificationIfHeartbeatAppliedSql();
         Assert.Contains("DELETE n", sql, StringComparison.Ordinal);
         Assert.Contains("FROM [inventory].[stale_heartbeat_notification] AS n", sql, StringComparison.Ordinal);
         Assert.Contains("n.[pc_id] = @pcId", sql, StringComparison.Ordinal);
@@ -174,7 +174,7 @@ public class SqlServerInventorySqlTests
         options.StaleHeartbeatNotificationTable.TableName = "stale]notify";
         options.StaleHeartbeatNotificationTable.PcForeignKeyColumn = "pc]fk";
         options.StaleHeartbeatNotificationTable.NotifiedAtUtcColumn = "notified]at";
-        var repository = new SqlServerInventoryRepository(options);
+        var repository = new SqlServerDataContext(options);
 
         var notified = repository.BuildGetNotifiedStaleHeartbeatDeviceCodesSql();
         Assert.Contains("[inv]]entory].[stale]]notify]", notified, StringComparison.Ordinal);
@@ -189,7 +189,7 @@ public class SqlServerInventorySqlTests
     [Fact]
     public void BuildListUninstallRequestsSql_pages_pending_first_and_omits_code()
     {
-        var sql = new SqlServerInventoryRepository(new SqlServerStorageOptions()).BuildListUninstallRequestsSql();
+        var sql = new SqlServerDataContext(new SqlServerStorageOptions()).BuildListUninstallRequestsSql();
         Assert.Contains("COUNT(*) OVER() AS total_count", sql, StringComparison.Ordinal);
         Assert.Contains("OFFSET @skip ROWS FETCH NEXT @take ROWS ONLY", sql, StringComparison.Ordinal);
         Assert.Contains("p.[device_code] LIKE @search", sql, StringComparison.Ordinal);
@@ -202,7 +202,7 @@ public class SqlServerInventorySqlTests
     [Fact]
     public void BuildGetAgentUninstallRequestSql_binds_request_to_device_code()
     {
-        var sql = new SqlServerInventoryRepository(new SqlServerStorageOptions()).BuildGetAgentUninstallRequestSql();
+        var sql = new SqlServerDataContext(new SqlServerStorageOptions()).BuildGetAgentUninstallRequestSql();
         Assert.Contains("p.[device_code] = @deviceCode", sql, StringComparison.Ordinal);
         Assert.Contains("r.[uninstall_request_id] = @id", sql, StringComparison.Ordinal);
         Assert.Contains("r.[code]", sql, StringComparison.Ordinal);
@@ -220,7 +220,7 @@ public class SqlServerInventorySqlTests
         options.UninstallRequestTable.PrimaryKeyColumn = "req]id";
         options.UninstallRequestTable.PcForeignKeyColumn = "pc]fk";
         options.UninstallRequestTable.StatusColumn = "st]atus";
-        var repository = new SqlServerInventoryRepository(options);
+        var repository = new SqlServerDataContext(options);
 
         var list = repository.BuildListUninstallRequestsSql();
         Assert.Contains("[inv]]entory].[un]]req]", list, StringComparison.Ordinal);
@@ -234,7 +234,7 @@ public class SqlServerInventorySqlTests
     [Fact]
     public void BuildDeleteInstalledSoftwareSql_targets_only_the_installed_table()
     {
-        var sql = new SqlServerInventoryRepository(new SqlServerStorageOptions()).BuildDeleteInstalledSoftwareSql();
+        var sql = new SqlServerDataContext(new SqlServerStorageOptions()).BuildDeleteInstalledSoftwareSql();
         Assert.Contains("DELETE FROM [inventory].[pc_installed_sw]", sql, StringComparison.Ordinal);
         Assert.Contains("[pc_id] = @pcId", sql, StringComparison.Ordinal);
         Assert.DoesNotContain("pc_sw_license", sql, StringComparison.Ordinal);
@@ -244,7 +244,7 @@ public class SqlServerInventorySqlTests
     [Fact]
     public void BuildInsertPolicySql_includes_default_license_source()
     {
-        var sql = new SqlServerInventoryRepository(new SqlServerStorageOptions()).BuildInsertPolicySql();
+        var sql = new SqlServerDataContext(new SqlServerStorageOptions()).BuildInsertPolicySql();
         Assert.Contains("[default_license_source]", sql, StringComparison.Ordinal);
         Assert.Contains("@defaultLicenseSource", sql, StringComparison.Ordinal);
         Assert.DoesNotContain("Token", sql, StringComparison.Ordinal);
@@ -253,7 +253,7 @@ public class SqlServerInventorySqlTests
     [Fact]
     public void BuildFindEnabledExactNamePolicySql_matches_enabled_product_name()
     {
-        var sql = new SqlServerInventoryRepository(new SqlServerStorageOptions()).BuildFindEnabledExactNamePolicySql();
+        var sql = new SqlServerDataContext(new SqlServerStorageOptions()).BuildFindEnabledExactNamePolicySql();
         Assert.Contains("[enabled] = 1", sql, StringComparison.Ordinal);
         Assert.Contains("[product_name] = @productName", sql, StringComparison.Ordinal);
         Assert.Contains("[default_license_source]", sql, StringComparison.Ordinal);
@@ -262,7 +262,7 @@ public class SqlServerInventorySqlTests
     [Fact]
     public void BuildUpdateInstalledClassificationSql_updates_by_installed_row_id()
     {
-        var sql = new SqlServerInventoryRepository(new SqlServerStorageOptions()).BuildUpdateInstalledClassificationSql();
+        var sql = new SqlServerDataContext(new SqlServerStorageOptions()).BuildUpdateInstalledClassificationSql();
         Assert.Contains("UPDATE [inventory].[pc_installed_sw]", sql, StringComparison.Ordinal);
         Assert.Contains("SET [classification] = @classification", sql, StringComparison.Ordinal);
         Assert.Contains("[installed_sw_id] = @id", sql, StringComparison.Ordinal);
@@ -271,7 +271,7 @@ public class SqlServerInventorySqlTests
     [Fact]
     public void BuildUpsertSoftwareLicenseSql_updates_or_inserts_assignment()
     {
-        var sql = new SqlServerInventoryRepository(new SqlServerStorageOptions()).BuildUpsertSoftwareLicenseSql();
+        var sql = new SqlServerDataContext(new SqlServerStorageOptions()).BuildUpsertSoftwareLicenseSql();
         Assert.Contains("UPDATE [inventory].[pc_sw_license]", sql, StringComparison.Ordinal);
         Assert.Contains("INSERT INTO [inventory].[pc_sw_license]", sql, StringComparison.Ordinal);
         Assert.Contains("[license_source] = @licenseSource", sql, StringComparison.Ordinal);
@@ -282,7 +282,7 @@ public class SqlServerInventorySqlTests
     [Fact]
     public void BuildDeleteSoftwareLicenseSql_removes_assignment_for_pc_and_name()
     {
-        var sql = new SqlServerInventoryRepository(new SqlServerStorageOptions()).BuildDeleteSoftwareLicenseSql();
+        var sql = new SqlServerDataContext(new SqlServerStorageOptions()).BuildDeleteSoftwareLicenseSql();
         Assert.Contains("DELETE FROM [inventory].[pc_sw_license]", sql, StringComparison.Ordinal);
         Assert.Contains("[pc_id] = @pcId", sql, StringComparison.Ordinal);
         Assert.Contains("[sw_name] = @name", sql, StringComparison.Ordinal);
@@ -296,7 +296,7 @@ public class SqlServerInventorySqlTests
         options.SoftwareLicenseTable.PcForeignKeyColumn = "pc]fk";
         options.SoftwareLicenseTable.SoftwareNameColumn = "sw]name";
         options.SoftwareLicenseTable.LicenseSourceColumn = "src]col";
-        var repository = new SqlServerInventoryRepository(options);
+        var repository = new SqlServerDataContext(options);
 
         var upsert = repository.BuildUpsertSoftwareLicenseSql();
         Assert.Contains("[inv]]entory].[lic]]ense]", upsert, StringComparison.Ordinal);
@@ -308,7 +308,7 @@ public class SqlServerInventorySqlTests
     [Fact]
     public void BuildGetWorkerUpdatePinSql_selects_by_target_service()
     {
-        var sql = new SqlServerInventoryRepository(new SqlServerStorageOptions()).BuildGetWorkerUpdatePinSql();
+        var sql = new SqlServerDataContext(new SqlServerStorageOptions()).BuildGetWorkerUpdatePinSql();
         Assert.Contains("FROM [inventory].[worker_update_pin]", sql, StringComparison.Ordinal);
         Assert.Contains("[target_service_name] = @targetServiceName", sql, StringComparison.Ordinal);
         Assert.Contains("[package_url]", sql, StringComparison.Ordinal);
@@ -318,7 +318,7 @@ public class SqlServerInventorySqlTests
     [Fact]
     public void BuildUpsertWorkerUpdatePinSql_merges_on_target_service()
     {
-        var sql = new SqlServerInventoryRepository(new SqlServerStorageOptions()).BuildUpsertWorkerUpdatePinSql();
+        var sql = new SqlServerDataContext(new SqlServerStorageOptions()).BuildUpsertWorkerUpdatePinSql();
         Assert.Contains("MERGE [inventory].[worker_update_pin]", sql, StringComparison.Ordinal);
         Assert.Contains("WHEN MATCHED THEN", sql, StringComparison.Ordinal);
         Assert.Contains("WHEN NOT MATCHED THEN", sql, StringComparison.Ordinal);
@@ -329,7 +329,7 @@ public class SqlServerInventorySqlTests
     [Fact]
     public void BuildSeedWorkerUpdatePinSql_inserts_only_when_missing()
     {
-        var sql = new SqlServerInventoryRepository(new SqlServerStorageOptions()).BuildSeedWorkerUpdatePinSql();
+        var sql = new SqlServerDataContext(new SqlServerStorageOptions()).BuildSeedWorkerUpdatePinSql();
         Assert.Contains("IF NOT EXISTS", sql, StringComparison.Ordinal);
         Assert.Contains("INSERT INTO [inventory].[worker_update_pin]", sql, StringComparison.Ordinal);
         Assert.Contains("[target_service_name] = @targetServiceName", sql, StringComparison.Ordinal);

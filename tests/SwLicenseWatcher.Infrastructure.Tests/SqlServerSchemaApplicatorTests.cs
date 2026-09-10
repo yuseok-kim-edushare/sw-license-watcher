@@ -1,9 +1,9 @@
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
-using SwLicenseWatcher.Api;
+using SwLicenseWatcher.Infrastructure.SqlServer;
 using SwLicenseWatcher.Core;
 
-namespace SwLicenseWatcher.Api.Tests;
+namespace SwLicenseWatcher.Infrastructure.Tests;
 
 public class SqlServerSchemaApplicatorTests
 {

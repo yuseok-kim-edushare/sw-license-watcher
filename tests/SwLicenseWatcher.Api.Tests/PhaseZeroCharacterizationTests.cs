@@ -1,5 +1,6 @@
 using System.Text.Json;
 using SwLicenseWatcher.Api;
+using SwLicenseWatcher.Application;
 using SwLicenseWatcher.Core;
 
 namespace SwLicenseWatcher.Api.Tests;
@@ -23,7 +24,7 @@ public class PhaseZeroCharacterizationTests
             Policy("Contoso *", SoftwarePolicyClassification.Managed, LicenseSourceNames.Company)
         };
 
-        var result = SqlServerInventoryRepository.ApplyLicenseSources(installed, assignments, policies);
+        var result = InventoryDecisions.ApplyLicenseSources(installed, assignments, policies);
 
         Assert.Collection(
             result,
@@ -54,7 +55,7 @@ public class PhaseZeroCharacterizationTests
             Policy("Blocked Tool", SoftwarePolicyClassification.Blacklist, LicenseSourceNames.Company)
         };
 
-        var result = SqlServerInventoryRepository.ApplyLicenseSources(
+        var result = InventoryDecisions.ApplyLicenseSources(
             installed,
             new Dictionary<string, string>(),
             policies);
@@ -75,7 +76,7 @@ public class PhaseZeroCharacterizationTests
             Device("PC-03", "black", "invalid")
         };
 
-        var result = SqlServerInventoryRepository.ApplySoftwareDeviceLicenseSources(
+        var result = InventoryDecisions.ApplySoftwareDeviceLicenseSources(
             "Contoso Editor",
             items,
             [Policy("Contoso Editor", SoftwarePolicyClassification.Managed, LicenseSourceNames.Company)]);

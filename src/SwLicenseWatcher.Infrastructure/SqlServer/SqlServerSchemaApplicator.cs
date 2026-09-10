@@ -1,8 +1,9 @@
 using Microsoft.Data.SqlClient;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using SwLicenseWatcher.Core;
 
-namespace SwLicenseWatcher.Api;
+namespace SwLicenseWatcher.Infrastructure.SqlServer;
 
 public sealed class SqlServerSchemaApplicator(
     SqlServerStorageOptions storage,

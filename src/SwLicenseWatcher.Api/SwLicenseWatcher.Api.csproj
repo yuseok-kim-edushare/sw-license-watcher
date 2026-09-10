@@ -17,7 +17,6 @@
   <Import Project="..\..\NonAotFlavour.props" Condition="'$(PublishAot)' != 'true'" />
 
   <ItemGroup>
-    <PackageReference Include="Microsoft.Data.SqlClient" />
     <PackageReference Include="Microsoft.Extensions.Hosting.WindowsServices" />
     <ProjectReference
       Include="..\SwLicenseWatcher.Application\SwLicenseWatcher.Application.csproj"

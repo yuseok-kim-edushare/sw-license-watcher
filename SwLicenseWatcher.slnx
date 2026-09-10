@@ -17,7 +17,9 @@
     <Project Path="tests/SwLicenseWatcher.Agent.Watchdog.Tests/SwLicenseWatcher.Agent.Watchdog.Tests.csproj" />
     <Project Path="tests/SwLicenseWatcher.Agent.Worker.Tests/SwLicenseWatcher.Agent.Worker.Tests.csproj" />
     <Project Path="tests/SwLicenseWatcher.Api.Tests/SwLicenseWatcher.Api.Tests.csproj" />
+    <Project Path="tests/SwLicenseWatcher.Application.Tests/SwLicenseWatcher.Application.Tests.csproj" />
     <Project Path="tests/SwLicenseWatcher.Core.Tests/SwLicenseWatcher.Core.Tests.csproj" />
+    <Project Path="tests/SwLicenseWatcher.Infrastructure.Tests/SwLicenseWatcher.Infrastructure.Tests.csproj" />
     <Project Path="tests/SwLicenseWatcher.Setup.Tests/SwLicenseWatcher.Setup.Tests.csproj" />
   </Folder>
 </Solution>
