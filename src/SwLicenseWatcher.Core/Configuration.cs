@@ -360,6 +360,8 @@ public sealed class SmtpNotificationOptions
 
     public bool EnableSsl { get; set; } = true;
 
+    public string[] AllowedCertificateThumbprints { get; set; } = [];
+
     public string UserName { get; set; } = string.Empty;
 
     public string Password { get; set; } = string.Empty;

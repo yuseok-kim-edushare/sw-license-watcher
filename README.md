@@ -269,6 +269,7 @@ API 서버는 수집 결과를 바탕으로 Teams/Slack incoming webhook과 SMTP
       "Host": "smtp.contoso.local",
       "Port": 587,
       "EnableSsl": true,
+      "AllowedCertificateThumbprints": [],
       "UserName": "sw-license-watcher",
       "Password": "",
       "From": "sw-license-watcher@contoso.local",
@@ -292,6 +293,7 @@ API 서버는 수집 결과를 바탕으로 Teams/Slack incoming webhook과 SMTP
 | `Notifications:Webhook:Timeout` | HTTP 타임아웃. 기본 `00:00:10` |
 | `Notifications:Smtp:Enabled` | SMTP 메일 사용 여부 |
 | `Notifications:Smtp:Host` / `Port` / `EnableSsl` | SMTP가 켜져 있을 때 호스트·포트·SSL |
+| `Notifications:Smtp:AllowedCertificateThumbprints` | 사내 사설 CA SMTP 인증서를 허용할 SHA-1 또는 SHA-256 지문 목록. 시스템 검증이 실패해도 지문이 일치하면 TLS를 허용합니다. 공백·콜론·하이픈은 무시합니다 |
 | `Notifications:Smtp:UserName` / `Password` | 비워 두면 익명(또는 서버 기본 자격 증명) 릴레이 |
 | `Notifications:Smtp:From` / `Recipients` | SMTP가 켜져 있을 때 발신자와 수신자 목록(1명 이상) |
 | `Notifications:Events:NewSoftware` | 이전에 없던 소프트웨어가 스냅샷에 나타나면 알림 |
@@ -307,7 +309,7 @@ Notifications__Webhook__Url=<teams-or-slack-incoming-webhook>
 Notifications__Smtp__Password=<smtp-password>
 ```
 
-Webhook이 켜진 상태에서 URL이 없거나, SMTP가 켜진 상태에서 Host/From/Recipients가 비어 있으면 API는 시작 시 실패합니다. 알림은 백그라운드 큐로 보내며, SMTP는 Native AOT를 위해 `System.Net.Mail.SmtpClient`를 사용합니다(MailKit 전체 패키지는 AOT 비호환).
+Webhook이 켜진 상태에서 URL이 없거나, SMTP가 켜진 상태에서 Host/From/Recipients가 비어 있으면 API는 시작 시 실패합니다. 알림은 백그라운드 큐로 보내며, SMTP는 Native AOT를 위해 `System.Net.Mail.SmtpClient`를 사용합니다(MailKit 전체 패키지는 AOT 비호환). `EnableSsl`이 켜진 사내 SMTP가 사설 인증서를 쓰면 인증서 오류로 발송이 거절됩니다. 그 경우 서버 인증서 SHA-1 또는 SHA-256 지문을 `AllowedCertificateThumbprints`에 넣으면 해당 지문만 예외 허용합니다. 공인 CA 인증서는 목록이 비어 있어도 시스템 기본 검증을 통과합니다.
 
 ## 수동 실행 예시
 
