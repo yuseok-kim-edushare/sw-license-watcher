@@ -3,7 +3,6 @@ using System.Net.Http.Json;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Microsoft.JSInterop;
-using SwLicenseWatcher.Admin.Models;
 using SwLicenseWatcher.Core;
 
 namespace SwLicenseWatcher.Admin.Services;

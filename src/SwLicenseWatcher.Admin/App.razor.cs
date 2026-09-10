@@ -1,7 +1,6 @@
 using Microsoft.AspNetCore.Components;
 using Microsoft.AspNetCore.Components.Web;
 using Microsoft.JSInterop;
-using SwLicenseWatcher.Admin.Models;
 using SwLicenseWatcher.Admin.Services;
 using SwLicenseWatcher.Core;
 

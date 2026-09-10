@@ -1,5 +1,6 @@
 using System.Text.Json;
 using SwLicenseWatcher.Api;
+using SwLicenseWatcher.Core;
 
 namespace SwLicenseWatcher.Api.Tests;
 

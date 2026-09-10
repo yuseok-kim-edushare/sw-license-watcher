@@ -1,10 +1,12 @@
-using SwLicenseWatcher.Core;
+using System.Text.Json.Serialization;
 
-namespace SwLicenseWatcher.Admin.Models;
+namespace SwLicenseWatcher.Core;
 
-public sealed record HealthResponse(string Status, DateTimeOffset Utc, string? Reason = null);
-
-public sealed record ErrorResponse(string Error);
+public sealed record HealthResponse(
+    string Status,
+    DateTimeOffset Utc,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    string? Reason = null);
 
 public sealed record DeviceSummary(
     string DeviceCode,

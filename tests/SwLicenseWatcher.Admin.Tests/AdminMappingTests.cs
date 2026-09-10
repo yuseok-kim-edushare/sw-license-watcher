@@ -1,5 +1,4 @@
 using System.Text.Json;
-using SwLicenseWatcher.Admin.Models;
 using SwLicenseWatcher.Admin.Services;
 using SwLicenseWatcher.Core;
 
