@@ -11,6 +11,7 @@
     <Project Path="src/SwLicenseWatcher.Setup.Launcher/SwLicenseWatcher.Setup.Launcher.csproj" />
   </Folder>
   <Folder Name="/tests/">
+    <Project Path="tests/SwLicenseWatcher.Admin.Tests/SwLicenseWatcher.Admin.Tests.csproj" />
     <Project Path="tests/SwLicenseWatcher.Agent.Watchdog.Tests/SwLicenseWatcher.Agent.Watchdog.Tests.csproj" />
     <Project Path="tests/SwLicenseWatcher.Agent.Worker.Tests/SwLicenseWatcher.Agent.Worker.Tests.csproj" />
     <Project Path="tests/SwLicenseWatcher.Api.Tests/SwLicenseWatcher.Api.Tests.csproj" />

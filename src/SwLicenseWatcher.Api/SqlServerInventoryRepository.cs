@@ -1278,7 +1278,7 @@ public sealed class SqlServerInventoryRepository(SqlServerStorageOptions options
         return assignments;
     }
 
-    private static List<InstalledSoftwareEntry> ApplyLicenseSources(
+    internal static List<InstalledSoftwareEntry> ApplyLicenseSources(
         IReadOnlyList<InstalledSoftwareEntry> installed,
         IReadOnlyDictionary<string, string> assignments,
         IReadOnlyList<SoftwarePolicyEntry> policies)
@@ -1302,7 +1302,7 @@ public sealed class SqlServerInventoryRepository(SqlServerStorageOptions options
         return result;
     }
 
-    private static List<SoftwareDevice> ApplySoftwareDeviceLicenseSources(
+    internal static List<SoftwareDevice> ApplySoftwareDeviceLicenseSources(
         string softwareName,
         List<SoftwareDevice> items,
         IReadOnlyList<SoftwarePolicyEntry> policies)

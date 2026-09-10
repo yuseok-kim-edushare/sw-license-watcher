@@ -20,4 +20,8 @@
     <ProjectReference Include="..\SwLicenseWatcher.Core\SwLicenseWatcher.Core.csproj" GlobalPropertiesToRemove="PublishAot;PublishTrimmed;RuntimeIdentifier;SelfContained" />
   </ItemGroup>
 
+  <ItemGroup>
+    <InternalsVisibleTo Include="SwLicenseWatcher.Admin.Tests" />
+  </ItemGroup>
+
 </Project>

@@ -381,7 +381,7 @@ public partial class App : IAsyncDisposable
         return string.Join("&", parts);
     }
 
-    private static string SoftwareKey(SoftwareAggregate row) =>
+    internal static string SoftwareKey(SoftwareAggregate row) =>
         $"{row.Name}\u001f{row.Version}\u001f{row.Classification}";
 
     private void ToggleSelectAll(ChangeEventArgs args)
@@ -943,9 +943,9 @@ public partial class App : IAsyncDisposable
         _ => "managed"
     };
 
-    private static bool TryParseClassification(string value, out SoftwarePolicyClassification classification) =>
+    internal static bool TryParseClassification(string value, out SoftwarePolicyClassification classification) =>
         SoftwarePolicyClassificationNames.TryParse(value, out classification);
 
-    private static string? EmptyToNull(string? value) =>
+    internal static string? EmptyToNull(string? value) =>
         string.IsNullOrWhiteSpace(value) ? null : value.Trim();
 }

@@ -1,0 +1,7 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\SwLicenseWatcher.Admin\SwLicenseWatcher.Admin.csproj" AdditionalProperties="PublishAot=false;PublishTrimmed=false;SelfContained=false;RuntimeIdentifier=browser-wasm" />
+  </ItemGroup>
+
+</Project>
