@@ -474,14 +474,6 @@ jobs:
             }
           }
 
-      - name: Upload Native AOT artifacts
-        uses: actions/upload-artifact@v7
-        with:
-          name: native-aot-win-x64
-          path: publish
-          retention-days: 7
-          if-no-files-found: error
-
       - name: Upload IL warning logs
         if: always()
         uses: actions/upload-artifact@v7
