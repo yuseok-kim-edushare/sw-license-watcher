@@ -59,6 +59,26 @@ public sealed record DeviceAgentAssignment(
     string? DeviceId,
     string? DeviceCertificate);
 
+public sealed record DeviceEnrollmentKeys(
+    string DeviceCode,
+    string? AssignedDeviceCode,
+    string? DeviceId,
+    string? DevicePublicKey,
+    string? DeviceCertificate);
+
+public sealed record DeviceUpgradeAuthorizationRequest(
+    string DeviceCode,
+    string? DeviceId = null,
+    string? DevicePublicKey = null,
+    string? DeviceCertificate = null,
+    string? DeviceProof = null);
+
+public sealed record DeviceUpgradeAuthorizationResponse(
+    string DeviceCode,
+    string? DeviceId,
+    string? DevicePublicKey,
+    string? DeviceCertificate);
+
 public sealed record StoredDeviceIdentity(
     string? DeviceId,
     string PublicKey,

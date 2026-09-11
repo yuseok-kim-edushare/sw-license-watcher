@@ -18,6 +18,7 @@
   <ItemGroup>
     <PackageReference Include="System.ServiceProcess.ServiceController" />
     <ProjectReference Include="..\SwLicenseWatcher.Setup.Core\SwLicenseWatcher.Setup.Core.csproj" GlobalPropertiesToRemove="PublishAot;PublishTrimmed" />
+    <ProjectReference Include="..\SwLicenseWatcher.Crypto\SwLicenseWatcher.Crypto.csproj" GlobalPropertiesToRemove="PublishAot;PublishTrimmed;RuntimeIdentifier;SelfContained" />
   </ItemGroup>
 
 </Project>

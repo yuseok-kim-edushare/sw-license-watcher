@@ -90,4 +90,47 @@ internal sealed class DeviceEnrollmentService(
 
         return assignment;
     }
+
+    public async Task<(DeviceUpgradeAuthorizationResponse? Response, string? Error)> AuthorizeUpgradeAsync(
+        DeviceUpgradeAuthorizationRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(request.DeviceProof))
+        {
+            return (null, "The device proof is required.");
+        }
+
+        var keys = await devices.GetDeviceEnrollmentKeysAsync(
+            request.DeviceCode,
+            request.DeviceId,
+            cancellationToken);
+        if (keys is null)
+        {
+            return (null, null);
+        }
+
+        if (!string.IsNullOrWhiteSpace(keys.DevicePublicKey) &&
+            !string.IsNullOrWhiteSpace(request.DevicePublicKey) &&
+            !string.Equals(keys.DevicePublicKey, request.DevicePublicKey, StringComparison.Ordinal))
+        {
+            return (null, "The device public key does not match the registered key.");
+        }
+
+        var publicKey = string.IsNullOrWhiteSpace(keys.DevicePublicKey)
+            ? request.DevicePublicKey
+            : keys.DevicePublicKey;
+        var certificate = string.IsNullOrWhiteSpace(request.DeviceCertificate)
+            ? keys.DeviceCertificate
+            : request.DeviceCertificate;
+        if (!TryAccept(request.DeviceId, publicKey, certificate, request.DeviceProof, request.DeviceCode, out var error))
+        {
+            return (null, error);
+        }
+
+        return (new DeviceUpgradeAuthorizationResponse(
+            DeviceCodes.Official(keys.DeviceCode, keys.AssignedDeviceCode),
+            keys.DeviceId,
+            keys.DevicePublicKey,
+            keys.DeviceCertificate), null);
+    }
 }

@@ -7,7 +7,8 @@
 .DESCRIPTION
     Copies only agent-worker/win-x64 and agent-watchdog/win-x64 onto the PC. The API
     (api/win-x64) is a server web app and is never installed by this script, even if it
-    is present in the same Release folder.
+    is present in the same Release folder. Existing services are upgraded in place:
+    uninstall approval is not requested and ProgramData identity/state is kept.
     Writes company appsettings.json for both agent processes, creates ProgramData
     directories, then registers Worker and Watchdog as LocalSystem Automatic
     services (restart on failure) and starts Worker followed by Watchdog.
@@ -265,6 +266,46 @@ $queueDir = Join-Path $StateRoot "state\queue"
 $healthPath = Join-Path $StateRoot "state\worker-health.json"
 $stagingDir = Join-Path $StateRoot "staging"
 $backupDir = Join-Path $StateRoot "backup"
+$existingWorkerSettingsPath = Join-Path $workerDir "appsettings.json"
+$existingWorkerSettings = $null
+$inPlaceUpgrade = $null -ne (Get-Service -Name $workerServiceName -ErrorAction SilentlyContinue) -or
+    $null -ne (Get-Service -Name $watchdogServiceName -ErrorAction SilentlyContinue) -or
+    (Test-Path -LiteralPath $workerExe)
+
+if ($inPlaceUpgrade) {
+    Write-Host "Existing agent detected. In-place upgrade skips uninstall approval and keeps ProgramData identity/state."
+    $versionFile = Join-Path $workerDir ".version"
+    if (Test-Path -LiteralPath $versionFile) {
+        $installedVersion = ([string](Get-Content -LiteralPath $versionFile -Raw)).Trim()
+        if ($installedVersion.Length -gt 0) {
+            Write-Host "Installed Worker version: $installedVersion"
+        }
+        $numeric = ($installedVersion -split '-', 2)[0]
+        $parsed = [Version]::new(0, 0, 0, 0)
+        if ([Version]::TryParse($numeric, [ref]$parsed) -and $parsed -ge [Version]::new(0, 1, 0)) {
+            Write-Host "0.1.0+ identity keys stay on disk. Company Setup.exe verifies them with the server; this script does not create an uninstall request."
+        }
+        else {
+            Write-Host "Pre-0.1.0 install: skipping asymmetric key authorization."
+        }
+    }
+    if ((-not $PSBoundParameters.ContainsKey('DeviceCode')) -and (Test-Path -LiteralPath $existingWorkerSettingsPath)) {
+        $existingWorkerSettings = Import-AppSettings -Path $existingWorkerSettingsPath
+        if ($null -ne $existingWorkerSettings.Agent.DeviceCode -and
+            -not [string]::IsNullOrWhiteSpace([string] $existingWorkerSettings.Agent.DeviceCode)) {
+            $DeviceCode = [string] $existingWorkerSettings.Agent.DeviceCode
+        }
+    }
+    if ((-not $PSBoundParameters.ContainsKey('DomainName')) -and (Test-Path -LiteralPath $existingWorkerSettingsPath)) {
+        if ($null -eq $existingWorkerSettings) {
+            $existingWorkerSettings = Import-AppSettings -Path $existingWorkerSettingsPath
+        }
+        if ($null -ne $existingWorkerSettings.Agent.DomainName -and
+            -not [string]::IsNullOrWhiteSpace([string] $existingWorkerSettings.Agent.DomainName)) {
+            $DomainName = [string] $existingWorkerSettings.Agent.DomainName
+        }
+    }
+}
 
 if ([string]::IsNullOrWhiteSpace($ExampleConfigDirectory)) {
     $ExampleConfigDirectory = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "..\examples"))

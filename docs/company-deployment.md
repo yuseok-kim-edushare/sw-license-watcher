@@ -41,7 +41,7 @@ deploy/
 | Worker | PC | Uninstall 레지스트리로 설치 SW 수집, 서버로 전송 |
 | Watchdog | PC | 서버 manifest로 Worker 패키지를 받아 교체·롤백 |
 | Packager | IT PC | 회사 Setup.exe 하나를 만듦 (주소·에이전트 키 주입) |
-| Setup | PC | 직원 GUI. 서비스 설치, 제거는 `/admin` 승인 후 |
+| Setup | PC | 직원 GUI. 설치·인플레이스 업그레이드. 제거는 `/admin` 승인 후 |
 
 소스의 에이전트 `appsettings.json`은 로컬 개발용입니다 (`pc-demo-001`, `http://localhost:5080`, 빈 토큰). 그대로 PC에 복사하면 DeviceCode가 전 장비에서 겹치거나 서비스가 시작되지 않습니다.
 
@@ -240,7 +240,7 @@ USB나 그룹웨어로 뿌릴 때는 IT가 Packager GUI에서 회사 설치본 *
 - PC 관리 식별자/자산번호는 선택입니다. 비우면 컴퓨터 이름을 씁니다. 추측해서 쓰지 마세요.
 - 설치 후 설정 앱에 SW License Watcher가 보이며, 제거는 `/admin` **제거 요청** 승인 뒤에만 진행됩니다.
 
-업그레이드는 새 릴리스로 다시 포장한 Setup.exe를 실행하면 됩니다. 제거 승인은 필요 없습니다.
+업그레이드는 새 릴리스로 다시 포장한 Setup.exe를 실행하면 됩니다. 기존 서비스가 있으면 인플레이스 업그레이드입니다. 제거 요청은 남기지 않습니다. 0.1.0 이상은 서버에서 장치 키를 가져와 확인하고, 그 이전 버전은 비대칭키 확인을 건너뜁니다.
 
 로컬 해제 키는 없습니다. `sc.exe delete`로 서비스를 지우면 서버에는 하트비트 두절로 남습니다.
 
@@ -257,7 +257,7 @@ Worker를 먼저 기동하고 Watchdog을 올립니다. 두 서비스 모두 **L
   -ApiToken $token
 ```
 
-`-DeviceCode`와 `-DomainName`을 생략하면 컴퓨터 이름과 `USERDOMAIN`을 씁니다. 자산 코드 체계가 있으면 `-DeviceCode`를 명시하세요.
+`-DeviceCode`와 `-DomainName`을 생략하면 컴퓨터 이름과 `USERDOMAIN`을 씁니다. 자산 코드 체계가 있으면 `-DeviceCode`를 명시하세요. 이미 설치된 서비스를 다시 실행하면 인플레이스 업그레이드입니다. 제거 요청을 서버에 남기지 않고, `-DeviceCode`/`-DomainName`을 생략하면 기존 `appsettings.json` 값과 ProgramData의 장치 키를 유지합니다.
 
 확인:
 

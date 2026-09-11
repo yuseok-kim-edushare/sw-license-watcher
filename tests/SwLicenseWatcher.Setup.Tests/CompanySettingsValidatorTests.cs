@@ -37,6 +37,8 @@ public class CompanySettingsValidatorTests
         Assert.Equal("ASSET-9", asset);
         Assert.False(DeviceCodeResolver.TryResolve(new string('x', 129), "PC-01", out _, out var error));
         Assert.Contains("128", error, StringComparison.Ordinal);
+        Assert.True(DeviceCodeResolver.TryResolveForInstall("  ", "PC-01", "ASSET-7", out var kept, out _));
+        Assert.Equal("ASSET-7", kept);
     }
 
     [Fact]

@@ -32,6 +32,12 @@ public static class SetupPaths
 
     public static string HealthFilePath(string stateRoot) => Path.Combine(stateRoot, "state", "worker-health.json");
 
+    public static string DeviceIdentityPath(string stateRoot) =>
+        Path.Combine(stateRoot, "state", "device-identity.bin");
+
+    public static string AssignmentFilePath(string stateRoot) =>
+        Path.Combine(stateRoot, "state", "assigned-host-name.json");
+
     public static string StagingDirectory(string stateRoot) => Path.Combine(stateRoot, "staging");
 
     public static string BackupDirectory(string stateRoot) => Path.Combine(stateRoot, "backup");

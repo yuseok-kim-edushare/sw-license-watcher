@@ -53,6 +53,7 @@ public class BearerTokenAuthenticatorTests
     [InlineData("/api/agents/uninstall-requests")]
     [InlineData("/api/agents/uninstall-requests/12")]
     [InlineData("/api/agents/uninstall-requests/12/consume")]
+    [InlineData("/api/agents/upgrade-authorizations")]
     public void IsAuthorized_agent_token_is_accepted_on_agent_endpoints(string path)
     {
         var security = RoleSeparated();
@@ -120,6 +121,7 @@ public class BearerTokenAuthenticatorTests
     [InlineData("/api/updates/worker/manifest")]
     [InlineData("/api/agents/uninstall-requests")]
     [InlineData("/API/AGENTS/UNINSTALL-REQUESTS/3/CONSUME")]
+    [InlineData("/api/agents/upgrade-authorizations")]
     public void IsAgentEndpoint_recognizes_agent_paths_case_insensitively(string path)
     {
         Assert.True(EndpointPolicies.IsAgentEndpoint(path, HttpMethods.Get));

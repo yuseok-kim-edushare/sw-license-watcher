@@ -102,7 +102,7 @@ internal sealed class WindowsAgentMachineIntegration : IAgentMachineIntegration
         }
     }
 
-    private static bool ServiceExists(string name) =>
+    public bool ServiceExists(string name) =>
         ServiceController.GetServices().Any(service =>
             string.Equals(service.ServiceName, name, StringComparison.OrdinalIgnoreCase));
 

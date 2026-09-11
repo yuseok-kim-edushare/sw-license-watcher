@@ -11,12 +11,16 @@ public sealed class InstalledDeviceCodeReader
         _installRoot = installRoot ?? SetupPaths.DefaultInstallRoot;
     }
 
-    public string Read(string machineName)
+    public string Read(string machineName) =>
+        TryRead(out var deviceCode) ? deviceCode : machineName;
+
+    public bool TryRead(out string deviceCode)
     {
+        deviceCode = string.Empty;
         var path = Path.Combine(SetupPaths.WorkerDirectory(_installRoot), "appsettings.json");
         if (!File.Exists(path))
         {
-            return machineName;
+            return false;
         }
 
         try
@@ -29,7 +33,8 @@ public sealed class InstalledDeviceCodeReader
                 var value = code.GetString();
                 if (!string.IsNullOrWhiteSpace(value))
                 {
-                    return value;
+                    deviceCode = value.Trim();
+                    return true;
                 }
             }
         }
@@ -37,6 +42,6 @@ public sealed class InstalledDeviceCodeReader
         {
         }
 
-        return machineName;
+        return false;
     }
 }

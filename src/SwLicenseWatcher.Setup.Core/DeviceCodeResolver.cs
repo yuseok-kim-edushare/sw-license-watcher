@@ -42,4 +42,24 @@ public static class DeviceCodeResolver
 
         return deviceCode;
     }
+
+    public static bool TryResolveForInstall(
+        string? assetCode,
+        string machineName,
+        string? existingDeviceCode,
+        out string deviceCode,
+        out string error)
+    {
+        if (!string.IsNullOrWhiteSpace(assetCode))
+        {
+            return TryResolve(assetCode, machineName, out deviceCode, out error);
+        }
+
+        if (!string.IsNullOrWhiteSpace(existingDeviceCode))
+        {
+            return TryResolve(existingDeviceCode, machineName, out deviceCode, out error);
+        }
+
+        return TryResolve(null, machineName, out deviceCode, out error);
+    }
 }

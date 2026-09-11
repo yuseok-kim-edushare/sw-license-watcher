@@ -6,6 +6,7 @@ internal static class AgentPaths
     internal const string Heartbeats = "/api/agents/heartbeats";
     internal const string WorkerManifest = "/api/updates/worker/manifest";
     internal const string UninstallRequests = "/api/agents/uninstall-requests";
+    internal const string UpgradeAuthorizations = "/api/agents/upgrade-authorizations";
 }
 
 internal static class EndpointPolicies
@@ -22,7 +23,8 @@ internal static class EndpointPolicies
 
         return path.Equals(AgentPaths.InventorySnapshots, StringComparison.OrdinalIgnoreCase) |
             path.Equals(AgentPaths.Heartbeats, StringComparison.OrdinalIgnoreCase) |
-            path.StartsWithSegments(AgentPaths.UninstallRequests, StringComparison.OrdinalIgnoreCase);
+            path.StartsWithSegments(AgentPaths.UninstallRequests, StringComparison.OrdinalIgnoreCase) |
+            path.StartsWithSegments(AgentPaths.UpgradeAuthorizations, StringComparison.OrdinalIgnoreCase);
     }
 
     internal static bool IsAdminEndpoint(PathString path, string httpMethod)

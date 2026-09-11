@@ -12,4 +12,6 @@ namespace SwLicenseWatcher.Setup.Core;
 [JsonSerializable(typeof(UninstallRequestCreated))]
 [JsonSerializable(typeof(AgentUninstallRequest))]
 [JsonSerializable(typeof(UninstallRequestConsumeBody))]
+[JsonSerializable(typeof(UpgradeAuthorizationRequest))]
+[JsonSerializable(typeof(UpgradeAuthorizationResponse))]
 public partial class SetupJsonContext : JsonSerializerContext;

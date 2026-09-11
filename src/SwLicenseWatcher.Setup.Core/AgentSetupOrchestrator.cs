@@ -30,6 +30,9 @@ public sealed class AgentSetupOrchestrator
         }
     }
 
+    public ExistingAgentInstallation DetectExistingInstallation() =>
+        new ExistingAgentInstallationReader(_machine, _installRoot, _stateRoot).Read();
+
     public void Install(
         CompanySettings settings,
         string payloadDirectory,
@@ -37,13 +40,18 @@ public sealed class AgentSetupOrchestrator
         string? sourceExePath)
     {
         EnsureCanChangeMachine();
+        var existing = DetectExistingInstallation();
         var workerDirectory = SetupPaths.WorkerDirectory(_installRoot);
         var watchdogDirectory = SetupPaths.WatchdogDirectory(_installRoot);
         var queueDirectory = SetupPaths.QueueDirectory(_stateRoot);
         var healthPath = SetupPaths.HealthFilePath(_stateRoot);
         var stagingDirectory = SetupPaths.StagingDirectory(_stateRoot);
         var backupDirectory = SetupPaths.BackupDirectory(_stateRoot);
-        var domainName = SetupPaths.ResolveDomainName();
+        // In-place upgrade stops and replaces services locally. It does not create a
+        // server uninstall request and does not delete ProgramData identity/state.
+        var domainName = string.IsNullOrWhiteSpace(existing.DomainName)
+            ? SetupPaths.ResolveDomainName()
+            : existing.DomainName;
 
         _machine.StopService(SetupPaths.WatchdogServiceName);
         _machine.StopService(SetupPaths.WorkerServiceName);

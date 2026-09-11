@@ -47,6 +47,11 @@ public interface IDeviceQuery
         string? deviceId,
         CancellationToken cancellationToken);
 
+    Task<DeviceEnrollmentKeys?> GetDeviceEnrollmentKeysAsync(
+        string deviceCode,
+        string? deviceId,
+        CancellationToken cancellationToken);
+
     Task<DeviceProfileUpdateResult> UpdateDeviceProfileAsync(
         string deviceCode,
         DeviceProfileWriteRequest request,

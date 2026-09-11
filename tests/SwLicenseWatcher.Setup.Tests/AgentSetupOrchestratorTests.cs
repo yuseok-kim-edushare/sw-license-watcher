@@ -53,6 +53,73 @@ public class AgentSetupOrchestratorTests
     }
 
     [Fact]
+    public void Install_over_existing_services_is_in_place_upgrade_and_preserves_local_identity()
+    {
+        using var directory = new TempDirectory();
+        var payload = Path.Combine(directory.Path, "payload");
+        var installRoot = Path.Combine(directory.Path, "install");
+        var stateRoot = Path.Combine(directory.Path, "state");
+        var worker = PayloadLayout.GetWorkerDirectory(payload);
+        var watchdog = PayloadLayout.GetWatchdogDirectory(payload);
+        Directory.CreateDirectory(worker);
+        Directory.CreateDirectory(watchdog);
+        File.WriteAllText(Path.Combine(worker, PayloadLayout.WorkerExe), "worker-v2");
+        File.WriteAllText(Path.Combine(watchdog, PayloadLayout.WatchdogExe), "watchdog-v2");
+        Directory.CreateDirectory(SetupPaths.WorkerDirectory(installRoot));
+        Directory.CreateDirectory(Path.Combine(stateRoot, "state"));
+        File.WriteAllText(
+            Path.Combine(SetupPaths.WorkerDirectory(installRoot), "appsettings.json"),
+            """{"Agent":{"DeviceCode":"ASSET-42","DomainName":"CORP"}}""");
+        File.WriteAllText(SetupPaths.DeviceIdentityPath(stateRoot), "mldsa-identity");
+        File.WriteAllText(
+            SetupPaths.AssignmentFilePath(stateRoot),
+            """{"assignedDeviceCode":"HOST-9"}""");
+        var machine = new RecordingMachineIntegration();
+        machine.ExistingServices.Add(SetupPaths.WorkerServiceName);
+        machine.ExistingServices.Add(SetupPaths.WatchdogServiceName);
+        var sut = new AgentSetupOrchestrator(
+            machine,
+            installRoot: installRoot,
+            stateRoot: stateRoot,
+            privilege: UnrestrictedAdministratorPrivilege.Instance);
+
+        var existing = sut.DetectExistingInstallation();
+        Assert.True(existing.IsPresent);
+        Assert.Equal("ASSET-42", existing.DeviceCode);
+        Assert.Equal("HOST-9", existing.AssignedDeviceCode);
+        Assert.Equal("CORP", existing.DomainName);
+        Assert.True(existing.HasDeviceIdentity);
+
+        sut.Install(ValidSettings(), payload, "ASSET-42", sourceExePath: null);
+
+        Assert.Equal("worker-v2", File.ReadAllText(SetupPaths.WorkerExe(installRoot)));
+        Assert.Equal("mldsa-identity", File.ReadAllText(SetupPaths.DeviceIdentityPath(stateRoot)));
+        Assert.Equal(
+            """{"assignedDeviceCode":"HOST-9"}""",
+            File.ReadAllText(SetupPaths.AssignmentFilePath(stateRoot)));
+        using var workerSettings = JsonDocument.Parse(File.ReadAllText(
+            Path.Combine(SetupPaths.WorkerDirectory(installRoot), "appsettings.json")));
+        Assert.Equal("ASSET-42", workerSettings.RootElement.GetProperty("Agent").GetProperty("DeviceCode").GetString());
+        Assert.Equal("CORP", workerSettings.RootElement.GetProperty("Agent").GetProperty("DomainName").GetString());
+        Assert.Equal(
+            ValidSettings().AgentToken,
+            workerSettings.RootElement.GetProperty("Agent").GetProperty("ApiToken").GetString());
+        Assert.DoesNotContain(machine.Events, item => item.StartsWith("delete:", StringComparison.Ordinal));
+        Assert.DoesNotContain("delete-arp", machine.Events);
+        Assert.Equal(
+            [
+                $"stop:{SetupPaths.WatchdogServiceName}",
+                $"stop:{SetupPaths.WorkerServiceName}",
+                $"install:{SetupPaths.WorkerServiceName}",
+                $"install:{SetupPaths.WatchdogServiceName}",
+                $"start:{SetupPaths.WorkerServiceName}",
+                $"start:{SetupPaths.WatchdogServiceName}",
+                $"arp:{ValidSettings().Version}"
+            ],
+            machine.Events);
+    }
+
+    [Fact]
     public void Uninstall_removes_program_files_but_preserves_state_when_requested()
     {
         using var directory = new TempDirectory();
@@ -135,6 +202,10 @@ public class AgentSetupOrchestratorTests
     private sealed class RecordingMachineIntegration : IAgentMachineIntegration
     {
         public List<string> Events { get; } = [];
+
+        public HashSet<string> ExistingServices { get; } = new(StringComparer.OrdinalIgnoreCase);
+
+        public bool ServiceExists(string name) => ExistingServices.Contains(name);
 
         public void StopService(string name) => Events.Add($"stop:{name}");
 

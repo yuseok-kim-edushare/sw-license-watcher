@@ -154,6 +154,41 @@ internal sealed partial class SqlServerDataContext
             ReadNullableString(reader, table.DeviceCertificateColumn));
     }
 
+    public async Task<DeviceEnrollmentKeys?> GetDeviceEnrollmentKeysAsync(
+        string deviceCode,
+        string? deviceId,
+        CancellationToken cancellationToken)
+    {
+        await using var connection = new SqlConnection(options.ConnectionString);
+        await connection.OpenAsync(cancellationToken);
+        var table = options.PcTable;
+        var sql = $"""
+            SELECT {Name(table.DeviceCodeColumn)}, {Name(table.AssignedDeviceCodeColumn)},
+                   {Name(table.DeviceIdColumn)}, {Name(table.DevicePublicKeyColumn)},
+                   {Name(table.DeviceCertificateColumn)}
+            FROM {Name(options.SchemaName, table.TableName)}
+            WHERE {PcLookupPredicate()}
+               OR (@deviceId IS NOT NULL AND {Name(table.DeviceIdColumn)} = @deviceId);
+            """;
+        await using var command = new SqlCommand(sql, connection);
+        command.Parameters.Add(new SqlParameter("@deviceCode", deviceCode));
+        command.Parameters.Add(new SqlParameter("@deviceId", DbValue(NullIfWhiteSpace(deviceId))));
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        if (!await reader.ReadAsync(cancellationToken))
+        {
+            return null;
+        }
+
+        var storedCode = reader.GetString(reader.GetOrdinal(table.DeviceCodeColumn));
+        var assignedCode = ReadNullableString(reader, table.AssignedDeviceCodeColumn);
+        return new DeviceEnrollmentKeys(
+            storedCode,
+            assignedCode,
+            ReadNullableString(reader, table.DeviceIdColumn),
+            ReadNullableString(reader, table.DevicePublicKeyColumn),
+            ReadNullableString(reader, table.DeviceCertificateColumn));
+    }
+
     public async Task<DeviceProfileUpdateResult> UpdateDeviceProfileAsync(
         string deviceCode,
         DeviceProfileWriteRequest request,

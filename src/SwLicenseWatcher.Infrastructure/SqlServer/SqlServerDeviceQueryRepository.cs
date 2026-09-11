@@ -25,6 +25,12 @@ internal sealed class SqlServerDeviceQueryRepository(SqlServerDataContext contex
         CancellationToken cancellationToken) =>
         context.GetDeviceAssignmentAsync(deviceCode, deviceId, cancellationToken);
 
+    public Task<DeviceEnrollmentKeys?> GetDeviceEnrollmentKeysAsync(
+        string deviceCode,
+        string? deviceId,
+        CancellationToken cancellationToken) =>
+        context.GetDeviceEnrollmentKeysAsync(deviceCode, deviceId, cancellationToken);
+
     public Task<DeviceProfileUpdateResult> UpdateDeviceProfileAsync(
         string deviceCode,
         DeviceProfileWriteRequest request,

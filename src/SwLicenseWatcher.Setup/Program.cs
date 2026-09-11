@@ -68,7 +68,11 @@ internal static class Program
         }
         else
         {
-            Application.Run(new InstallForm(settings, payloadDirectory, arguments.SourceExePath, setup));
+            using var http = UninstallApiClient.Create(settings.ServerBaseUrl, settings.AgentToken);
+            var upgrade = new InPlaceUpgradeAuthorizer(
+                new UpgradeAuthorizationApiClient(http),
+                new MldsaUpgradeProofFactory());
+            Application.Run(new InstallForm(settings, payloadDirectory, arguments.SourceExePath, setup, upgrade));
         }
     }
 }

@@ -13,6 +13,8 @@ namespace SwLicenseWatcher.Core;
 [JsonSerializable(typeof(StoredDeviceIdentity))]
 [JsonSerializable(typeof(DeviceCertificateDocument))]
 [JsonSerializable(typeof(DeviceAgentAssignment))]
+[JsonSerializable(typeof(DeviceUpgradeAuthorizationRequest))]
+[JsonSerializable(typeof(DeviceUpgradeAuthorizationResponse))]
 [JsonSerializable(typeof(SoftwarePolicyEntry))]
 [JsonSerializable(typeof(SoftwarePolicyEntry[]))]
 [JsonSerializable(typeof(List<SoftwarePolicyEntry>))]

@@ -2,6 +2,8 @@ namespace SwLicenseWatcher.Setup.Core;
 
 public interface IAgentMachineIntegration
 {
+    bool ServiceExists(string name);
+
     void StopService(string name);
 
     void InstallOrUpdateService(string name, string displayName, string description, string exePath);

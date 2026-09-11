@@ -100,9 +100,16 @@ IT 확인: `/admin`에서 해당 PC가 보이는지. 기본 수집 주기는 30�
 
 ## 5. 업그레이드
 
-새 GitHub Release가 나오면 IT가 **같은 패키저 절차**로 Setup.exe를 다시 만듭니다. 서버 주소와 에이전트 키는 그대로 두면 됩니다.
+새 GitHub Release가 나오면 IT가 **같은 패키저 절차**로 Setup.exe를 다시 만듭니다. 서버 주소와 에이전트 키는 그대로 두면 됩니다. 키가 바뀌었으면 새 키를 넣습니다.
 
-직원은 새 Setup.exe를 다시 실행합니다. 서비스를 멈춘 뒤 파일만 갈아끼웁니다. **제거 승인은 필요 없습니다.**
+직원은 새 Setup.exe를 다시 실행합니다. 이미 Worker/Watchdog 서비스가 있으면 화면이 **업그레이드**로 바뀝니다.
+
+- 제거 요청을 서버에 보내지 않습니다. `/admin` 승인 대기와 `pc_uninstall_request` 기록도 없습니다.
+- **0.1.0 이상:** 로컬 ML-DSA 장치 키로 증명을 만들고, 서버에 등록된 공개키·인증서를 가져와 확인한 뒤에만 서비스를 멈춥니다.
+- **0.1.0 이전:** 비대칭키가 없던 설치본이므로 그 확인을 건너뛰고 바로 파일을 갈아끼웁니다.
+- 자산번호는 기존 `appsettings.json` 값을 미리 채웁니다. 칸을 비워 두면 기존 값을 유지합니다.
+- `C:\ProgramData\SwLicenseWatcher\state\`의 ML-DSA 장치 키(`device-identity.bin`)와 서버 지정 이름(`assigned-host-name.json`)은 그대로 둡니다. 서버가 인증서를 돌려주면 로컬 신원 파일에 반영합니다. 키가 없던 예전 설치본이면 Worker가 기동 후 한 쌍을 만듭니다.
+- 새 설치본의 서버 주소·에이전트 키·현재 필수 설정은 덮어씁니다.
 
 Watchdog 자체 패치(Worker ZIP만 교체)는 이 설치기와 별개입니다. 회사 HTTPS에 Worker 패키지를 올리고 `/admin` **업데이트**에서 핀을 바꾸는 절차는 [company-deployment.md](company-deployment.md) 7절입니다.
 

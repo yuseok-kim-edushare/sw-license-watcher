@@ -149,6 +149,8 @@ public class UninstallOrchestratorTests
     {
         public List<string> Events { get; } = [];
 
+        public bool ServiceExists(string name) => false;
+
         public void StopService(string name) => Events.Add($"stop:{name}");
 
         public void InstallOrUpdateService(string name, string displayName, string description, string exePath) =>

@@ -27,6 +27,8 @@ namespace SwLicenseWatcher.Api;
 [JsonSerializable(typeof(UninstallRequestConsumeRequest))]
 [JsonSerializable(typeof(AdminUninstallRequest))]
 [JsonSerializable(typeof(UninstallRequestListResponse))]
+[JsonSerializable(typeof(DeviceUpgradeAuthorizationRequest))]
+[JsonSerializable(typeof(DeviceUpgradeAuthorizationResponse))]
 [JsonSerializable(typeof(IReadOnlyList<AdminUninstallRequest>))]
 [JsonSerializable(typeof(InstalledSoftwareEntry))]
 [JsonSerializable(typeof(SoftwarePolicyEntry))]
