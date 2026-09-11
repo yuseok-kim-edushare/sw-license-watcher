@@ -6,6 +6,11 @@ on:
     types: [completed]
     branches: [main]
   workflow_dispatch:
+    inputs:
+      version:
+        description: "Release version (x.y.z). Leave empty to auto-compute from tags and commit messages."
+        required: false
+        type: string
 
 permissions:
   contents: write
@@ -21,6 +26,16 @@ jobs:
           fetch-tags: true
           fetch-depth: 0
           ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.ref_name }}
+
+      - name: Fetch tags
+        shell: pwsh
+        run: |
+          if (Test-Path .git/shallow) {
+            git fetch --unshallow --force --tags origin
+          } else {
+            git fetch --force --tags origin
+          }
+          git tag --list --sort=-version:refname | Select-Object -First 15
 
       - name: Get USERPROFILE and set CACHE_PATH
         shell: pwsh
@@ -50,26 +65,96 @@ jobs:
 
       - name: Compute next release version
         shell: pwsh
+        env:
+          MANUAL_VERSION: ${{ github.event.inputs.version }}
         run: |
-          $latestRelease = git tag --list --sort=-version:refname | Where-Object { $_ -match '^\d+\.\d+\.\d+$' } | Select-Object -First 1
+          $ErrorActionPreference = 'Stop'
+          if (Get-Variable -Name PSNativeCommandUseErrorActionPreference -ErrorAction SilentlyContinue) {
+            $PSNativeCommandUseErrorActionPreference = $false
+          }
 
+          function Test-ReleaseVersion([string]$value) {
+            return $value -match '^\d+\.\d+\.\d+$'
+          }
+
+          function Get-VersionOverride([string[]]$messages) {
+            $pattern = '(?i)update\s+version\s+to\s+v?(\d+\.\d+\.\d+)'
+            foreach ($line in @($messages)) {
+              if ($line -match $pattern) {
+                return $Matches[1]
+              }
+            }
+            return $null
+          }
+
+          $headSubject = (git log -1 --format=%s).Trim()
+          Write-Output "HEAD $(git rev-parse --short HEAD): $headSubject"
+
+          $latestRelease = @(git tag --list --sort=-version:refname | Where-Object { Test-ReleaseVersion $_ } | Select-Object -First 1)
+          $latestRelease = "$latestRelease".Trim()
           if ($latestRelease) {
             Write-Output "Latest release version: $latestRelease"
             echo "latest_release=$latestRelease" >> $env:GITHUB_ENV
+          } else {
+            Write-Output "No previous x.y.z release tag found."
+          }
 
+          $manualVersion = "$env:MANUAL_VERSION".Trim()
+          if ($manualVersion) {
+            if (-not (Test-ReleaseVersion $manualVersion)) {
+              throw "workflow_dispatch version '$manualVersion' must be x.y.z"
+            }
+            $newVersionString = $manualVersion
+            Write-Output "Using workflow_dispatch version: $newVersionString"
+          } elseif ($latestRelease) {
             $version = [Version]$latestRelease
             $newVersionString = '{0}.{1}.{2}' -f $version.Major, $version.Minor, ($version.Build + 1)
+            Write-Output "Default next version (patch + 1): $newVersionString"
 
-            # Allow commit messages like "Update Version To 0.1.2" to override the patch bump.
-            $latestCommitMessages = (git log "$latestRelease..HEAD" --pretty=%B 2>$null)
-            foreach ($line in $latestCommitMessages) {
-              if ($line -match "Update Version To (\d+\.\d+\.\d+)") {
-                $newVersionString = $Matches[1]
+            $messages = @(git log -1 --format=%B)
+            git rev-parse --verify --quiet "${latestRelease}^{commit}" | Out-Null
+            if ($LASTEXITCODE -eq 0) {
+              $rangeMessages = @(git log --format=%B "$latestRelease..HEAD")
+              if ($rangeMessages.Count -gt 0) {
+                $messages = $rangeMessages
+                Write-Output "Scanning commit messages in $latestRelease..HEAD"
+              } else {
+                Write-Output "No commits in $latestRelease..HEAD; scanning HEAD only"
               }
+            } else {
+              Write-Output "Tag $latestRelease is not a resolvable commit; scanning last 50 commits on HEAD"
+              $messages = @(git log --format=%B -n 50)
+            }
+
+            $override = Get-VersionOverride $messages
+            if ($override) {
+              Write-Output "Commit message requested version: $override"
+              $newVersionString = $override
+            } else {
+              Write-Output "No 'Update Version To x.y.z' commit message found; keeping $newVersionString"
             }
           } else {
-            Write-Output "No previous release found. Creating initial release 0.0.1"
-            $newVersionString = "0.0.1"
+            $override = Get-VersionOverride @(git log --format=%B -n 50)
+            if ($override) {
+              $newVersionString = $override
+              Write-Output "Commit message requested initial version: $newVersionString"
+            } else {
+              $newVersionString = '0.0.1'
+              Write-Output "Creating initial release 0.0.1"
+            }
+          }
+
+          if (-not (Test-ReleaseVersion $newVersionString)) {
+            throw "Computed version '$newVersionString' is not x.y.z"
+          }
+
+          if ($latestRelease -and [Version]$newVersionString -le [Version]$latestRelease) {
+            throw "Release version $newVersionString must be greater than latest release $latestRelease"
+          }
+
+          $existingTag = @(git tag --list $newVersionString)
+          if ($existingTag.Count -gt 0) {
+            throw "Tag $newVersionString already exists"
           }
 
           Write-Output "Next release version: $newVersionString"
