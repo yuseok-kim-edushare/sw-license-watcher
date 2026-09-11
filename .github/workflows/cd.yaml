@@ -184,6 +184,23 @@ jobs:
         shell: pwsh
         run: dotnet publish src/SwLicenseWatcher.Setup/SwLicenseWatcher.Setup.csproj -r win-x64 -c Release --self-contained true -p:PublishSingleFile=true -p:PublishAot=false -p:PublishTrimmed=false -p:Version=$env:new_release -p:AssemblyVersion=$($env:new_release).0 -p:FileVersion=$($env:new_release).0 -p:InformationalVersion=$env:new_release -o ./publish/setup-ui/win-x64
 
+      - name: Assert Setup elevation manifests
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          function Assert-RequireAdministratorManifest([string]$Path) {
+            $bytes = [System.IO.File]::ReadAllBytes((Resolve-Path -LiteralPath $Path))
+            $utf8 = [System.Text.Encoding]::UTF8.GetString($bytes)
+            $utf16 = [System.Text.Encoding]::Unicode.GetString($bytes)
+            if ($utf8 -notmatch 'requireAdministrator' -and $utf16 -notmatch 'requireAdministrator') {
+              throw "Published EXE is missing requireAdministrator manifest: $Path"
+            }
+            Write-Host "Manifest requireAdministrator found in $Path"
+          }
+
+          Assert-RequireAdministratorManifest 'publish/setup-launcher/win-x64/SwLicenseWatcher-Setup.exe'
+          Assert-RequireAdministratorManifest 'publish/setup-ui/win-x64/SwLicenseWatcher.Setup.exe'
+
       - name: Publish Packager (win-x64, self-contained)
         shell: pwsh
         run: dotnet publish src/SwLicenseWatcher.Packager/SwLicenseWatcher.Packager.csproj -r win-x64 -c Release --self-contained true -p:PublishSingleFile=true -p:PublishAot=false -p:PublishTrimmed=false -p:Version=$env:new_release -p:AssemblyVersion=$($env:new_release).0 -p:FileVersion=$($env:new_release).0 -p:InformationalVersion=$env:new_release -o ./publish/packager/win-x64

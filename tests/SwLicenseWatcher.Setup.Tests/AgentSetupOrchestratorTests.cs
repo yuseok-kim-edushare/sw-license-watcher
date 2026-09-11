@@ -22,7 +22,11 @@ public class AgentSetupOrchestratorTests
         var sourceSetup = Path.Combine(directory.Path, "source-setup.exe");
         File.WriteAllText(sourceSetup, "setup");
         var machine = new RecordingMachineIntegration();
-        var sut = new AgentSetupOrchestrator(machine, installRoot: installRoot, stateRoot: stateRoot);
+        var sut = new AgentSetupOrchestrator(
+            machine,
+            installRoot: installRoot,
+            stateRoot: stateRoot,
+            privilege: UnrestrictedAdministratorPrivilege.Instance);
         var settings = ValidSettings();
 
         sut.Install(settings, payload, "ASSET-42", sourceSetup);
@@ -59,7 +63,11 @@ public class AgentSetupOrchestratorTests
         Directory.CreateDirectory(stateRoot);
         File.WriteAllText(Path.Combine(stateRoot, "queued.json"), "state");
         var machine = new RecordingMachineIntegration();
-        var sut = new AgentSetupOrchestrator(machine, installRoot: installRoot, stateRoot: stateRoot);
+        var sut = new AgentSetupOrchestrator(
+            machine,
+            installRoot: installRoot,
+            stateRoot: stateRoot,
+            privilege: UnrestrictedAdministratorPrivilege.Instance);
 
         sut.Uninstall(removeState: false);
 
@@ -74,6 +82,46 @@ public class AgentSetupOrchestratorTests
                 "delete-arp"
             ],
             machine.Events);
+    }
+
+    [Fact]
+    public void Install_refuses_without_administrator_privilege()
+    {
+        using var directory = new TempDirectory();
+        var machine = new RecordingMachineIntegration();
+        var sut = new AgentSetupOrchestrator(
+            machine,
+            installRoot: Path.Combine(directory.Path, "install"),
+            stateRoot: Path.Combine(directory.Path, "state"),
+            privilege: new DeniedPrivilege());
+
+        var error = Assert.Throws<UnauthorizedAccessException>(
+            () => sut.Install(ValidSettings(), directory.Path, "ASSET-1", sourceExePath: null));
+
+        Assert.Equal(WindowsAdministratorPrivilege.RequiredMessage, error.Message);
+        Assert.Empty(machine.Events);
+    }
+
+    [Fact]
+    public void Uninstall_refuses_without_administrator_privilege()
+    {
+        using var directory = new TempDirectory();
+        var installRoot = Path.Combine(directory.Path, "install");
+        Directory.CreateDirectory(SetupPaths.WorkerDirectory(installRoot));
+        var marker = Path.Combine(SetupPaths.WorkerDirectory(installRoot), "marker");
+        File.WriteAllText(marker, "installed");
+        var machine = new RecordingMachineIntegration();
+        var sut = new AgentSetupOrchestrator(
+            machine,
+            installRoot: installRoot,
+            stateRoot: Path.Combine(directory.Path, "state"),
+            privilege: new DeniedPrivilege());
+
+        var error = Assert.Throws<UnauthorizedAccessException>(() => sut.Uninstall(removeState: false));
+
+        Assert.Equal(WindowsAdministratorPrivilege.RequiredMessage, error.Message);
+        Assert.True(File.Exists(marker));
+        Assert.Empty(machine.Events);
     }
 
     private static CompanySettings ValidSettings() =>
@@ -100,5 +148,10 @@ public class AgentSetupOrchestratorTests
         public void RegisterArp(string version, string setupExe) => Events.Add($"arp:{version}");
 
         public void DeleteArp() => Events.Add("delete-arp");
+    }
+
+    private sealed class DeniedPrivilege : IAdministratorPrivilege
+    {
+        public bool IsElevated => false;
     }
 }

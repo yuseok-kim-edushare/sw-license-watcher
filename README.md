@@ -4,7 +4,7 @@
 
 ## 구현된 핵심 요구사항
 
-- **Windows Service 2개** (로그온은 **LocalSystem**. 설치 스크립트/Setup만 관리자 권한이 필요함)
+- **Windows Service 2개** (로그온은 **LocalSystem**. 설치·제거 Setup과 설치 스크립트는 관리자 권한이 필요함)
   - `SwLicenseWatcher.Agent.Watchdog`: 자체 패치, SHA-256/Authenticode 검증, 백업/롤백 정책 담당. Worker 서비스를 멈추고 교체하므로 사용자 계정(로컬 관리자 포함)으로 돌리지 않음
   - `SwLicenseWatcher.Agent.Worker`: 설치 소프트웨어 수집, heartbeat/snapshot 전송 담당. heartbeat `Status`는 스냅샷이 전달되면 `Healthy`, 재시도를 위해 큐에 적재되면 `Degraded`, API가 거절하면 `Rejected`
 - **로컬 상태 저장 설계**

@@ -41,6 +41,7 @@ public sealed class UninstallOrchestrator
         IProgress<UninstallProgress>? progress,
         CancellationToken cancellationToken)
     {
+        _setup.EnsureCanChangeMachine();
         var deviceCode = _deviceCodeReader.Read(machineName);
         progress?.Report(new UninstallProgress("제거 요청을 보내는 중입니다..."));
         var created = await _api.CreateAsync(deviceCode, cancellationToken);

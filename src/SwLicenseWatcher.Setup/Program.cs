@@ -7,6 +7,29 @@ internal static class Program
     [STAThread]
     private static void Main()
     {
+        try
+        {
+            if (WindowsElevation.TryRelaunchIfNotElevated(
+                    Environment.GetCommandLineArgs().Skip(1).ToArray(),
+                    WindowsAdministratorPrivilege.Current,
+                    WindowsElevatedProcessStarter.Instance,
+                    Environment.ProcessPath,
+                    out var elevatedExit))
+            {
+                Environment.ExitCode = elevatedExit;
+                return;
+            }
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show(
+                ex.Message,
+                SetupPaths.ProductName,
+                MessageBoxButtons.OK,
+                MessageBoxIcon.Error);
+            return;
+        }
+
         ApplicationConfiguration.Initialize();
 
         var arguments = SetupArguments.Parse(Environment.GetCommandLineArgs().Skip(1).ToArray());
@@ -31,7 +54,9 @@ internal static class Program
             return;
         }
 
-        var setup = new AgentSetupOrchestrator(new WindowsAgentMachineIntegration());
+        var setup = new AgentSetupOrchestrator(
+            new WindowsAgentMachineIntegration(),
+            privilege: WindowsAdministratorPrivilege.Current);
         if (arguments.Uninstall)
         {
             using var http = UninstallApiClient.Create(settings.ServerBaseUrl, settings.AgentToken);

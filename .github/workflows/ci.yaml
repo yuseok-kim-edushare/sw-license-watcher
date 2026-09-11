@@ -263,6 +263,18 @@ jobs:
             Write-Host "Found $path"
           }
 
+          function Assert-RequireAdministratorManifest([string]$Path) {
+            $bytes = [System.IO.File]::ReadAllBytes((Resolve-Path -LiteralPath $Path))
+            $utf8 = [System.Text.Encoding]::UTF8.GetString($bytes)
+            $utf16 = [System.Text.Encoding]::Unicode.GetString($bytes)
+            if ($utf8 -notmatch 'requireAdministrator' -and $utf16 -notmatch 'requireAdministrator') {
+              throw "Published EXE is missing requireAdministrator manifest: $Path"
+            }
+            Write-Host "Manifest requireAdministrator found in $Path"
+          }
+
+          Assert-RequireAdministratorManifest 'publish/setup-launcher/win-x64/SwLicenseWatcher-Setup.exe'
+
       - name: Smoke-test native binaries
         shell: pwsh
         run: |

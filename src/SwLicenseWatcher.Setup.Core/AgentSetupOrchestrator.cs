@@ -4,6 +4,7 @@ public sealed class AgentSetupOrchestrator
 {
     private readonly IAgentMachineIntegration _machine;
     private readonly AgentConfigurationWriter _configurationWriter;
+    private readonly IAdministratorPrivilege _privilege;
     private readonly string _installRoot;
     private readonly string _stateRoot;
 
@@ -11,12 +12,22 @@ public sealed class AgentSetupOrchestrator
         IAgentMachineIntegration machine,
         AgentConfigurationWriter? configurationWriter = null,
         string? installRoot = null,
-        string? stateRoot = null)
+        string? stateRoot = null,
+        IAdministratorPrivilege? privilege = null)
     {
         _machine = machine;
         _configurationWriter = configurationWriter ?? new AgentConfigurationWriter();
+        _privilege = privilege ?? WindowsAdministratorPrivilege.Current;
         _installRoot = installRoot ?? SetupPaths.DefaultInstallRoot;
         _stateRoot = stateRoot ?? SetupPaths.DefaultStateRoot;
+    }
+
+    public void EnsureCanChangeMachine()
+    {
+        if (!_privilege.IsElevated)
+        {
+            throw new UnauthorizedAccessException(WindowsAdministratorPrivilege.RequiredMessage);
+        }
     }
 
     public void Install(
@@ -25,6 +36,7 @@ public sealed class AgentSetupOrchestrator
         string deviceCode,
         string? sourceExePath)
     {
+        EnsureCanChangeMachine();
         var workerDirectory = SetupPaths.WorkerDirectory(_installRoot);
         var watchdogDirectory = SetupPaths.WatchdogDirectory(_installRoot);
         var queueDirectory = SetupPaths.QueueDirectory(_stateRoot);
@@ -95,6 +107,7 @@ public sealed class AgentSetupOrchestrator
 
     public void Uninstall(bool removeState)
     {
+        EnsureCanChangeMachine();
         _machine.StopService(SetupPaths.WatchdogServiceName);
         _machine.StopService(SetupPaths.WorkerServiceName);
         _machine.DeleteService(SetupPaths.WatchdogServiceName);

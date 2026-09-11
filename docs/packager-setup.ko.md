@@ -110,7 +110,7 @@ Watchdog 자체 패치(Worker ZIP만 교체)는 이 설치기와 별개입니다
 
 직원이 설정 앱에서 제거를 누르면 Setup이 서버에 제거 요청을 보냅니다. 서비스는 그 시점에 아직 남습니다.
 
-1. 직원: 설정 → 앱 → SW License Watcher → 제거. 화면이 **관리자 승인 대기**로 바뀝니다.
+1. 직원: 설정 → 앱 → SW License Watcher → 제거. UAC가 뜨면 허용합니다. 화면이 **관리자 승인 대기**로 바뀝니다.
 2. 관리자: `https://서버/admin` → **제거 요청** → 해당 PC **승인** 또는 **거절**.
 3. 승인이면 그 PC가 일회용 코드를 받아 서비스를 지웁니다. 대시보드에는 코드를 보여 주지 않습니다. Setup 화면은 최대 2시간까지 승인을 기다리고, 승인 후 코드 유효 시간은 15분입니다.
 4. 거절·만료·대기 취소면 서비스는 그대로입니다.
@@ -131,6 +131,7 @@ PowerShell로 같은 흐름을 쓰려면 [Uninstall-Agent.ps1](../deploy/scripts
 | `/admin`에 PC가 안 보임 | 아직 PollInterval, 또는 TLS(자체 서명 인증서를 직원 PC 신뢰 루트에 안 넣음) |
 | 여러 PC가 한 줄로 합쳐짐 | 자산번호를 같게 넣었거나, 개발용 `pc-demo-001`을 씀 |
 | Watchdog Access Denied | 서비스 계정이 LocalSystem이 아님. Setup을 다시 실행 |
+| 제거 중 Program Files 접근 실패 | 설정 앱 제거/Setup이 관리자로 안 뜬 상태. UAC를 허용했는지 확인하고, 설치·제거 EXE 모두 `requireAdministrator` 매니페스트가 있어야 함 |
 | 제거가 안 끝남 | `/admin`에서 승인했는지, 승인 후 15분이 지나 코드가 만료되지 않았는지. PC가 아직 inventory에 없는지도 확인 |
 
 ## 8. 집 또는 랩에서 패키저만 시험할 때

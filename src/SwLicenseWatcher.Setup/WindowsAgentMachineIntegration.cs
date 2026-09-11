@@ -71,21 +71,35 @@ internal sealed class WindowsAgentMachineIntegration : IAgentMachineIntegration
 
     public void RegisterArp(string version, string setupExe)
     {
-        using var key = Registry.LocalMachine.CreateSubKey(SetupPaths.ArpRegistryPath, writable: true)
-            ?? throw new InvalidOperationException("Could not write the uninstall registry key.");
-        key.SetValue("DisplayName", SetupPaths.ProductName);
-        key.SetValue("Publisher", SetupPaths.Publisher);
-        key.SetValue("DisplayVersion", version);
-        key.SetValue("UninstallString", $"\"{setupExe}\" /uninstall");
-        key.SetValue("DisplayIcon", setupExe);
-        key.SetValue("NoModify", 1, RegistryValueKind.DWord);
-        key.SetValue("NoRepair", 1, RegistryValueKind.DWord);
-        key.SetValue("EstimatedSize", 20 * 1024, RegistryValueKind.DWord);
+        try
+        {
+            using var key = Registry.LocalMachine.CreateSubKey(SetupPaths.ArpRegistryPath, writable: true)
+                ?? throw new InvalidOperationException("Could not write the uninstall registry key.");
+            key.SetValue("DisplayName", SetupPaths.ProductName);
+            key.SetValue("Publisher", SetupPaths.Publisher);
+            key.SetValue("DisplayVersion", version);
+            key.SetValue("UninstallString", $"\"{setupExe}\" /uninstall");
+            key.SetValue("DisplayIcon", setupExe);
+            key.SetValue("NoModify", 1, RegistryValueKind.DWord);
+            key.SetValue("NoRepair", 1, RegistryValueKind.DWord);
+            key.SetValue("EstimatedSize", 20 * 1024, RegistryValueKind.DWord);
+        }
+        catch (Exception ex) when (ex is UnauthorizedAccessException or System.Security.SecurityException)
+        {
+            throw new UnauthorizedAccessException(WindowsAdministratorPrivilege.RequiredMessage, ex);
+        }
     }
 
     public void DeleteArp()
     {
-        Registry.LocalMachine.DeleteSubKeyTree(SetupPaths.ArpRegistryPath, throwOnMissingSubKey: false);
+        try
+        {
+            Registry.LocalMachine.DeleteSubKeyTree(SetupPaths.ArpRegistryPath, throwOnMissingSubKey: false);
+        }
+        catch (Exception ex) when (ex is UnauthorizedAccessException or System.Security.SecurityException)
+        {
+            throw new UnauthorizedAccessException(WindowsAdministratorPrivilege.RequiredMessage, ex);
+        }
     }
 
     private static bool ServiceExists(string name) =>
@@ -118,6 +132,12 @@ internal sealed class WindowsAgentMachineIntegration : IAgentMachineIntegration
         if (process.ExitCode != 0)
         {
             var output = process.StandardOutput.ReadToEnd() + process.StandardError.ReadToEnd();
+            if (process.ExitCode == 5)
+            {
+                throw new UnauthorizedAccessException(
+                    WindowsAdministratorPrivilege.RequiredMessage);
+            }
+
             throw new InvalidOperationException(
                 $"sc.exe {arguments[0]} failed with exit code {process.ExitCode}. {output}".Trim());
         }

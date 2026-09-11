@@ -1,6 +1,25 @@
+using System.ComponentModel;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
 using SwLicenseWatcher.Setup.Core;
+
+try
+{
+    if (WindowsElevation.TryRelaunchIfNotElevated(
+            args,
+            WindowsAdministratorPrivilege.Current,
+            WindowsElevatedProcessStarter.Instance,
+            Environment.ProcessPath,
+            out var elevatedExit))
+    {
+        return elevatedExit;
+    }
+}
+catch (Exception ex)
+{
+    NativeMessageBox.Show(ex.Message);
+    return 5;
+}
 
 var sourceExe = Environment.ProcessPath;
 if (string.IsNullOrWhiteSpace(sourceExe) || !File.Exists(sourceExe))
@@ -44,7 +63,7 @@ start.ArgumentList.Add("--payload-dir=" + payloadDirectory);
 
 try
 {
-    using var process = Process.Start(start);
+    using var process = StartSetupUi(start);
     if (process is null)
     {
         NativeMessageBox.Show("설치 화면을 시작하지 못했습니다.");
@@ -58,6 +77,20 @@ catch (Exception ex)
 {
     NativeMessageBox.Show("설치 화면을 실행하지 못했습니다.\n\n" + ex.Message);
     return 4;
+}
+
+static Process? StartSetupUi(ProcessStartInfo start)
+{
+    try
+    {
+        return Process.Start(start);
+    }
+    catch (Win32Exception ex) when (ex.NativeErrorCode == 740)
+    {
+        start.UseShellExecute = true;
+        start.Verb = "runas";
+        return Process.Start(start);
+    }
 }
 
 internal static partial class NativeMessageBox

@@ -19,7 +19,8 @@ public class UninstallOrchestratorTests
         var setup = new AgentSetupOrchestrator(
             machine,
             installRoot: installRoot,
-            stateRoot: Path.Combine(directory.Path, "state"));
+            stateRoot: Path.Combine(directory.Path, "state"),
+            privilege: UnrestrictedAdministratorPrivilege.Instance);
         var sut = new UninstallOrchestrator(api, new InstalledDeviceCodeReader(installRoot), setup);
 
         await sut.RequestAndUninstallAsync("MACHINE", progress: null, CancellationToken.None);
@@ -51,7 +52,8 @@ public class UninstallOrchestratorTests
         var setup = new AgentSetupOrchestrator(
             machine,
             installRoot: installRoot,
-            stateRoot: Path.Combine(directory.Path, "state"));
+            stateRoot: Path.Combine(directory.Path, "state"),
+            privilege: UnrestrictedAdministratorPrivilege.Instance);
         var sut = new UninstallOrchestrator(
             new DeniedApiClient(),
             new InstalledDeviceCodeReader(installRoot),
@@ -62,6 +64,28 @@ public class UninstallOrchestratorTests
 
         Assert.Equal("제거 요청이 거절되었습니다. 서비스는 그대로입니다.", error.Message);
         Assert.True(File.Exists(marker));
+        Assert.Empty(machine.Events);
+    }
+
+    [Fact]
+    public async Task Missing_administrator_privilege_stops_before_the_uninstall_request()
+    {
+        using var directory = new TempDirectory();
+        var installRoot = Path.Combine(directory.Path, "install");
+        Directory.CreateDirectory(SetupPaths.WorkerDirectory(installRoot));
+        var machine = new RecordingMachineIntegration();
+        var api = new MustNotBeCalledApiClient();
+        var setup = new AgentSetupOrchestrator(
+            machine,
+            installRoot: installRoot,
+            stateRoot: Path.Combine(directory.Path, "state"),
+            privilege: new DeniedPrivilege());
+        var sut = new UninstallOrchestrator(api, new InstalledDeviceCodeReader(installRoot), setup);
+
+        var error = await Assert.ThrowsAsync<UnauthorizedAccessException>(
+            () => sut.RequestAndUninstallAsync("MACHINE", progress: null, CancellationToken.None));
+
+        Assert.Equal(WindowsAdministratorPrivilege.RequiredMessage, error.Message);
         Assert.Empty(machine.Events);
     }
 
@@ -137,5 +161,29 @@ public class UninstallOrchestratorTests
         public void RegisterArp(string version, string setupExe) => Events.Add($"arp:{version}");
 
         public void DeleteArp() => Events.Add("delete-arp");
+    }
+
+    private sealed class DeniedPrivilege : IAdministratorPrivilege
+    {
+        public bool IsElevated => false;
+    }
+
+    private sealed class MustNotBeCalledApiClient : IUninstallApiClient
+    {
+        public Task<UninstallRequestCreated> CreateAsync(string deviceCode, CancellationToken cancellationToken) =>
+            throw new InvalidOperationException("Uninstall API should not be called without elevation.");
+
+        public Task<AgentUninstallRequest> GetAsync(
+            long requestId,
+            string deviceCode,
+            CancellationToken cancellationToken) =>
+            throw new InvalidOperationException("Uninstall API should not be called without elevation.");
+
+        public Task ConsumeAsync(
+            long requestId,
+            string deviceCode,
+            string code,
+            CancellationToken cancellationToken) =>
+            throw new InvalidOperationException("Uninstall API should not be called without elevation.");
     }
 }
