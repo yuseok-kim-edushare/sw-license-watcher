@@ -191,7 +191,7 @@ dotnet run --project src\SwLicenseWatcher.Agent.Worker -- `
 
 릴리스 안의 빈 `SwLicenseWatcher-Setup.exe`(스텁)를 실행하면 “회사 설치 페이로드를 읽지 못했습니다”가 납니다. 패키저가 **새로 만든** 파일을 실행하세요.
 
-제거도 회사와 같습니다. 설정 앱에서 제거 → Setup이 **관리자 승인 대기** → `https://localhost/admin`의 **제거 요청**에서 승인. `Uninstall-Agent.ps1`은 같은 API를 씁니다.
+제거도 회사와 같습니다. 설정 앱에서 제거 → Setup이 **관리자 승인 대기** → `https://localhost/admin`의 **제거 요청**에서 승인. PC 상세의 **원격 제거 지시**는 다음 heartbeat에서 에이전트가 스스로 지웁니다. `Uninstall-Agent.ps1`은 현장 요청 API를 씁니다.
 
 ## 5. HTTPS vs loopback HTTP
 

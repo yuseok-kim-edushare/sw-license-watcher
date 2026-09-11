@@ -197,6 +197,83 @@ public sealed class AgentAssignmentStore
         }
     }
 
+    public static bool TryReadUninstallCommand(string? json, out AgentUninstallCommand? command)
+    {
+        command = null;
+        if (string.IsNullOrWhiteSpace(json))
+        {
+            return false;
+        }
+
+        try
+        {
+            using var document = JsonDocument.Parse(json);
+            var root = document.RootElement;
+            if (!TryGetProperty(root, "UninstallCommand", out var value) &&
+                !TryGetProperty(root, "uninstallCommand", out value))
+            {
+                return false;
+            }
+
+            if (value.ValueKind is JsonValueKind.Null or JsonValueKind.Undefined)
+            {
+                return false;
+            }
+
+            if (!TryReadInt64(value, "Id", "id", out var id) || id <= 0)
+            {
+                return false;
+            }
+
+            if (!TryReadString(value, "Code", "code", out var code) || string.IsNullOrWhiteSpace(code))
+            {
+                return false;
+            }
+
+            command = new AgentUninstallCommand(id, code);
+            return true;
+        }
+        catch (JsonException)
+        {
+            return false;
+        }
+    }
+
+    private static bool TryReadInt64(JsonElement parent, string pascal, string camel, out long value)
+    {
+        value = 0;
+        if ((!TryGetProperty(parent, pascal, out var element) && !TryGetProperty(parent, camel, out element))
+            || element.ValueKind is JsonValueKind.Null or JsonValueKind.Undefined)
+        {
+            return false;
+        }
+
+        if (element.ValueKind == JsonValueKind.Number && element.TryGetInt64(out value))
+        {
+            return true;
+        }
+
+        return element.ValueKind == JsonValueKind.String
+            && long.TryParse(element.GetString(), out value);
+    }
+
+    private static bool TryReadString(JsonElement parent, string pascal, string camel, out string? value)
+    {
+        value = null;
+        if (!TryGetProperty(parent, pascal, out var element) && !TryGetProperty(parent, camel, out element))
+        {
+            return false;
+        }
+
+        if (element.ValueKind is JsonValueKind.Null or JsonValueKind.Undefined)
+        {
+            return false;
+        }
+
+        value = element.GetString();
+        return true;
+    }
+
     private async Task WriteAsync(CancellationToken cancellationToken)
     {
         string? host;
@@ -261,4 +338,5 @@ public readonly record struct AgentPublishOutcome(
     bool DeviceCodeSpecified = false,
     string? AssignedDeviceCode = null,
     string? DeviceId = null,
-    string? DeviceCertificate = null);
+    string? DeviceCertificate = null,
+    AgentUninstallCommand? UninstallCommand = null);

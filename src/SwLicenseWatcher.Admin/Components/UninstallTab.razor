@@ -7,18 +7,18 @@
     </label>
     <button type="button" class="primary" @onclick="QueryAsync">조회</button>
 </div>
-<p class="hint">승인하면 해당 PC 제거기에 일회용 해제 코드가 표시됩니다. 대시보드에는 코드를 보여 주지 않습니다.</p>
+<p class="hint">현장 요청은 승인하면 해당 PC 제거기에 일회용 해제 코드가 표시됩니다. 관리자가 PC 상세에서 원격 제거를 지시하면 다음 heartbeat에서 에이전트가 스스로 제거합니다(7일간 유효). 대시보드에는 코드를 보여 주지 않습니다.</p>
 @if (!string.IsNullOrEmpty(Error))
 {
     <p class="error">@Error</p>
 }
 <p class="meta">@Meta</p>
 <table class="data">
-    <thead><tr><th>ID</th><th>자산코드</th><th>PC 명</th><th>상태</th><th>요청</th><th>승인</th><th>만료</th><th>처리</th></tr></thead>
+    <thead><tr><th>ID</th><th>자산코드</th><th>PC 명</th><th>출처</th><th>상태</th><th>요청</th><th>승인</th><th>만료</th><th>처리</th></tr></thead>
     <tbody>
         @if (_requests.Count == 0)
         {
-            <tr><td class="empty" colspan="8">항목이 없습니다.</td></tr>
+            <tr><td class="empty" colspan="9">항목이 없습니다.</td></tr>
         }
         else
         {
@@ -27,7 +27,9 @@
                 <tr>
                     <td>@row.Id</td>
                     <td><button type="button" class="linkish" @onclick="@(() => Drawer.OpenDeviceAsync(row.DeviceCode))">@Dash(row.DeviceCode)</button></td>
-                    <td><button type="button" class="linkish" @onclick="@(() => Drawer.OpenDeviceAsync(row.DeviceCode))">@Dash(row.HostName)</button></td><td>@Dash(row.Status)</td>
+                    <td><button type="button" class="linkish" @onclick="@(() => Drawer.OpenDeviceAsync(row.DeviceCode))">@Dash(row.HostName)</button></td>
+                    <td>@UninstallOriginLabel(row.Origin)</td>
+                    <td>@Dash(row.Status)</td>
                     <td>@FormatTime(row.RequestedAtUtc)</td><td>@FormatTime(row.ApprovedAtUtc)</td><td>@FormatTime(row.ExpiresAtUtc)</td>
                     <td>
                         @if (string.Equals(row.Status, "pending", StringComparison.OrdinalIgnoreCase))
@@ -36,6 +38,10 @@
                                 <button type="button" @onclick="@(() => DecideAsync(row.Id, true))">승인</button>
                                 <button type="button" class="dangerish" @onclick="@(() => DecideAsync(row.Id, false))">거절</button>
                             </div>
+                        }
+                        else if (IsDirectedApproved(row))
+                        {
+                            <button type="button" class="dangerish" @onclick="@(() => CancelDirectedAsync(row.Id))">취소</button>
                         }
                         else
                         {
@@ -72,6 +78,22 @@
         Error = "";
         var succeeded = await Requests.RunAsync(
             () => approve ? Api.ApproveUninstallAsync(id) : Api.DenyUninstallAsync(id),
+            message => Error = message);
+        if (succeeded)
+        {
+            await RefreshAsync();
+        }
+    }
+
+    private static bool IsDirectedApproved(AdminUninstallRequest row) =>
+        string.Equals(row.Origin, UninstallGrant.OriginAdmin, StringComparison.OrdinalIgnoreCase)
+        && string.Equals(row.Status, UninstallGrant.Approved, StringComparison.OrdinalIgnoreCase);
+
+    private async Task CancelDirectedAsync(long id)
+    {
+        Error = "";
+        var succeeded = await Requests.RunAsync(
+            () => Api.CancelDirectedUninstallAsync(id),
             message => Error = message);
         if (succeeded)
         {

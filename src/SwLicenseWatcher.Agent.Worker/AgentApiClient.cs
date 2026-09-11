@@ -33,6 +33,46 @@ public sealed class AgentApiClient
     public Task<AgentPublishOutcome> PublishHeartbeatAsync(AgentHeartbeat heartbeat, CancellationToken cancellationToken) =>
         PostAsync(_options.HeartbeatPath, heartbeat, InventoryJsonSerializerContext.Default.AgentHeartbeat, cancellationToken);
 
+    public async Task<bool> ConsumeUninstallAsync(
+        long id,
+        string deviceCode,
+        string code,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            using var request = new HttpRequestMessage(
+                HttpMethod.Post,
+                $"/api/agents/uninstall-requests/{id}/consume")
+            {
+                Content = JsonContent.Create(
+                    new UninstallRequestConsumeRequest(deviceCode, code),
+                    InventoryJsonSerializerContext.Default.UninstallRequestConsumeRequest)
+            };
+            request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _options.ApiToken);
+            using var response = await _httpClient.SendAsync(request, cancellationToken);
+            if (response.IsSuccessStatusCode)
+            {
+                return true;
+            }
+
+            _logger.LogWarning(
+                "POST uninstall consume {Id} returned {StatusCode}. Remote uninstall will not proceed.",
+                id,
+                (int)response.StatusCode);
+            return false;
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException)
+        {
+            _logger.LogWarning(ex, "Failed to consume uninstall grant {Id}.", id);
+            return false;
+        }
+    }
+
     private async Task<AgentPublishOutcome> PostAsync<TPayload>(string path, TPayload payload, JsonTypeInfo<TPayload> typeInfo, CancellationToken cancellationToken)
     {
         try
@@ -54,6 +94,7 @@ public sealed class AgentApiClient
                     out var assignedDeviceCode,
                     out var deviceId,
                     out var deviceCertificate);
+                AgentAssignmentStore.TryReadUninstallCommand(json, out var uninstallCommand);
                 return new AgentPublishOutcome(
                     AgentPublishResult.Succeeded,
                     assignmentSpecified,
@@ -61,7 +102,8 @@ public sealed class AgentApiClient
                     deviceCodeSpecified,
                     assignedDeviceCode,
                     deviceId,
-                    deviceCertificate);
+                    deviceCertificate,
+                    uninstallCommand);
             }
 
             var statusCode = (int)response.StatusCode;

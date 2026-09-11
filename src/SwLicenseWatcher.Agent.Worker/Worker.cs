@@ -15,6 +15,7 @@ public sealed class Worker(
     IOptions<LocalStateStoreOptions> localStateOptions,
     AgentAssignmentStore assignmentStore,
     AgentDeviceIdentityStore identityStore,
+    RemoteAgentUninstaller remoteUninstaller,
     IHostApplicationLifetime applicationLifetime) : BackgroundService
 {
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -47,6 +48,10 @@ public sealed class Worker(
                     var snapshotOutcome = await apiClient.PublishSnapshotAsync(snapshot, stoppingToken);
                     publishResult = snapshotOutcome.Result;
                     await ApplyAssignmentAsync(snapshotOutcome, stoppingToken);
+                    if (await TryRemoteUninstallAsync(snapshotOutcome, stoppingToken))
+                    {
+                        return;
+                    }
                     if (publishResult == AgentPublishResult.RetryableFailure)
                     {
                         await snapshotQueue.EnqueueAsync(snapshot, stoppingToken);
@@ -71,6 +76,10 @@ public sealed class Worker(
                         snapshot.Pc.DeviceProof),
                     stoppingToken);
                 await ApplyAssignmentAsync(heartbeatOutcome, stoppingToken);
+                if (await TryRemoteUninstallAsync(heartbeatOutcome, stoppingToken))
+                {
+                    return;
+                }
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
             {
@@ -183,5 +192,31 @@ public sealed class Worker(
             outcome.AssignedDeviceCode,
             cancellationToken);
         identityStore.ApplyCertificate(outcome.DeviceId, outcome.DeviceCertificate);
+    }
+
+    private async Task<bool> TryRemoteUninstallAsync(AgentPublishOutcome outcome, CancellationToken cancellationToken)
+    {
+        if (outcome.Result != AgentPublishResult.Succeeded || outcome.UninstallCommand is null)
+        {
+            return false;
+        }
+
+        var deviceCode = assignmentStore.ResolveDeviceCode(options.Value.DeviceCode);
+        try
+        {
+            if (!await remoteUninstaller.ExecuteAsync(deviceCode, outcome.UninstallCommand, cancellationToken))
+            {
+                return false;
+            }
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            logger.LogError(ex, "Control-plane uninstall for {DeviceCode} failed after the grant was issued.", deviceCode);
+            return false;
+        }
+
+        logger.LogInformation("Control-plane uninstall started for {DeviceCode}. Worker is stopping.", deviceCode);
+        applicationLifetime.StopApplication();
+        return true;
     }
 }

@@ -23,7 +23,8 @@
   - 업데이트 manifest API: `/api/updates/worker/manifest`
   - 소프트웨어 정책 CRUD: `/api/policies` (목록은 페이징·검색·분류 필터·CSV)
   - 블랙리스트 위반 목록: `/api/violations` (페이징·검색·기간 필터·CSV)
-  - 관리자 대시보드: `/admin` (Blazor WebAssembly, 외부 CDN/npm 없음). 페이지는 인증 없이 열리고, 데이터 API는 `AdminToken`이 필요. API가 `_framework`를 같이 제공합니다.
+  - 관리자 대시보드: `/admin` (Blazor WebAssembly, 외부 CDN/npm 없음). 페이지는 인증 없이 열리고, 데이터 API는 `AdminToken`이 필요. API가 `_framework`를 같이 제공합니다. PC 상세에서 원격 제거를 지시하면 다음 heartbeat/스냅샷 응답으로 Worker가 일회용 그랜트를 소비하고 서비스를 지웁니다.
+  - 제거 그랜트: 현장 Setup/`Uninstall-Agent.ps1` 요청은 `/admin` 승인 후에만 해제되고, 관리자 `POST /api/uninstall-requests`는 이미 승인된 원격 지시(7일)로 기록됩니다. 대시보드에는 해제 코드를 보여 주지 않습니다.
   - 스냅샷 수신 시 설치 SW를 정책과 매칭해 white/managed/black/unclassified로 분류하고, 분류 결과를 설치 SW 테이블에 저장하며, 블랙리스트 적발을 `company_sw_violation`에 기록
 - **서버 알림 (웹훅 + SMTP)**
   - Teams/Slack incoming webhook(`{ "text": "..." }`)과 SMTP로 운영 알림 전송
@@ -172,7 +173,7 @@ Worker/Watchdog 클라이언트가 접속할 서버 주소는 설정 파일로 �
 
 토큰과 SQL Server 연결 문자열은 소스에 저장하지 말고 환경 변수 또는 비밀 저장소로 주입합니다. 설정한 토큰은 각각 32자 이상이어야 합니다. `New-ApiToken.ps1`을 두 번 실행해 에이전트용과 관리자용을 따로 만드세요.
 
-토큰은 역할을 분리합니다. `AgentToken`은 에이전트 수집·하트비트·제거 요청·업데이트 manifest 조회만, `AdminToken`은 조회·정책 CRUD·위반·CSV·`/api/design`·`/api/schema/sql`과 업데이트 핀 저장을 허용합니다. 두 토큰은 모두 필수이며 서로 달라야 합니다. 예전 공용 `Security:Token`은 더 이상 받지 않습니다.
+토큰은 역할을 분리합니다. `AgentToken`은 에이전트 수집·하트비트·제거 요청·업데이트 manifest 조회만, `AdminToken`은 조회·정책 CRUD·위반·CSV·제거 지시/승인·`/api/design`·`/api/schema/sql`과 업데이트 핀 저장을 허용합니다. 두 토큰은 모두 필수이며 서로 달라야 합니다. 예전 공용 `Security:Token`은 더 이상 받지 않습니다.
 
 ```text
 Security__AgentToken=<agent-token>
@@ -344,7 +345,7 @@ API 실행 후:
 
 ## 관리자 대시보드
 
-브라우저에서 `https://<server>/admin` 으로 관리자 화면을 엽니다. UI는 Blazor WebAssembly이며, Interactive Server/Auto 회로는 쓰지 않습니다. API가 같은 출처의 `/admin/_framework`를 제공하므로 외부 CDN이 없습니다. curl이나 CSV 없이 PC 목록, 소프트웨어 집계, 위반, 정책, 제거 요청을 조회하고 정책을 만들고 고칠 수 있습니다. 자산코드·PC 명·소프트웨어 이름을 누르면 서랍에서 관련 목록을 보고, 자산코드·PC 명·메모를 남기거나 소프트웨어 분류·메모를 저장할 수 있습니다. 관리자가 지정한 자산코드와 PC 명은 다음 에이전트 heartbeat/스냅샷 응답으로 클라이언트에 부여됩니다. 기기 고유값은 서버가 서명하는 ML-DSA-87 사설 인증서이며, 44/65보다 느린 대신 최상위 등급을 씁니다. 소프트웨어 목록에서 행을 체크한 뒤 `white` / `managed` / `black`을 현재 페이지 선택 항목에 일괄 지정할 수 있고, 서랍에서는 개별 분류와 `managed`의 정책 기본 라이선스(회사/BYO)·PC별 덮어쓰기를 편집합니다.
+브라우저에서 `https://<server>/admin` 으로 관리자 화면을 엽니다. UI는 Blazor WebAssembly이며, Interactive Server/Auto 회로는 쓰지 않습니다. API가 같은 출처의 `/admin/_framework`를 제공하므로 외부 CDN이 없습니다. curl이나 CSV 없이 PC 목록, 소프트웨어 집계, 위반, 정책, 제거 요청을 조회하고 정책을 만들고 고칠 수 있습니다. 자산코드·PC 명·소프트웨어 이름을 누르면 서랍에서 관련 목록을 보고, 자산코드·PC 명·메모를 남기거나 소프트웨어 분류·메모를 저장할 수 있습니다. PC 상세의 **원격 제거 지시**는 승인된 제거 그랜트를 만들고, 해당 PC Worker가 다음 heartbeat에서 서비스를 지웁니다. 관리자가 지정한 자산코드와 PC 명은 다음 에이전트 heartbeat/스냅샷 응답으로 클라이언트에 부여됩니다. 기기 고유값은 서버가 서명하는 ML-DSA-87 사설 인증서이며, 44/65보다 느린 대신 최상위 등급을 씁니다. 소프트웨어 목록에서 행을 체크한 뒤 `white` / `managed` / `black`을 현재 페이지 선택 항목에 일괄 지정할 수 있고, 서랍에서는 개별 분류와 `managed`의 정책 기본 라이선스(회사/BYO)·PC별 덮어쓰기를 편집합니다.
 
 정적 파일(`/admin`, `/admin/`, CSS, `_framework`)은 인증 없이 내려갑니다. 비밀은 없고, 인벤토리·정책 데이터는 모두 `AdminToken`이 있어야 합니다. 토큰은 브라우저 `sessionStorage`에만 두고, 탭을 닫으면 사라집니다. 쿠키와 `localStorage`는 쓰지 않습니다.
 

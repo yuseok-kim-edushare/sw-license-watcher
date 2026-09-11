@@ -205,6 +205,14 @@ internal sealed partial class SqlServerDataContext(SqlServerStorageOptions optio
         return $"%{escaped}%";
     }
 
+    private static string ReadOrigin(SqlDataReader reader, string column)
+    {
+        var stored = ReadNullableString(reader, column);
+        return string.Equals(stored, UninstallGrant.OriginAdmin, StringComparison.OrdinalIgnoreCase)
+            ? UninstallGrant.OriginAdmin
+            : UninstallGrant.OriginAgent;
+    }
+
     private static string ReadClassification(SqlDataReader reader, string column)
     {
         var stored = ReadNullableString(reader, column);

@@ -10,9 +10,14 @@ public static class UninstallGrant
     public const string Consumed = "consumed";
     public const string Denied = "denied";
     public const string Expired = "expired";
+    public const string Cancelled = "cancelled";
+
+    public const string OriginAgent = "agent";
+    public const string OriginAdmin = "admin";
 
     public const int CodeLength = 8;
     public static readonly TimeSpan ApprovalLifetime = TimeSpan.FromMinutes(15);
+    public static readonly TimeSpan DirectedLifetime = TimeSpan.FromDays(7);
 
     private const string CodeAlphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 

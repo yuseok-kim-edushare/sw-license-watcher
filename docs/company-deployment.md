@@ -279,7 +279,7 @@ MSI는 제공하지 않습니다. Win32 앱 설치 명령으로 스크립트를 
 powershell.exe -ExecutionPolicy Bypass -File Install-Agent.ps1 -SourcePath D:\SwLicenseWatcher-1.0.1 -ServerBaseUrl https://license-watcher.contoso.local -ApiToken <token>
 ```
 
-제거 키는 설치본에 없습니다. PC가 `POST /api/agents/uninstall-requests`로 요청하면 `/admin`의 **제거 요청** 탭에서 승인한 뒤에야 서버가 일회용 코드를 그 PC에 발급합니다. `Uninstall-Agent.ps1`은 코드를 소비한 뒤에만 서비스를 지웁니다. 승인 없이 설정 앱에서 지우면 그대로 남습니다. `sc.exe delete`로 우회하면 서버에는 하트비트 두절로 남습니다.
+제거 키는 설치본에 없습니다. 현장 PC가 `POST /api/agents/uninstall-requests`로 요청하면 `/admin`의 **제거 요청** 탭에서 승인한 뒤에야 서버가 일회용 코드를 그 PC에 발급합니다. 관리자는 PC 상세에서 **원격 제거 지시**를 할 수 있고, 그러면 다음 heartbeat에서 Worker가 그랜트를 소비한 뒤 Watchdog·Worker 서비스를 지웁니다. `Uninstall-Agent.ps1`은 코드를 소비한 뒤에만 서비스를 지웁니다. 승인 없이 설정 앱에서 지우면 그대로 남습니다. `sc.exe delete`로 우회하면 서버에는 하트비트 두절로 남습니다.
 
 ```powershell
 powershell.exe -ExecutionPolicy Bypass -File Uninstall-Agent.ps1 `

@@ -2,6 +2,11 @@ using Microsoft.Extensions.Options;
 using SwLicenseWatcher.Agent.Worker;
 using SwLicenseWatcher.Core;
 
+if (RemoteAgentUninstaller.TryApplyFromArgs(args))
+{
+    return;
+}
+
 Directory.SetCurrentDirectory(AppContext.BaseDirectory);
 var builder = Host.CreateApplicationBuilder(new HostApplicationBuilderSettings
 {
@@ -55,6 +60,9 @@ builder.Services.AddHttpClient<AgentApiClient>((sp, client) =>
     var options = sp.GetRequiredService<IOptions<WorkerAgentOptions>>().Value;
     client.BaseAddress = new Uri(options.ServerBaseUrl);
 });
+builder.Services.AddSingleton<IAgentWindowsServiceControl, ScAgentWindowsServiceControl>();
+builder.Services.AddSingleton<IRemoteUninstallProcessStarter, RemoteUninstallProcessStarter>();
+builder.Services.AddSingleton<RemoteAgentUninstaller>();
 builder.Services.AddHostedService<Worker>();
 
 await builder.Build().RunAsync();

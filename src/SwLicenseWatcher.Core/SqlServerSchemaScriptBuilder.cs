@@ -110,6 +110,7 @@ public sealed class SqlServerSchemaScriptBuilder
         sql.AppendLine($"    [{Escape(uninstall.ExpiresAtUtcColumn)}] DATETIMEOFFSET NULL,");
         sql.AppendLine($"    [{Escape(uninstall.CodeHashColumn)}] NVARCHAR(64) NULL,");
         sql.AppendLine($"    [{Escape(uninstall.CodeColumn)}] NVARCHAR(16) NULL,");
+        sql.AppendLine($"    [{Escape(uninstall.OriginColumn)}] NVARCHAR(16) NOT NULL CONSTRAINT [{Escape(BuildIdentifier("DF", uninstall.TableName, uninstall.OriginColumn))}] DEFAULT(N'{UninstallGrant.OriginAgent}'),");
         sql.AppendLine($"    CONSTRAINT [{Escape(BuildIdentifier("FK", uninstall.TableName, pc.TableName))}] FOREIGN KEY ([{Escape(uninstall.PcForeignKeyColumn)}]) REFERENCES [{schema}].[{Escape(pc.TableName)}]([{Escape(pc.PrimaryKeyColumn)}]) ON DELETE CASCADE");
         sql.AppendLine(");");
         sql.AppendLine("END");
@@ -145,6 +146,12 @@ public sealed class SqlServerSchemaScriptBuilder
         AppendColumnIfMissing(sql, schema, pc.TableName, pc.DeviceIdColumn, "NVARCHAR(36) NULL");
         AppendColumnIfMissing(sql, schema, pc.TableName, pc.DevicePublicKeyColumn, "NVARCHAR(MAX) NULL");
         AppendColumnIfMissing(sql, schema, pc.TableName, pc.DeviceCertificateColumn, "NVARCHAR(MAX) NULL");
+        AppendColumnIfMissing(
+            sql,
+            schema,
+            uninstall.TableName,
+            uninstall.OriginColumn,
+            $"NVARCHAR(16) NOT NULL CONSTRAINT [{Escape(BuildIdentifier("DF", uninstall.TableName, uninstall.OriginColumn))}] DEFAULT(N'{UninstallGrant.OriginAgent}')");
         sql.AppendLine();
         AppendUniqueIndexIfMissing(sql, schema, pc.TableName, pc.DeviceIdColumn);
         AppendUniqueIndexIfMissing(sql, schema, pc.TableName, pc.AssignedDeviceCodeColumn);
@@ -256,6 +263,7 @@ public static class SqlIdentifierValidator
             options.UninstallRequestTable.RequestedAtUtcColumn, options.UninstallRequestTable.ApprovedAtUtcColumn,
             options.UninstallRequestTable.ConsumedAtUtcColumn, options.UninstallRequestTable.ExpiresAtUtcColumn,
             options.UninstallRequestTable.CodeHashColumn, options.UninstallRequestTable.CodeColumn,
+            options.UninstallRequestTable.OriginColumn,
             options.SoftwareLicenseTable.TableName, options.SoftwareLicenseTable.PcForeignKeyColumn,
             options.SoftwareLicenseTable.SoftwareNameColumn, options.SoftwareLicenseTable.LicenseSourceColumn,
             options.SoftwareLicenseTable.UpdatedAtUtcColumn,

@@ -92,6 +92,30 @@ internal static class UninstallQueryApi
             await repository.DenyUninstallRequestAsync(id, cancellationToken)
                 ? Results.NoContent()
                 : Results.Conflict("The uninstall request is not pending."));
+
+        app.MapPost("/api/uninstall-requests", async (
+            UninstallRequestCreateRequest request,
+            IUninstallRequestStore repository,
+            CancellationToken cancellationToken) =>
+        {
+            if (!TryValidateDeviceCode(request.DeviceCode, out var deviceCode, out var error))
+            {
+                return Results.BadRequest(error);
+            }
+
+            var created = await repository.CreateDirectedUninstallRequestAsync(deviceCode, cancellationToken);
+            return created is null
+                ? Results.NotFound("The device is not registered.")
+                : Results.Created($"/api/uninstall-requests/{created.Id}", created);
+        });
+
+        app.MapPost("/api/uninstall-requests/{id:long}/cancel", async (
+            long id,
+            IUninstallRequestStore repository,
+            CancellationToken cancellationToken) =>
+            await repository.CancelDirectedUninstallRequestAsync(id, cancellationToken)
+                ? Results.NoContent()
+                : Results.Conflict("The directed uninstall grant is not active."));
     }
 
     internal static bool TryValidateDeviceCode(string? deviceCode, out string normalized, out string error)

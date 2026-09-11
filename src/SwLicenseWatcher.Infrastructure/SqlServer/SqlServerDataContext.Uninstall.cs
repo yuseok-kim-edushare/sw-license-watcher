@@ -36,11 +36,13 @@ internal sealed partial class SqlServerDataContext
         [
             new("@pcId", pcId.Value),
             new("@status", UninstallGrant.Pending),
-            new("@requestedAt", requestedAtUtc)
+            new("@requestedAt", requestedAtUtc),
+            new("@origin", UninstallGrant.OriginAgent)
         ]);
         var id = Convert.ToInt64(await insert.ExecuteScalarAsync(cancellationToken));
         await transaction.CommitAsync(cancellationToken);
-        return new UninstallRequestCreatedResponse(id, deviceCode, UninstallGrant.Pending, requestedAtUtc);
+        return new UninstallRequestCreatedResponse(
+            id, deviceCode, UninstallGrant.Pending, requestedAtUtc, UninstallGrant.OriginAgent);
     }
 
     public async Task<AgentUninstallRequestResponse?> GetAgentUninstallRequestAsync(
@@ -153,7 +155,8 @@ internal sealed partial class SqlServerDataContext
                 reader.GetFieldValue<DateTimeOffset>(reader.GetOrdinal(uninstall.RequestedAtUtcColumn)),
                 ReadNullableDateTimeOffset(reader, uninstall.ApprovedAtUtcColumn),
                 ReadNullableDateTimeOffset(reader, uninstall.ConsumedAtUtcColumn),
-                expiresAtUtc));
+                expiresAtUtc,
+                ReadOrigin(reader, uninstall.OriginColumn)));
         }
 
         return (totalCount, items);
@@ -193,6 +196,99 @@ internal sealed partial class SqlServerDataContext
         return await command.ExecuteNonQueryAsync(cancellationToken) > 0;
     }
 
+    public async Task<UninstallRequestCreatedResponse?> CreateDirectedUninstallRequestAsync(
+        string deviceCode,
+        CancellationToken cancellationToken)
+    {
+        var code = UninstallGrant.CreateCode();
+        var requestedAtUtc = DateTimeOffset.UtcNow;
+        await using var connection = new SqlConnection(options.ConnectionString);
+        await connection.OpenAsync(cancellationToken);
+        await using var transaction = (SqlTransaction)await connection.BeginTransactionAsync(IsolationLevel.Serializable, cancellationToken);
+
+        var pcId = await FindPcIdAsync(connection, transaction, deviceCode, cancellationToken);
+        if (pcId is null)
+        {
+            await transaction.RollbackAsync(cancellationToken);
+            return null;
+        }
+
+        await ExecuteAsync(
+            connection,
+            transaction,
+            BuildDeleteOpenUninstallRequestsSql(),
+            [new("@pcId", pcId.Value)],
+            cancellationToken);
+
+        await using var insert = new SqlCommand(BuildInsertDirectedUninstallRequestSql(), connection, transaction);
+        insert.Parameters.AddRange(
+        [
+            new("@pcId", pcId.Value),
+            new("@status", UninstallGrant.Approved),
+            new("@requestedAt", requestedAtUtc),
+            new("@approvedAt", requestedAtUtc),
+            new("@expiresAt", requestedAtUtc + UninstallGrant.DirectedLifetime),
+            new("@code", code),
+            new("@codeHash", UninstallGrant.HashCode(code)),
+            new("@origin", UninstallGrant.OriginAdmin)
+        ]);
+        var id = Convert.ToInt64(await insert.ExecuteScalarAsync(cancellationToken));
+        await transaction.CommitAsync(cancellationToken);
+        return new UninstallRequestCreatedResponse(
+            id, deviceCode, UninstallGrant.Approved, requestedAtUtc, UninstallGrant.OriginAdmin);
+    }
+
+    public async Task<AgentUninstallCommand?> GetDirectedUninstallCommandAsync(
+        string deviceCode,
+        CancellationToken cancellationToken)
+    {
+        await using var connection = new SqlConnection(options.ConnectionString);
+        await connection.OpenAsync(cancellationToken);
+        await using var command = new SqlCommand(BuildGetDirectedUninstallCommandSql(), connection);
+        command.Parameters.AddRange(
+        [
+            new("@deviceCode", deviceCode),
+            new("@status", UninstallGrant.Approved),
+            new("@origin", UninstallGrant.OriginAdmin)
+        ]);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        if (!await reader.ReadAsync(cancellationToken))
+        {
+            return null;
+        }
+
+        var uninstall = options.UninstallRequestTable;
+        var expiresAtUtc = ReadNullableDateTimeOffset(reader, uninstall.ExpiresAtUtcColumn);
+        var status = UninstallGrant.ResolveStatus(
+            reader.GetString(reader.GetOrdinal(uninstall.StatusColumn)),
+            expiresAtUtc,
+            DateTimeOffset.UtcNow);
+        var code = ReadNullableString(reader, uninstall.CodeColumn);
+        if (status != UninstallGrant.Approved || string.IsNullOrWhiteSpace(code))
+        {
+            return null;
+        }
+
+        return new AgentUninstallCommand(
+            reader.GetInt64(reader.GetOrdinal(uninstall.PrimaryKeyColumn)),
+            code);
+    }
+
+    public async Task<bool> CancelDirectedUninstallRequestAsync(long id, CancellationToken cancellationToken)
+    {
+        await using var connection = new SqlConnection(options.ConnectionString);
+        await connection.OpenAsync(cancellationToken);
+        await using var command = new SqlCommand(BuildCancelDirectedUninstallRequestSql(), connection);
+        command.Parameters.AddRange(
+        [
+            new("@id", id),
+            new("@approved", UninstallGrant.Approved),
+            new("@origin", UninstallGrant.OriginAdmin),
+            new("@status", UninstallGrant.Cancelled)
+        ]);
+        return await command.ExecuteNonQueryAsync(cancellationToken) > 0;
+    }
+
     internal string BuildDeletePendingUninstallRequestsSql()
     {
         var table = options.UninstallRequestTable;
@@ -208,9 +304,65 @@ internal sealed partial class SqlServerDataContext
         var table = options.UninstallRequestTable;
         return $"""
             INSERT INTO {Name(options.SchemaName, table.TableName)}
-            ({Name(table.PcForeignKeyColumn)}, {Name(table.StatusColumn)}, {Name(table.RequestedAtUtcColumn)})
+            ({Name(table.PcForeignKeyColumn)}, {Name(table.StatusColumn)}, {Name(table.RequestedAtUtcColumn)},
+             {Name(table.OriginColumn)})
             OUTPUT INSERTED.{Name(table.PrimaryKeyColumn)}
-            VALUES (@pcId, @status, @requestedAt);
+            VALUES (@pcId, @status, @requestedAt, @origin);
+            """;
+    }
+
+    internal string BuildInsertDirectedUninstallRequestSql()
+    {
+        var table = options.UninstallRequestTable;
+        return $"""
+            INSERT INTO {Name(options.SchemaName, table.TableName)}
+            ({Name(table.PcForeignKeyColumn)}, {Name(table.StatusColumn)}, {Name(table.RequestedAtUtcColumn)},
+             {Name(table.ApprovedAtUtcColumn)}, {Name(table.ExpiresAtUtcColumn)}, {Name(table.CodeColumn)},
+             {Name(table.CodeHashColumn)}, {Name(table.OriginColumn)})
+            OUTPUT INSERTED.{Name(table.PrimaryKeyColumn)}
+            VALUES (@pcId, @status, @requestedAt, @approvedAt, @expiresAt, @code, @codeHash, @origin);
+            """;
+    }
+
+    internal string BuildDeleteOpenUninstallRequestsSql()
+    {
+        var table = options.UninstallRequestTable;
+        return $"""
+            DELETE FROM {Name(options.SchemaName, table.TableName)}
+            WHERE {Name(table.PcForeignKeyColumn)} = @pcId
+              AND {Name(table.StatusColumn)} IN (N'{UninstallGrant.Pending}', N'{UninstallGrant.Approved}');
+            """;
+    }
+
+    internal string BuildGetDirectedUninstallCommandSql()
+    {
+        var table = options.UninstallRequestTable;
+        var pc = options.PcTable;
+        return $"""
+            SELECT TOP (1) r.{Name(table.PrimaryKeyColumn)}, r.{Name(table.StatusColumn)},
+                   r.{Name(table.ExpiresAtUtcColumn)}, r.{Name(table.CodeColumn)}
+            FROM {Name(options.SchemaName, table.TableName)} AS r
+            INNER JOIN {Name(options.SchemaName, pc.TableName)} AS p
+                ON p.{Name(pc.PrimaryKeyColumn)} = r.{Name(table.PcForeignKeyColumn)}
+            WHERE ({PcLookupPredicate("p")})
+              AND r.{Name(table.StatusColumn)} = @status
+              AND r.{Name(table.OriginColumn)} = @origin
+            ORDER BY r.{Name(table.RequestedAtUtcColumn)} DESC;
+            """;
+    }
+
+    internal string BuildCancelDirectedUninstallRequestSql()
+    {
+        var table = options.UninstallRequestTable;
+        return $"""
+            UPDATE {Name(options.SchemaName, table.TableName)}
+            SET {Name(table.StatusColumn)} = @status,
+                {Name(table.CodeColumn)} = NULL,
+                {Name(table.CodeHashColumn)} = NULL
+            WHERE {Name(table.PrimaryKeyColumn)} = @id
+              AND {Name(table.StatusColumn)} = @approved
+              AND {Name(table.OriginColumn)} = @origin
+              AND {Name(table.ConsumedAtUtcColumn)} IS NULL;
             """;
     }
 
@@ -253,13 +405,14 @@ internal sealed partial class SqlServerDataContext
                 {DisplayHostNameSql("p")} AS {Name(pc.HostNameColumn)},
                 r.{Name(table.StatusColumn)}, r.{Name(table.RequestedAtUtcColumn)},
                 r.{Name(table.ApprovedAtUtcColumn)}, r.{Name(table.ConsumedAtUtcColumn)},
-                r.{Name(table.ExpiresAtUtcColumn)}
+                r.{Name(table.ExpiresAtUtcColumn)}, r.{Name(table.OriginColumn)}
             FROM {Name(options.SchemaName, table.TableName)} AS r
             INNER JOIN {Name(options.SchemaName, pc.TableName)} AS p
                 ON p.{Name(pc.PrimaryKeyColumn)} = r.{Name(table.PcForeignKeyColumn)}
             WHERE (@search IS NULL
                 OR {HostNameSearchSql("p")}
-                OR r.{Name(table.StatusColumn)} LIKE @search)
+                OR r.{Name(table.StatusColumn)} LIKE @search
+                OR r.{Name(table.OriginColumn)} LIKE @search)
             ORDER BY CASE WHEN r.{Name(table.StatusColumn)} = N'{UninstallGrant.Pending}' THEN 0 ELSE 1 END,
                      r.{Name(table.RequestedAtUtcColumn)} DESC
             OFFSET @skip ROWS FETCH NEXT @take ROWS ONLY;

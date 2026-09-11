@@ -46,5 +46,15 @@ public class UninstallGrantTests
         Assert.Equal(
             UninstallGrant.Denied,
             UninstallGrant.ResolveStatus(UninstallGrant.Denied, expires, expires.AddHours(1)));
+        Assert.Equal(
+            UninstallGrant.Cancelled,
+            UninstallGrant.ResolveStatus(UninstallGrant.Cancelled, expires, expires.AddDays(8)));
+    }
+
+    [Fact]
+    public void Directed_lifetime_is_longer_than_interactive_approval()
+    {
+        Assert.True(UninstallGrant.DirectedLifetime > UninstallGrant.ApprovalLifetime);
+        Assert.Equal(TimeSpan.FromDays(7), UninstallGrant.DirectedLifetime);
     }
 }

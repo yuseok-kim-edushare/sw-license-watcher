@@ -26,4 +26,15 @@ internal sealed class SqlServerUninstallRepository(SqlServerDataContext context)
 
     public Task<bool> DenyUninstallRequestAsync(long id, CancellationToken cancellationToken) =>
         context.DenyUninstallRequestAsync(id, cancellationToken);
+
+    public Task<UninstallRequestCreatedResponse?> CreateDirectedUninstallRequestAsync(
+        string deviceCode, CancellationToken cancellationToken) =>
+        context.CreateDirectedUninstallRequestAsync(deviceCode, cancellationToken);
+
+    public Task<AgentUninstallCommand?> GetDirectedUninstallCommandAsync(
+        string deviceCode, CancellationToken cancellationToken) =>
+        context.GetDirectedUninstallCommandAsync(deviceCode, cancellationToken);
+
+    public Task<bool> CancelDirectedUninstallRequestAsync(long id, CancellationToken cancellationToken) =>
+        context.CancelDirectedUninstallRequestAsync(id, cancellationToken);
 }

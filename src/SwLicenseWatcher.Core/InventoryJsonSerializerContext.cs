@@ -10,6 +10,8 @@ namespace SwLicenseWatcher.Core;
 [JsonSerializable(typeof(UpdateManifest))]
 [JsonSerializable(typeof(WorkerHealthReport))]
 [JsonSerializable(typeof(StoredAgentAssignment))]
+[JsonSerializable(typeof(AgentUninstallCommand))]
+[JsonSerializable(typeof(UninstallRequestConsumeRequest))]
 [JsonSerializable(typeof(StoredDeviceIdentity))]
 [JsonSerializable(typeof(DeviceCertificateDocument))]
 [JsonSerializable(typeof(DeviceAgentAssignment))]

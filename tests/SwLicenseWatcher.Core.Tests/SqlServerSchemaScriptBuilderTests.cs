@@ -53,6 +53,8 @@ public class SqlServerSchemaScriptBuilderTests
         Assert.Contains("CREATE TABLE [inventory].[pc_uninstall_request]", sql);
         Assert.Contains("[code_hash] NVARCHAR(64) NULL", sql);
         Assert.Contains("[code] NVARCHAR(16) NULL", sql);
+        Assert.Contains("[origin] NVARCHAR(16) NOT NULL CONSTRAINT [DF_pc_uninstall_request_origin] DEFAULT(N'agent')", sql);
+        Assert.Contains("IF COL_LENGTH(N'[inventory].[pc_uninstall_request]', N'origin') IS NULL", sql);
         Assert.Contains("CONSTRAINT [FK_pc_uninstall_request_pc_entity] FOREIGN KEY ([pc_id]) REFERENCES [inventory].[pc_entity]([pc_id]) ON DELETE CASCADE", sql);
         Assert.Contains("CREATE INDEX [IX_pc_installed_sw_pc_id] ON [inventory].[pc_installed_sw]([pc_id]);", sql);
         Assert.Contains("CREATE INDEX [IX_pc_installed_sw_classification] ON [inventory].[pc_installed_sw]([classification]);", sql);

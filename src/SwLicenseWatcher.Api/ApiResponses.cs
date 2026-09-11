@@ -1,3 +1,4 @@
+using System.Text.Json.Serialization;
 using SwLicenseWatcher.Core;
 
 namespace SwLicenseWatcher.Api;
@@ -30,7 +31,9 @@ public sealed record SnapshotAcceptedResponse(
     string? AssignedHostName = null,
     string? AssignedDeviceCode = null,
     string? DeviceId = null,
-    string? DeviceCertificate = null);
+    string? DeviceCertificate = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    AgentUninstallCommand? UninstallCommand = null);
 
 public sealed record AgentHeartbeatAcceptedResponse(
     string DeviceCode,
@@ -42,7 +45,9 @@ public sealed record AgentHeartbeatAcceptedResponse(
     string? AssignedHostName,
     string? AssignedDeviceCode = null,
     string? DeviceId = null,
-    string? DeviceCertificate = null);
+    string? DeviceCertificate = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    AgentUninstallCommand? UninstallCommand = null);
 
 public sealed record SchemaStatusResponse(
     bool ApplyOnStartup,

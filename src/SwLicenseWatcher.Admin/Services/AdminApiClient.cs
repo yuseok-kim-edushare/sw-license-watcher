@@ -108,6 +108,16 @@ public sealed class AdminApiClient(HttpClient http, IJSRuntime js)
     public Task DenyUninstallAsync(long id, CancellationToken cancellationToken = default) =>
         SendAsync(HttpMethod.Post, $"/api/uninstall-requests/{id}/deny", body: null, cancellationToken);
 
+    public Task CreateDirectedUninstallAsync(string deviceCode, CancellationToken cancellationToken = default) =>
+        SendAsync(
+            HttpMethod.Post,
+            "/api/uninstall-requests",
+            new UninstallRequestCreateRequest(deviceCode),
+            cancellationToken);
+
+    public Task CancelDirectedUninstallAsync(long id, CancellationToken cancellationToken = default) =>
+        SendAsync(HttpMethod.Post, $"/api/uninstall-requests/{id}/cancel", body: null, cancellationToken);
+
     public Task<UpdateManifest> GetWorkerUpdatePinAsync(CancellationToken cancellationToken = default) =>
         GetAsync<UpdateManifest>("/api/updates/worker/manifest", cancellationToken);
 

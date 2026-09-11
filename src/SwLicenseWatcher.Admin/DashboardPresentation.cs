@@ -37,6 +37,11 @@ internal static class DashboardPresentation
         };
     }
 
+    internal static string UninstallOriginLabel(string? value) =>
+        string.Equals(value, UninstallGrant.OriginAdmin, StringComparison.OrdinalIgnoreCase)
+            ? "관리자"
+            : "현장";
+
     internal static string ClassificationStorage(SoftwarePolicyClassification classification)
     {
         try

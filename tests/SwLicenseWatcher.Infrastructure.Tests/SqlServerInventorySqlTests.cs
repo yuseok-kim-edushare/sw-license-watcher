@@ -196,8 +196,37 @@ public class SqlServerInventorySqlTests
         Assert.Contains("p.[device_code] LIKE @search", sql, StringComparison.Ordinal);
         Assert.Contains("CASE WHEN r.[status] = N'pending' THEN 0 ELSE 1 END", sql, StringComparison.Ordinal);
         Assert.Contains("[inventory].[pc_uninstall_request]", sql, StringComparison.Ordinal);
+        Assert.Contains("r.[origin] LIKE @search", sql, StringComparison.Ordinal);
         Assert.DoesNotContain("r.[code]", sql, StringComparison.Ordinal);
         Assert.DoesNotContain("code_hash", sql, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void BuildInsertUninstallRequestSql_writes_origin()
+    {
+        var sql = new SqlServerDataContext(new SqlServerStorageOptions()).BuildInsertUninstallRequestSql();
+        Assert.Contains("[origin]", sql, StringComparison.Ordinal);
+        Assert.Contains("@origin", sql, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void BuildInsertDirectedUninstallRequestSql_is_preapproved()
+    {
+        var sql = new SqlServerDataContext(new SqlServerStorageOptions()).BuildInsertDirectedUninstallRequestSql();
+        Assert.Contains("[code]", sql, StringComparison.Ordinal);
+        Assert.Contains("[code_hash]", sql, StringComparison.Ordinal);
+        Assert.Contains("[origin]", sql, StringComparison.Ordinal);
+        Assert.Contains("@expiresAt", sql, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void BuildGetDirectedUninstallCommandSql_selects_admin_approved_grants()
+    {
+        var sql = new SqlServerDataContext(new SqlServerStorageOptions()).BuildGetDirectedUninstallCommandSql();
+        Assert.Contains("r.[origin] = @origin", sql, StringComparison.Ordinal);
+        Assert.Contains("r.[status] = @status", sql, StringComparison.Ordinal);
+        Assert.Contains("r.[code]", sql, StringComparison.Ordinal);
+        Assert.Contains("TOP (1)", sql, StringComparison.Ordinal);
     }
 
     [Fact]

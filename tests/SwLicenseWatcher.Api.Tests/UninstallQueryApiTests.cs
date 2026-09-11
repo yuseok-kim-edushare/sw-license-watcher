@@ -53,6 +53,22 @@ public class UninstallQueryApiTests
         Assert.Contains("\"Status\":\"pending\"", json, StringComparison.Ordinal);
         Assert.DoesNotContain("\"Code\"", json, StringComparison.Ordinal);
         Assert.DoesNotContain("code_hash", json, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("\"Origin\":\"agent\"", json, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Directed_create_dto_does_not_include_the_plaintext_code()
+    {
+        var created = new UninstallRequestCreatedResponse(
+            9,
+            "PC-01",
+            UninstallGrant.Approved,
+            new DateTimeOffset(2026, 9, 11, 10, 0, 0, TimeSpan.Zero),
+            UninstallGrant.OriginAdmin);
+        var json = JsonSerializer.Serialize(created, ApiJsonSerializerContext.Default.UninstallRequestCreatedResponse);
+        Assert.Contains("\"Origin\":\"admin\"", json, StringComparison.Ordinal);
+        Assert.Contains("\"Status\":\"approved\"", json, StringComparison.Ordinal);
+        Assert.DoesNotContain("\"Code\"", json, StringComparison.Ordinal);
     }
 
     [Fact]

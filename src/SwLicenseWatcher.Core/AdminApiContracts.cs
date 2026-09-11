@@ -98,7 +98,10 @@ public sealed record AdminUninstallRequest(
     DateTimeOffset RequestedAtUtc,
     DateTimeOffset? ApprovedAtUtc,
     DateTimeOffset? ConsumedAtUtc,
-    DateTimeOffset? ExpiresAtUtc);
+    DateTimeOffset? ExpiresAtUtc,
+    string Origin = UninstallGrant.OriginAgent);
+
+public sealed record AgentUninstallCommand(long Id, string Code);
 
 public sealed record UninstallRequestListResponse(
     int Skip,
@@ -112,7 +115,8 @@ public sealed record UninstallRequestCreatedResponse(
     long Id,
     string DeviceCode,
     string Status,
-    DateTimeOffset RequestedAtUtc);
+    DateTimeOffset RequestedAtUtc,
+    string Origin = UninstallGrant.OriginAgent);
 
 public sealed record AgentUninstallRequestResponse(
     long Id,

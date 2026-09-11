@@ -13,6 +13,7 @@ internal static class InventoryIngestionEndpoints
             ISnapshotRepository repository,
             NotificationPublisher notifications,
             DeviceEnrollmentService enrollment,
+            IUninstallRequestStore uninstallRequests,
             CancellationToken cancellationToken) =>
         {
             if (!InventorySnapshotValidator.TryValidate(request, out var validationError))
@@ -37,20 +38,25 @@ internal static class InventoryIngestionEndpoints
             notifications.EnqueueBlacklistViolationsIfNeeded(request, saveResult);
             var assignment = await enrollment.CompleteAsync(
                 request.Pc.DeviceCode, request.Pc.DeviceId, request.Pc.DevicePublicKey, cancellationToken);
-            return Results.Accepted($"/api/inventory/devices/{assignment?.DeviceCode ?? request.Pc.DeviceCode}", new SnapshotAcceptedResponse(
-                assignment?.DeviceCode ?? request.Pc.DeviceCode,
+            var deviceCode = assignment?.DeviceCode ?? request.Pc.DeviceCode;
+            var uninstallCommand = await uninstallRequests.GetDirectedUninstallCommandAsync(
+                deviceCode, cancellationToken);
+            return Results.Accepted($"/api/inventory/devices/{deviceCode}", new SnapshotAcceptedResponse(
+                deviceCode,
                 request.InstalledSoftware.Count,
                 request.CollectedAtUtc,
                 assignment?.AssignedHostName,
                 assignment?.DeviceCode,
                 assignment?.DeviceId,
-                assignment?.DeviceCertificate));
+                assignment?.DeviceCertificate,
+                uninstallCommand));
         });
         endpoints.MapPost(AgentPaths.Heartbeats, async (
             AgentHeartbeat heartbeat,
             InventoryMemoryStore store,
             IHeartbeatRepository repository,
             DeviceEnrollmentService enrollment,
+            IUninstallRequestStore uninstallRequests,
             CancellationToken cancellationToken) =>
         {
             if (!InventorySnapshotValidator.TryValidate(heartbeat, out var validationError))
@@ -73,8 +79,11 @@ internal static class InventoryIngestionEndpoints
             store.RecordHeartbeat(heartbeat);
             var assignment = await enrollment.CompleteAsync(
                 heartbeat.DeviceCode, heartbeat.DeviceId, heartbeat.DevicePublicKey, cancellationToken);
-            return Results.Accepted($"/api/agents/heartbeats/{assignment?.DeviceCode ?? heartbeat.DeviceCode}", new AgentHeartbeatAcceptedResponse(
-                assignment?.DeviceCode ?? heartbeat.DeviceCode,
+            var deviceCode = assignment?.DeviceCode ?? heartbeat.DeviceCode;
+            var uninstallCommand = await uninstallRequests.GetDirectedUninstallCommandAsync(
+                deviceCode, cancellationToken);
+            return Results.Accepted($"/api/agents/heartbeats/{deviceCode}", new AgentHeartbeatAcceptedResponse(
+                deviceCode,
                 heartbeat.HostName,
                 heartbeat.ServiceName,
                 heartbeat.Version,
@@ -83,7 +92,8 @@ internal static class InventoryIngestionEndpoints
                 assignment?.AssignedHostName,
                 assignment?.DeviceCode,
                 assignment?.DeviceId,
-                assignment?.DeviceCertificate));
+                assignment?.DeviceCertificate,
+                uninstallCommand));
         });
 
         return endpoints;

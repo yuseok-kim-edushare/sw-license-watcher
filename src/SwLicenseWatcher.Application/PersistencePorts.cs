@@ -157,6 +157,16 @@ public interface IUninstallRequestStore
     Task<bool> ApproveUninstallRequestAsync(long id, CancellationToken cancellationToken);
 
     Task<bool> DenyUninstallRequestAsync(long id, CancellationToken cancellationToken);
+
+    Task<UninstallRequestCreatedResponse?> CreateDirectedUninstallRequestAsync(
+        string deviceCode,
+        CancellationToken cancellationToken);
+
+    Task<AgentUninstallCommand?> GetDirectedUninstallCommandAsync(
+        string deviceCode,
+        CancellationToken cancellationToken);
+
+    Task<bool> CancelDirectedUninstallRequestAsync(long id, CancellationToken cancellationToken);
 }
 
 public interface IWorkerUpdatePinStore

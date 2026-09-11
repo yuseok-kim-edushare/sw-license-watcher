@@ -59,6 +59,35 @@ public sealed class SqlLocalDbInventoryTests(SqlLocalDbFixture fixture)
     }
 
     [Fact]
+    public async Task Directed_uninstall_grant_is_returned_until_consumed_or_cancelled()
+    {
+        fixture.EnsureAvailable();
+        var token = TestContext.Current.CancellationToken;
+        var deviceCode = Unique("PC");
+        await fixture.Context.SaveSnapshotAsync(
+            Snapshot(deviceCode, new DateTimeOffset(2026, 9, 11, 10, 0, 0, TimeSpan.Zero), Software("7-Zip", "24")),
+            token);
+
+        var created = await fixture.Context.CreateDirectedUninstallRequestAsync(deviceCode, token);
+        Assert.NotNull(created);
+        Assert.Equal(UninstallGrant.Approved, created.Status);
+        Assert.Equal(UninstallGrant.OriginAdmin, created.Origin);
+
+        var command = await fixture.Context.GetDirectedUninstallCommandAsync(deviceCode, token);
+        Assert.NotNull(command);
+        Assert.Equal(created.Id, command.Id);
+        Assert.False(string.IsNullOrWhiteSpace(command.Code));
+
+        var listed = await fixture.Context.ListUninstallRequestsAsync(0, 10, deviceCode, token);
+        var row = Assert.Single(listed.Items, item => item.Id == created.Id);
+        Assert.Equal(UninstallGrant.OriginAdmin, row.Origin);
+        Assert.Equal(UninstallGrant.Approved, row.Status);
+
+        Assert.True(await fixture.Context.CancelDirectedUninstallRequestAsync(created.Id, token));
+        Assert.Null(await fixture.Context.GetDirectedUninstallCommandAsync(deviceCode, token));
+    }
+
+    [Fact]
     public async Task Blacklist_policy_records_violation_and_managed_license_source()
     {
         fixture.EnsureAvailable();

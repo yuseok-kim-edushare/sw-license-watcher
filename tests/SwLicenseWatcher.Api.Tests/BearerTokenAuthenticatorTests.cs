@@ -72,6 +72,7 @@ public class BearerTokenAuthenticatorTests
     [InlineData("/api/uninstall-requests")]
     [InlineData("/api/uninstall-requests/12/approve")]
     [InlineData("/api/uninstall-requests/12/deny")]
+    [InlineData("/api/uninstall-requests/12/cancel")]
     [InlineData("/api/design")]
     [InlineData("/api/schema")]
     [InlineData("/api/schema/sql")]

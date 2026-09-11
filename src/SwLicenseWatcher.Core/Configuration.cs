@@ -300,6 +300,8 @@ public sealed class UninstallRequestTableOptions
     public string CodeHashColumn { get; set; } = "code_hash";
 
     public string CodeColumn { get; set; } = "code";
+
+    public string OriginColumn { get; set; } = "origin";
 }
 
 public sealed class SoftwareLicenseTableOptions
