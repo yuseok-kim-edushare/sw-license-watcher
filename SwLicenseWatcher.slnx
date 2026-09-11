@@ -6,6 +6,7 @@
     <Project Path="src/SwLicenseWatcher.Api/SwLicenseWatcher.Api.csproj" />
     <Project Path="src/SwLicenseWatcher.Application/SwLicenseWatcher.Application.csproj" />
     <Project Path="src/SwLicenseWatcher.Core/SwLicenseWatcher.Core.csproj" />
+    <Project Path="src/SwLicenseWatcher.Crypto/SwLicenseWatcher.Crypto.csproj" />
     <Project Path="src/SwLicenseWatcher.Infrastructure/SwLicenseWatcher.Infrastructure.csproj" />
     <Project Path="src/SwLicenseWatcher.Packager/SwLicenseWatcher.Packager.csproj" />
     <Project Path="src/SwLicenseWatcher.Setup/SwLicenseWatcher.Setup.csproj" />
@@ -19,6 +20,7 @@
     <Project Path="tests/SwLicenseWatcher.Api.Tests/SwLicenseWatcher.Api.Tests.csproj" />
     <Project Path="tests/SwLicenseWatcher.Application.Tests/SwLicenseWatcher.Application.Tests.csproj" />
     <Project Path="tests/SwLicenseWatcher.Core.Tests/SwLicenseWatcher.Core.Tests.csproj" />
+    <Project Path="tests/SwLicenseWatcher.Crypto.Tests/SwLicenseWatcher.Crypto.Tests.csproj" />
     <Project Path="tests/SwLicenseWatcher.Infrastructure.Tests/SwLicenseWatcher.Infrastructure.Tests.csproj" />
     <Project Path="tests/SwLicenseWatcher.Setup.Tests/SwLicenseWatcher.Setup.Tests.csproj" />
   </Folder>

@@ -7,7 +7,11 @@ public sealed record PcIdentity(
     string HostName,
     string DomainName,
     string OperatingSystem,
-    string AgentVersion);
+    string AgentVersion,
+    string? DeviceId = null,
+    string? DevicePublicKey = null,
+    string? DeviceCertificate = null,
+    string? DeviceProof = null);
 
 public sealed record InstalledSoftwareEntry(
     string Name,
@@ -34,7 +38,11 @@ public sealed record AgentHeartbeat(
     string ServiceName,
     string Version,
     DateTimeOffset ReportedAtUtc,
-    string Status);
+    string Status,
+    string? DeviceId = null,
+    string? DevicePublicKey = null,
+    string? DeviceCertificate = null,
+    string? DeviceProof = null);
 
 [JsonConverter(typeof(JsonStringEnumConverter<SoftwarePolicyClassification>))]
 public enum SoftwarePolicyClassification
@@ -120,7 +128,7 @@ public sealed record WorkerHealthReport(
     string Version,
     DateTimeOffset ReportedAtUtc);
 
-public sealed record StoredAgentAssignment(string? AssignedHostName);
+public sealed record StoredAgentAssignment(string? AssignedHostName, string? AssignedDeviceCode = null);
 
 public sealed record UpdateManifest(
     string TargetServiceName,

@@ -249,12 +249,20 @@ internal static class InventoryQueryApi
                 return Results.BadRequest(notesError);
             }
 
+            if (!DeviceCodes.TryNormalizeAssigned(request.AssignedDeviceCode, out var assignedDeviceCode, out var codeError))
+            {
+                return Results.BadRequest(codeError);
+            }
+
             return await repository.UpdateDeviceProfileAsync(
                 deviceCode,
-                new DeviceProfileWriteRequest(assignedHostName, adminNotes),
-                cancellationToken)
-                ? Results.NoContent()
-                : Results.NotFound();
+                new DeviceProfileWriteRequest(assignedHostName, adminNotes, assignedDeviceCode),
+                cancellationToken) switch
+            {
+                DeviceProfileUpdateResult.Updated => Results.NoContent(),
+                DeviceProfileUpdateResult.Conflict => Results.Conflict("assignedDeviceCode is already used by another PC."),
+                _ => Results.NotFound()
+            };
         });
     }
 

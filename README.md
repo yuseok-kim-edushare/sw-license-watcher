@@ -16,6 +16,7 @@
   - 수집 API: `/api/inventory/snapshots`, `/api/agents/heartbeats`
   - 조회 API: `/api/inventory/devices`, `/api/inventory/software` (JSON 및 `?format=csv`, `?classification=` 필터)
   - SQL Server 트랜잭션 기반 PC UPSERT 및 설치 소프트웨어 교체 저장(정책 매칭 분류 포함)
+  - 현장 설치 시 자산코드는 임시값(기본 컴퓨터 이름)이고, 관리자가 서버에서 바꿀 수 있다. 기기의 고윳값은 서버 CA가 발급하는 **ML-DSA-87**(FIPS 204 최상위, NIST Level 5) 사설 인증서다. 서명·검증은 44/65보다 느리다.
   - Bearer 토큰 인증(에이전트/관리자 역할 분리), 원격 요청 HTTPS 강제, 수집 POST 본문 크기 제한(스냅샷 8 MiB, 하트비트 64 KiB)
   - 헬스체크: `/health`(인증 제외)는 SQL Server에 `SELECT 1`로 연결을 확인하고, 실패 시 503과 일반화된 사유만 반환
   - 설계/스키마 API: `/api/design`, `/api/schema`, `GET`/`POST` `/api/schema/sql`. 기동 후 백그라운드에서 없는 테이블/컬럼을 맞춤
@@ -50,6 +51,7 @@
 ## 프로젝트 구조
 
 - `/src/SwLicenseWatcher.Core`: 에이전트·API·Admin이 공유하는 요청/응답 계약과 옵션, 검증·정책 매칭·수집 등 공통 기능
+- `/src/SwLicenseWatcher.Crypto`: BouncyCastle ML-DSA-87 사설 기기 인증서(서버 CA 발급, 클라이언트 키 생성). 44/65보다 느린 최상위 파라미터
 - `/src/SwLicenseWatcher.Application`: 저장 기술과 분리된 애플리케이션 결정 로직 및 snapshot, heartbeat, 조회, 정책, 위반, 제거 요청, 업데이트 핀별 persistence port
 - `/src/SwLicenseWatcher.Infrastructure`: Application port의 SQL Server 구현, 데이터 컨텍스트, 스키마 적용 및 DI 등록
 - `/src/SwLicenseWatcher.Api`: 인증·HTTP endpoint·호스팅을 구성하고 Application/Infrastructure를 조립하는 ASP.NET Core API
@@ -329,7 +331,7 @@ API 실행 후:
 | --- | --- | --- | --- |
 | GET | `/api/inventory/devices` | PC 목록 (자산코드, 호스트명, 관리자 PC 명, 메모, 도메인, OS, 에이전트 버전, 마지막 heartbeat/inventory 시각) | `skip`, `take`, `search`(호스트명·지정 PC 명 또는 자산코드), `staleAfterHours`, `format=csv` |
 | GET | `/api/inventory/devices/{deviceCode}` | 단일 PC 상세와 설치 소프트웨어 전체(항목별 `classification`) | `classification`, `format=csv` |
-| PUT | `/api/inventory/devices/{deviceCode}` | 관리자 PC 명(`assignedHostName`)과 메모(`adminNotes`). 지정한 PC 명은 다음 스냅샷/하트비트 응답으로 클라이언트에 부여됨 | 본문 `assignedHostName?`, `adminNotes?` |
+| PUT | `/api/inventory/devices/{deviceCode}` | 관리자 자산코드(`assignedDeviceCode`), PC 명(`assignedHostName`), 메모(`adminNotes`). 다음 스냅샷/하트비트 응답으로 클라이언트에 부여됨. 기기 고유값(`deviceId`)은 ML-DSA-87 인증서 | 본문 `assignedDeviceCode?`, `assignedHostName?`, `adminNotes?` |
 | GET | `/api/inventory/software` | SW 이름/버전/분류별 설치 PC 수. `managed`는 `companyCount` / `byoCount` / `unassignedCount` | `skip`, `take`, `search`(이름), `classification`, `format=csv` |
 | GET | `/api/inventory/software/{name}/devices` | 해당 SW가 설치된 PC 목록. 항목별 유효 `licenseSource`와 PC 할당 `licenseSourceOverride` | `skip`, `take`, `classification`, `format=csv` |
 | PUT | `/api/inventory/software/{name}/classification` | 정확 일치 활성 정책을 만들거나 갱신한 뒤, 이미 모인 설치 행의 분류를 즉시 다시 칠함 | 본문 `classification`, `publisher?`, `defaultLicenseSource?`, `notes?` |
@@ -342,7 +344,7 @@ API 실행 후:
 
 ## 관리자 대시보드
 
-브라우저에서 `https://<server>/admin` 으로 관리자 화면을 엽니다. UI는 Blazor WebAssembly이며, Interactive Server/Auto 회로는 쓰지 않습니다. API가 같은 출처의 `/admin/_framework`를 제공하므로 외부 CDN이 없습니다. curl이나 CSV 없이 PC 목록, 소프트웨어 집계, 위반, 정책, 제거 요청을 조회하고 정책을 만들고 고칠 수 있습니다. 자산코드·PC 명·소프트웨어 이름을 누르면 서랍에서 관련 목록을 보고, PC 명·메모를 남기거나 소프트웨어 분류·메모를 저장할 수 있습니다. 관리자가 지정한 PC 명은 다음 에이전트 heartbeat/스냅샷 응답으로 클라이언트에 부여됩니다. 소프트웨어 목록에서 행을 체크한 뒤 `white` / `managed` / `black`을 현재 페이지 선택 항목에 일괄 지정할 수 있고, 서랍에서는 개별 분류와 `managed`의 정책 기본 라이선스(회사/BYO)·PC별 덮어쓰기를 편집합니다.
+브라우저에서 `https://<server>/admin` 으로 관리자 화면을 엽니다. UI는 Blazor WebAssembly이며, Interactive Server/Auto 회로는 쓰지 않습니다. API가 같은 출처의 `/admin/_framework`를 제공하므로 외부 CDN이 없습니다. curl이나 CSV 없이 PC 목록, 소프트웨어 집계, 위반, 정책, 제거 요청을 조회하고 정책을 만들고 고칠 수 있습니다. 자산코드·PC 명·소프트웨어 이름을 누르면 서랍에서 관련 목록을 보고, 자산코드·PC 명·메모를 남기거나 소프트웨어 분류·메모를 저장할 수 있습니다. 관리자가 지정한 자산코드와 PC 명은 다음 에이전트 heartbeat/스냅샷 응답으로 클라이언트에 부여됩니다. 기기 고유값은 서버가 서명하는 ML-DSA-87 사설 인증서이며, 44/65보다 느린 대신 최상위 등급을 씁니다. 소프트웨어 목록에서 행을 체크한 뒤 `white` / `managed` / `black`을 현재 페이지 선택 항목에 일괄 지정할 수 있고, 서랍에서는 개별 분류와 `managed`의 정책 기본 라이선스(회사/BYO)·PC별 덮어쓰기를 편집합니다.
 
 정적 파일(`/admin`, `/admin/`, CSS, `_framework`)은 인증 없이 내려갑니다. 비밀은 없고, 인벤토리·정책 데이터는 모두 `AdminToken`이 있어야 합니다. 토큰은 브라우저 `sessionStorage`에만 두고, 탭을 닫으면 사라집니다. 쿠키와 `localStorage`는 쓰지 않습니다.
 

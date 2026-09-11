@@ -35,6 +35,11 @@ public class SqlServerSchemaScriptBuilderTests
         Assert.Contains("ALTER TABLE [inventory].[software_policy_list] ADD [default_license_source] NVARCHAR(16) NULL;", sql);
         Assert.Contains("[assigned_host_name] NVARCHAR(128) NULL", sql);
         Assert.Contains("[admin_notes] NVARCHAR(1024) NULL", sql);
+        Assert.Contains("[assigned_device_code] NVARCHAR(128) NULL", sql);
+        Assert.Contains("[device_id] NVARCHAR(36) NULL", sql);
+        Assert.Contains("[device_public_key] NVARCHAR(MAX) NULL", sql);
+        Assert.Contains("[device_certificate] NVARCHAR(MAX) NULL", sql);
+        Assert.Contains("CREATE UNIQUE INDEX [UX_pc_entity_device_id] ON [inventory].[pc_entity]([device_id]) WHERE [device_id] IS NOT NULL;", sql);
         Assert.Contains("IF COL_LENGTH(N'[inventory].[pc_entity]', N'assigned_host_name') IS NULL", sql);
         Assert.Contains("ALTER TABLE [inventory].[pc_entity] ADD [assigned_host_name] NVARCHAR(128) NULL;", sql);
         Assert.Contains("IF COL_LENGTH(N'[inventory].[pc_entity]', N'admin_notes') IS NULL", sql);

@@ -35,6 +35,10 @@ public sealed class SqlServerSchemaScriptBuilder
         sql.AppendLine($"    [{Escape(pc.LastInventoryUtcColumn)}] DATETIMEOFFSET NULL,");
         sql.AppendLine($"    [{Escape(pc.AssignedHostNameColumn)}] NVARCHAR(128) NULL,");
         sql.AppendLine($"    [{Escape(pc.AdminNotesColumn)}] NVARCHAR(1024) NULL,");
+        sql.AppendLine($"    [{Escape(pc.AssignedDeviceCodeColumn)}] NVARCHAR(128) NULL,");
+        sql.AppendLine($"    [{Escape(pc.DeviceIdColumn)}] NVARCHAR(36) NULL,");
+        sql.AppendLine($"    [{Escape(pc.DevicePublicKeyColumn)}] NVARCHAR(MAX) NULL,");
+        sql.AppendLine($"    [{Escape(pc.DeviceCertificateColumn)}] NVARCHAR(MAX) NULL,");
         sql.AppendLine($"    CONSTRAINT [{Escape(BuildIdentifier("UX", pc.TableName, pc.DeviceCodeColumn))}] UNIQUE ([{Escape(pc.DeviceCodeColumn)}])");
         sql.AppendLine(");");
         sql.AppendLine("END");
@@ -137,7 +141,13 @@ public sealed class SqlServerSchemaScriptBuilder
         AppendColumnIfMissing(sql, schema, policy.TableName, policy.DefaultLicenseSourceColumn, "NVARCHAR(16) NULL");
         AppendColumnIfMissing(sql, schema, pc.TableName, pc.AssignedHostNameColumn, "NVARCHAR(128) NULL");
         AppendColumnIfMissing(sql, schema, pc.TableName, pc.AdminNotesColumn, "NVARCHAR(1024) NULL");
+        AppendColumnIfMissing(sql, schema, pc.TableName, pc.AssignedDeviceCodeColumn, "NVARCHAR(128) NULL");
+        AppendColumnIfMissing(sql, schema, pc.TableName, pc.DeviceIdColumn, "NVARCHAR(36) NULL");
+        AppendColumnIfMissing(sql, schema, pc.TableName, pc.DevicePublicKeyColumn, "NVARCHAR(MAX) NULL");
+        AppendColumnIfMissing(sql, schema, pc.TableName, pc.DeviceCertificateColumn, "NVARCHAR(MAX) NULL");
         sql.AppendLine();
+        AppendUniqueIndexIfMissing(sql, schema, pc.TableName, pc.DeviceIdColumn);
+        AppendUniqueIndexIfMissing(sql, schema, pc.TableName, pc.AssignedDeviceCodeColumn);
         AppendIndexIfMissing(sql, schema, installedSoftware.TableName, installedSoftware.PcForeignKeyColumn);
         AppendIndexIfMissing(sql, schema, installedSoftware.TableName, installedSoftware.ClassificationColumn);
         AppendIndexIfMissing(sql, schema, policy.TableName, policy.ClassificationColumn);
@@ -166,6 +176,16 @@ public sealed class SqlServerSchemaScriptBuilder
         var columnLiteral = EscapeSqlLiteral(columnName);
         sql.AppendLine($"IF COL_LENGTH(N'{objectId}', N'{columnLiteral}') IS NULL");
         sql.AppendLine($"ALTER TABLE [{escapedSchema}].[{Escape(tableName)}] ADD [{Escape(columnName)}] {definition};");
+    }
+
+    private static void AppendUniqueIndexIfMissing(StringBuilder sql, string escapedSchema, string tableName, string columnName)
+    {
+        var indexName = Escape(BuildIdentifier("UX", tableName, columnName));
+        var objectId = EscapeSqlLiteral($"[{escapedSchema}].[{Escape(tableName)}]");
+        var indexLiteral = EscapeSqlLiteral(indexName);
+        var column = Escape(columnName);
+        sql.AppendLine($"IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'{indexLiteral}' AND object_id = OBJECT_ID(N'{objectId}'))");
+        sql.AppendLine($"CREATE UNIQUE INDEX [{indexName}] ON [{escapedSchema}].[{Escape(tableName)}]([{column}]) WHERE [{column}] IS NOT NULL;");
     }
 
     private static void AppendIndexIfMissing(StringBuilder sql, string escapedSchema, string tableName, string columnName)
@@ -211,6 +231,8 @@ public static class SqlIdentifierValidator
             options.PcTable.HostNameColumn, options.PcTable.DomainNameColumn, options.PcTable.OperatingSystemColumn,
             options.PcTable.AgentVersionColumn, options.PcTable.LastHeartbeatUtcColumn, options.PcTable.LastInventoryUtcColumn,
             options.PcTable.AssignedHostNameColumn, options.PcTable.AdminNotesColumn,
+            options.PcTable.AssignedDeviceCodeColumn, options.PcTable.DeviceIdColumn,
+            options.PcTable.DevicePublicKeyColumn, options.PcTable.DeviceCertificateColumn,
             options.InstalledSoftwareTable.TableName, options.InstalledSoftwareTable.PrimaryKeyColumn,
             options.InstalledSoftwareTable.PcForeignKeyColumn, options.InstalledSoftwareTable.DisplayNameColumn,
             options.InstalledSoftwareTable.DisplayVersionColumn, options.InstalledSoftwareTable.PublisherColumn,

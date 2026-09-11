@@ -27,7 +27,10 @@ public sealed record SnapshotAcceptedResponse(
     string DeviceCode,
     int InstalledSoftwareCount,
     DateTimeOffset CollectedAtUtc,
-    string? AssignedHostName = null);
+    string? AssignedHostName = null,
+    string? AssignedDeviceCode = null,
+    string? DeviceId = null,
+    string? DeviceCertificate = null);
 
 public sealed record AgentHeartbeatAcceptedResponse(
     string DeviceCode,
@@ -36,7 +39,10 @@ public sealed record AgentHeartbeatAcceptedResponse(
     string Version,
     DateTimeOffset ReportedAtUtc,
     string Status,
-    string? AssignedHostName);
+    string? AssignedHostName,
+    string? AssignedDeviceCode = null,
+    string? DeviceId = null,
+    string? DeviceCertificate = null);
 
 public sealed record SchemaStatusResponse(
     bool ApplyOnStartup,

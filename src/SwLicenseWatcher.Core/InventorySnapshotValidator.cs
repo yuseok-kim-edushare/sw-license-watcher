@@ -21,7 +21,12 @@ public static class InventorySnapshotValidator
             snapshot.Pc.HostName.Length > 128 ||
             snapshot.Pc.DomainName.Length > 128 ||
             snapshot.Pc.OperatingSystem.Length > 128 ||
-            snapshot.Pc.AgentVersion.Length > 32)
+            snapshot.Pc.AgentVersion.Length > 32 ||
+            !HasValidDeviceIdentityFields(
+                snapshot.Pc.DeviceId,
+                snapshot.Pc.DevicePublicKey,
+                snapshot.Pc.DeviceCertificate,
+                snapshot.Pc.DeviceProof))
         {
             error = "The snapshot is missing required identity fields.";
             return false;
@@ -60,7 +65,12 @@ public static class InventorySnapshotValidator
             heartbeat.ReportedAtUtc == default ||
             heartbeat.DeviceCode.Length > 128 ||
             heartbeat.HostName.Length > 128 ||
-            heartbeat.Version.Length > 32)
+            heartbeat.Version.Length > 32 ||
+            !HasValidDeviceIdentityFields(
+                heartbeat.DeviceId,
+                heartbeat.DevicePublicKey,
+                heartbeat.DeviceCertificate,
+                heartbeat.DeviceProof))
         {
             error = "The heartbeat is missing required fields or exceeds persisted field limits.";
             return false;
@@ -69,4 +79,20 @@ public static class InventorySnapshotValidator
         error = string.Empty;
         return true;
     }
+
+    // ML-DSA-87 public keys and signatures are large; slowness and size are accepted.
+    internal const int MaxDeviceIdLength = 36;
+    internal const int MaxDevicePublicKeyLength = 8192;
+    internal const int MaxDeviceCertificateLength = 32768;
+    internal const int MaxDeviceProofLength = 12288;
+
+    private static bool HasValidDeviceIdentityFields(
+        string? deviceId,
+        string? devicePublicKey,
+        string? deviceCertificate,
+        string? deviceProof) =>
+        (deviceId is null || deviceId.Length <= MaxDeviceIdLength) &&
+        (devicePublicKey is null || devicePublicKey.Length <= MaxDevicePublicKeyLength) &&
+        (deviceCertificate is null || deviceCertificate.Length <= MaxDeviceCertificateLength) &&
+        (deviceProof is null || deviceProof.Length <= MaxDeviceProofLength);
 }

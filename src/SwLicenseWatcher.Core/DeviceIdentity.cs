@@ -1,0 +1,80 @@
+using System.Text;
+using System.Text.Json.Serialization;
+
+namespace SwLicenseWatcher.Core;
+
+public static class DeviceIdentityAlgorithms
+{
+    // FIPS 204 highest parameter set (NIST Level 5). Slower than ML-DSA-44/65.
+    public const string Mldsa87 = "ML-DSA-87";
+}
+
+public static class DeviceCodes
+{
+    public const int MaxLength = 128;
+
+    public static string Official(string deviceCode, string? assignedDeviceCode) =>
+        string.IsNullOrWhiteSpace(assignedDeviceCode) ? deviceCode : assignedDeviceCode.Trim();
+
+    public static bool TryNormalizeAssigned(string? value, out string? normalized, out string error)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            normalized = null;
+            error = string.Empty;
+            return true;
+        }
+
+        var trimmed = value.Trim();
+        if (trimmed.Length > MaxLength)
+        {
+            normalized = null;
+            error = $"assignedDeviceCode must be at most {MaxLength} characters.";
+            return false;
+        }
+
+        normalized = trimmed;
+        error = string.Empty;
+        return true;
+    }
+}
+
+public static class DeviceProofs
+{
+    public static byte[] Payload(string deviceId, string deviceCode) =>
+        Encoding.UTF8.GetBytes($"v1|{deviceId}|{deviceCode}");
+}
+
+public sealed record DeviceCertificateDocument(
+    [property: JsonPropertyName("v")] int V,
+    [property: JsonPropertyName("alg")] string Alg,
+    [property: JsonPropertyName("id")] string Id,
+    [property: JsonPropertyName("pk")] string Pk,
+    [property: JsonPropertyName("iat")] long Iat,
+    [property: JsonPropertyName("sig")] string Sig);
+
+public sealed record DeviceAgentAssignment(
+    string DeviceCode,
+    string? AssignedHostName,
+    string? DeviceId,
+    string? DeviceCertificate);
+
+public sealed record StoredDeviceIdentity(
+    string? DeviceId,
+    string PublicKey,
+    string PrivateKey,
+    string? Certificate);
+
+public interface IDeviceCertificateAuthority
+{
+    DeviceCertificateDocument Issue(string deviceId, string publicKeyBase64);
+
+    bool TryVerify(DeviceCertificateDocument certificate, out string error);
+}
+
+public enum DeviceProfileUpdateResult
+{
+    NotFound,
+    Conflict,
+    Updated
+}

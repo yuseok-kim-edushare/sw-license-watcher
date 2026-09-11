@@ -2,6 +2,7 @@ using System.Text;
 using System.Text.Json;
 using Microsoft.Extensions.Options;
 using SwLicenseWatcher.Core;
+using SwLicenseWatcher.Crypto;
 
 namespace SwLicenseWatcher.Agent.Worker;
 
@@ -13,6 +14,7 @@ public sealed class Worker(
     IOptions<WorkerAgentOptions> options,
     IOptions<LocalStateStoreOptions> localStateOptions,
     AgentAssignmentStore assignmentStore,
+    AgentDeviceIdentityStore identityStore,
     IHostApplicationLifetime applicationLifetime) : BackgroundService
 {
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -44,10 +46,7 @@ public sealed class Worker(
                 {
                     var snapshotOutcome = await apiClient.PublishSnapshotAsync(snapshot, stoppingToken);
                     publishResult = snapshotOutcome.Result;
-                    await assignmentStore.ApplyAsync(
-                        snapshotOutcome.AssignmentSpecified,
-                        snapshotOutcome.AssignedHostName,
-                        stoppingToken);
+                    await ApplyAssignmentAsync(snapshotOutcome, stoppingToken);
                     if (publishResult == AgentPublishResult.RetryableFailure)
                     {
                         await snapshotQueue.EnqueueAsync(snapshot, stoppingToken);
@@ -65,12 +64,13 @@ public sealed class Worker(
                         "Worker",
                         snapshot.Pc.AgentVersion,
                         DateTimeOffset.UtcNow,
-                        HeartbeatStatus.Resolve(queueDrained, publishResult)),
+                        HeartbeatStatus.Resolve(queueDrained, publishResult),
+                        snapshot.Pc.DeviceId,
+                        snapshot.Pc.DevicePublicKey,
+                        snapshot.Pc.DeviceCertificate,
+                        snapshot.Pc.DeviceProof),
                     stoppingToken);
-                await assignmentStore.ApplyAsync(
-                    heartbeatOutcome.AssignmentSpecified,
-                    heartbeatOutcome.AssignedHostName,
-                    stoppingToken);
+                await ApplyAssignmentAsync(heartbeatOutcome, stoppingToken);
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
             {
@@ -151,13 +151,37 @@ public sealed class Worker(
     private async Task<InventoryIngestionRequest> CollectSnapshotAsync(WorkerAgentOptions agentOptions, CancellationToken cancellationToken)
     {
         var software = await inventoryCollector.CollectAsync(cancellationToken);
+        var stored = identityStore.Ensure();
+        var deviceCode = assignmentStore.ResolveDeviceCode(agentOptions.DeviceCode);
+        var proof = "";
+        if (MldsaDeviceCrypto.TryFromBase64(stored.PrivateKey, out var privateKey))
+        {
+            proof = MldsaDeviceCrypto.ToBase64(
+                MldsaDeviceCrypto.Sign(privateKey, DeviceProofs.Payload(stored.DeviceId ?? "", deviceCode)));
+        }
+
         var identity = new PcIdentity(
-            agentOptions.DeviceCode,
+            deviceCode,
             assignmentStore.ResolveHostName(Environment.MachineName),
             agentOptions.DomainName,
             WindowsOsDescription.Resolve(logger),
-            ResolveInstalledVersion());
+            ResolveInstalledVersion(),
+            stored.DeviceId,
+            stored.PublicKey,
+            stored.Certificate,
+            proof);
 
         return new InventoryIngestionRequest(identity, software, DateTimeOffset.UtcNow);
+    }
+
+    private async Task ApplyAssignmentAsync(AgentPublishOutcome outcome, CancellationToken cancellationToken)
+    {
+        await assignmentStore.ApplyLabelsAsync(
+            outcome.AssignmentSpecified,
+            outcome.AssignedHostName,
+            outcome.DeviceCodeSpecified,
+            outcome.AssignedDeviceCode,
+            cancellationToken);
+        identityStore.ApplyCertificate(outcome.DeviceId, outcome.DeviceCertificate);
     }
 }

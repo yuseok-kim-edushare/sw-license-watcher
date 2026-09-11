@@ -1,5 +1,6 @@
 using Microsoft.Extensions.Options;
 using SwLicenseWatcher.Core;
+using SwLicenseWatcher.Crypto;
 using SwLicenseWatcher.Infrastructure;
 
 namespace SwLicenseWatcher.Api;
@@ -55,6 +56,8 @@ internal static class ApiServiceCollectionExtensions
                 options => Uri.TryCreate(options.PackageUrl, UriKind.Absolute, out _),
                 "Updates:Worker:PackageUrl must be an absolute URI.")
             .ValidateOnStart();
+        services.AddOptions<DeviceEnrollmentOptions>()
+            .Bind(configuration.GetSection("DeviceEnrollment"));
         services.AddOptions<NotificationOptions>()
             .Bind(configuration.GetSection("Notifications"))
             .Validate(
@@ -97,6 +100,17 @@ internal static class ApiServiceCollectionExtensions
         });
         services.AddSingleton<InventoryMemoryStore>();
         services.AddSwLicenseWatcherInfrastructure();
+        services.AddSingleton<IDeviceCertificateAuthority>(sp =>
+        {
+            var path = sp.GetRequiredService<IOptions<DeviceEnrollmentOptions>>().Value.CaKeyPath;
+            if (!Path.IsPathRooted(path))
+            {
+                path = Path.Combine(sp.GetRequiredService<IHostEnvironment>().ContentRootPath, path);
+            }
+
+            return new FileDeviceCertificateAuthority(path, sp.GetRequiredService<ILogger<FileDeviceCertificateAuthority>>());
+        });
+        services.AddSingleton<DeviceEnrollmentService>();
         services.AddSingleton<WorkerUpdatePinService>();
         services.AddHttpClient(WebhookNotificationSender.HttpClientName, (sp, client) =>
         {

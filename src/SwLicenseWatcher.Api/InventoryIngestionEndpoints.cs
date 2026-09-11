@@ -11,8 +11,8 @@ internal static class InventoryIngestionEndpoints
             InventoryIngestionRequest request,
             InventoryMemoryStore store,
             ISnapshotRepository repository,
-            IDeviceQuery devices,
             NotificationPublisher notifications,
+            DeviceEnrollmentService enrollment,
             CancellationToken cancellationToken) =>
         {
             if (!InventorySnapshotValidator.TryValidate(request, out var validationError))
@@ -20,22 +20,37 @@ internal static class InventoryIngestionEndpoints
                 return Results.BadRequest(validationError);
             }
 
+            if (!enrollment.TryAccept(
+                    request.Pc.DeviceId,
+                    request.Pc.DevicePublicKey,
+                    request.Pc.DeviceCertificate,
+                    request.Pc.DeviceProof,
+                    request.Pc.DeviceCode,
+                    out var identityError))
+            {
+                return Results.BadRequest(identityError);
+            }
+
             var saveResult = await repository.SaveSnapshotAsync(request, cancellationToken);
             store.RecordSnapshot(request);
             notifications.EnqueueNewSoftwareIfNeeded(request, saveResult);
             notifications.EnqueueBlacklistViolationsIfNeeded(request, saveResult);
-            var assignedHostName = await devices.GetAssignedHostNameAsync(request.Pc.DeviceCode, cancellationToken);
-            return Results.Accepted($"/api/inventory/devices/{request.Pc.DeviceCode}", new SnapshotAcceptedResponse(
-                request.Pc.DeviceCode,
+            var assignment = await enrollment.CompleteAsync(
+                request.Pc.DeviceCode, request.Pc.DeviceId, request.Pc.DevicePublicKey, cancellationToken);
+            return Results.Accepted($"/api/inventory/devices/{assignment?.DeviceCode ?? request.Pc.DeviceCode}", new SnapshotAcceptedResponse(
+                assignment?.DeviceCode ?? request.Pc.DeviceCode,
                 request.InstalledSoftware.Count,
                 request.CollectedAtUtc,
-                assignedHostName));
+                assignment?.AssignedHostName,
+                assignment?.DeviceCode,
+                assignment?.DeviceId,
+                assignment?.DeviceCertificate));
         });
         endpoints.MapPost(AgentPaths.Heartbeats, async (
             AgentHeartbeat heartbeat,
             InventoryMemoryStore store,
             IHeartbeatRepository repository,
-            IDeviceQuery devices,
+            DeviceEnrollmentService enrollment,
             CancellationToken cancellationToken) =>
         {
             if (!InventorySnapshotValidator.TryValidate(heartbeat, out var validationError))
@@ -43,17 +58,32 @@ internal static class InventoryIngestionEndpoints
                 return Results.BadRequest(validationError);
             }
 
+            if (!enrollment.TryAccept(
+                    heartbeat.DeviceId,
+                    heartbeat.DevicePublicKey,
+                    heartbeat.DeviceCertificate,
+                    heartbeat.DeviceProof,
+                    heartbeat.DeviceCode,
+                    out var identityError))
+            {
+                return Results.BadRequest(identityError);
+            }
+
             await repository.SaveHeartbeatAsync(heartbeat, cancellationToken);
             store.RecordHeartbeat(heartbeat);
-            var assignedHostName = await devices.GetAssignedHostNameAsync(heartbeat.DeviceCode, cancellationToken);
-            return Results.Accepted($"/api/agents/heartbeats/{heartbeat.DeviceCode}", new AgentHeartbeatAcceptedResponse(
-                heartbeat.DeviceCode,
+            var assignment = await enrollment.CompleteAsync(
+                heartbeat.DeviceCode, heartbeat.DeviceId, heartbeat.DevicePublicKey, cancellationToken);
+            return Results.Accepted($"/api/agents/heartbeats/{assignment?.DeviceCode ?? heartbeat.DeviceCode}", new AgentHeartbeatAcceptedResponse(
+                assignment?.DeviceCode ?? heartbeat.DeviceCode,
                 heartbeat.HostName,
                 heartbeat.ServiceName,
                 heartbeat.Version,
                 heartbeat.ReportedAtUtc,
                 heartbeat.Status,
-                assignedHostName));
+                assignment?.AssignedHostName,
+                assignment?.DeviceCode,
+                assignment?.DeviceId,
+                assignment?.DeviceCertificate));
         });
 
         return endpoints;

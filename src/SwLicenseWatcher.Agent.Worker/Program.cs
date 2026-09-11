@@ -41,6 +41,15 @@ builder.Services.AddSingleton(sp =>
         : Path.Combine(directory, "assigned-host-name.json");
     return new AgentAssignmentStore(path);
 });
+builder.Services.AddSingleton(sp =>
+{
+    var healthPath = sp.GetRequiredService<IOptions<WorkerAgentOptions>>().Value.HealthFilePath;
+    var directory = Path.GetDirectoryName(healthPath);
+    var path = string.IsNullOrEmpty(directory)
+        ? "device-identity.bin"
+        : Path.Combine(directory, "device-identity.bin");
+    return new AgentDeviceIdentityStore(path, sp.GetRequiredService<ILocalStateProtector>());
+});
 builder.Services.AddHttpClient<AgentApiClient>((sp, client) =>
 {
     var options = sp.GetRequiredService<IOptions<WorkerAgentOptions>>().Value;

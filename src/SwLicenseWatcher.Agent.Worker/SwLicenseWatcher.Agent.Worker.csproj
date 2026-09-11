@@ -19,5 +19,6 @@
 
   <ItemGroup>
     <ProjectReference Include="..\SwLicenseWatcher.Core\SwLicenseWatcher.Core.csproj" GlobalPropertiesToRemove="PublishAot;PublishTrimmed;RuntimeIdentifier;SelfContained" />
+    <ProjectReference Include="..\SwLicenseWatcher.Crypto\SwLicenseWatcher.Crypto.csproj" GlobalPropertiesToRemove="PublishAot;PublishTrimmed;RuntimeIdentifier;SelfContained" />
   </ItemGroup>
 </Project>

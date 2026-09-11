@@ -42,13 +42,22 @@ public interface IDeviceQuery
         string? classification,
         CancellationToken cancellationToken);
 
-    Task<string?> GetAssignedHostNameAsync(
+    Task<DeviceAgentAssignment?> GetDeviceAssignmentAsync(
         string deviceCode,
+        string? deviceId,
         CancellationToken cancellationToken);
 
-    Task<bool> UpdateDeviceProfileAsync(
+    Task<DeviceProfileUpdateResult> UpdateDeviceProfileAsync(
         string deviceCode,
         DeviceProfileWriteRequest request,
+        CancellationToken cancellationToken);
+
+    Task BindDeviceEnrollmentAsync(
+        string deviceCode,
+        string? deviceId,
+        string devicePublicKey,
+        string deviceCertificate,
+        string issuedDeviceId,
         CancellationToken cancellationToken);
 }
 

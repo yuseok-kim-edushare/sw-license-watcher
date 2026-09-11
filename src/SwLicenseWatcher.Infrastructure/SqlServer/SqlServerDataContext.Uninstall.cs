@@ -226,7 +226,7 @@ internal sealed partial class SqlServerDataContext
             INNER JOIN {Name(options.SchemaName, pc.TableName)} AS p
                 ON p.{Name(pc.PrimaryKeyColumn)} = r.{Name(table.PcForeignKeyColumn)}
             WHERE r.{Name(table.PrimaryKeyColumn)} = @id
-              AND p.{Name(pc.DeviceCodeColumn)} = @deviceCode;
+              AND ({PcLookupPredicate("p")});
             """;
     }
 

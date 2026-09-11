@@ -6,6 +6,9 @@
 # Generated Blazor WASM copied into the API host
 src/SwLicenseWatcher.Api/wwwroot/admin/
 
+# Server-issued ML-DSA-87 device CA private key
+**/device-ca.mldsa87.json
+
 # User-specific files
 *.rsuser
 *.suo

@@ -27,7 +27,8 @@ internal sealed partial class SqlServerDataContext
                 {Name(table.DeviceCodeColumn)}, {Name(table.HostNameColumn)}, {Name(table.DomainNameColumn)},
                 {Name(table.OperatingSystemColumn)}, {Name(table.AgentVersionColumn)},
                 {Name(table.LastHeartbeatUtcColumn)}, {Name(table.LastInventoryUtcColumn)},
-                {Name(table.AssignedHostNameColumn)}, {Name(table.AdminNotesColumn)}
+                {Name(table.AssignedHostNameColumn)}, {Name(table.AdminNotesColumn)},
+                {Name(table.AssignedDeviceCodeColumn)}, {Name(table.DeviceIdColumn)}
             FROM {Name(options.SchemaName, table.TableName)}
             WHERE (@search IS NULL OR {HostNameSearchSql()})
               AND (@staleCutoff IS NULL
@@ -51,8 +52,10 @@ internal sealed partial class SqlServerDataContext
                 totalCount = reader.GetInt32(reader.GetOrdinal("total_count"));
             }
 
+            var storedCode = reader.GetString(reader.GetOrdinal(table.DeviceCodeColumn));
+            var assignedCode = ReadNullableString(reader, table.AssignedDeviceCodeColumn);
             items.Add(new DeviceSummary(
-                reader.GetString(reader.GetOrdinal(table.DeviceCodeColumn)),
+                DeviceCodes.Official(storedCode, assignedCode),
                 reader.GetString(reader.GetOrdinal(table.HostNameColumn)),
                 reader.GetString(reader.GetOrdinal(table.DomainNameColumn)),
                 reader.GetString(reader.GetOrdinal(table.OperatingSystemColumn)),
@@ -60,7 +63,9 @@ internal sealed partial class SqlServerDataContext
                 ReadNullableDateTimeOffset(reader, table.LastHeartbeatUtcColumn),
                 ReadNullableDateTimeOffset(reader, table.LastInventoryUtcColumn),
                 ReadNullableString(reader, table.AssignedHostNameColumn),
-                ReadNullableString(reader, table.AdminNotesColumn)));
+                ReadNullableString(reader, table.AdminNotesColumn),
+                ReadNullableString(reader, table.DeviceIdColumn),
+                assignedCode));
         }
 
         return (totalCount, items);
@@ -78,9 +83,10 @@ internal sealed partial class SqlServerDataContext
             SELECT {Name(table.PrimaryKeyColumn)}, {Name(table.DeviceCodeColumn)}, {Name(table.HostNameColumn)},
                    {Name(table.DomainNameColumn)}, {Name(table.OperatingSystemColumn)}, {Name(table.AgentVersionColumn)},
                    {Name(table.LastHeartbeatUtcColumn)}, {Name(table.LastInventoryUtcColumn)},
-                   {Name(table.AssignedHostNameColumn)}, {Name(table.AdminNotesColumn)}
+                   {Name(table.AssignedHostNameColumn)}, {Name(table.AdminNotesColumn)},
+                   {Name(table.AssignedDeviceCodeColumn)}, {Name(table.DeviceIdColumn)}
             FROM {Name(options.SchemaName, table.TableName)}
-            WHERE {Name(table.DeviceCodeColumn)} = @deviceCode;
+            WHERE {PcLookupPredicate()};
             """;
         await using var command = new SqlCommand(sql, connection);
         command.Parameters.Add(new SqlParameter("@deviceCode", deviceCode));
@@ -91,8 +97,10 @@ internal sealed partial class SqlServerDataContext
         }
 
         var pcId = reader.GetInt64(reader.GetOrdinal(table.PrimaryKeyColumn));
+        var storedCode = reader.GetString(reader.GetOrdinal(table.DeviceCodeColumn));
+        var assignedCode = ReadNullableString(reader, table.AssignedDeviceCodeColumn);
         var detail = new DeviceDetail(
-            reader.GetString(reader.GetOrdinal(table.DeviceCodeColumn)),
+            DeviceCodes.Official(storedCode, assignedCode),
             reader.GetString(reader.GetOrdinal(table.HostNameColumn)),
             reader.GetString(reader.GetOrdinal(table.DomainNameColumn)),
             reader.GetString(reader.GetOrdinal(table.OperatingSystemColumn)),
@@ -101,7 +109,9 @@ internal sealed partial class SqlServerDataContext
             ReadNullableDateTimeOffset(reader, table.LastInventoryUtcColumn),
             [],
             ReadNullableString(reader, table.AssignedHostNameColumn),
-            ReadNullableString(reader, table.AdminNotesColumn));
+            ReadNullableString(reader, table.AdminNotesColumn),
+            ReadNullableString(reader, table.DeviceIdColumn),
+            assignedCode);
         await reader.CloseAsync();
 
         var installed = await ReadInstalledSoftwareAsync(connection, transaction: null, pcId, classification, cancellationToken);
@@ -110,25 +120,41 @@ internal sealed partial class SqlServerDataContext
         return detail with { InstalledSoftware = InventoryDecisions.ApplyLicenseSources(installed, assignments, policies) };
     }
 
-    public async Task<string?> GetAssignedHostNameAsync(
+    public async Task<DeviceAgentAssignment?> GetDeviceAssignmentAsync(
         string deviceCode,
+        string? deviceId,
         CancellationToken cancellationToken)
     {
         await using var connection = new SqlConnection(options.ConnectionString);
         await connection.OpenAsync(cancellationToken);
         var table = options.PcTable;
         var sql = $"""
-            SELECT {Name(table.AssignedHostNameColumn)}
+            SELECT {Name(table.DeviceCodeColumn)}, {Name(table.AssignedDeviceCodeColumn)},
+                   {Name(table.AssignedHostNameColumn)}, {Name(table.DeviceIdColumn)},
+                   {Name(table.DeviceCertificateColumn)}
             FROM {Name(options.SchemaName, table.TableName)}
-            WHERE {Name(table.DeviceCodeColumn)} = @deviceCode;
+            WHERE {PcLookupPredicate()}
+               OR (@deviceId IS NOT NULL AND {Name(table.DeviceIdColumn)} = @deviceId);
             """;
         await using var command = new SqlCommand(sql, connection);
         command.Parameters.Add(new SqlParameter("@deviceCode", deviceCode));
-        var value = await command.ExecuteScalarAsync(cancellationToken);
-        return value is null or DBNull ? null : NullIfWhiteSpace(Convert.ToString(value));
+        command.Parameters.Add(new SqlParameter("@deviceId", DbValue(NullIfWhiteSpace(deviceId))));
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        if (!await reader.ReadAsync(cancellationToken))
+        {
+            return null;
+        }
+
+        var storedCode = reader.GetString(reader.GetOrdinal(table.DeviceCodeColumn));
+        var assignedCode = ReadNullableString(reader, table.AssignedDeviceCodeColumn);
+        return new DeviceAgentAssignment(
+            DeviceCodes.Official(storedCode, assignedCode),
+            ReadNullableString(reader, table.AssignedHostNameColumn),
+            ReadNullableString(reader, table.DeviceIdColumn),
+            ReadNullableString(reader, table.DeviceCertificateColumn));
     }
 
-    public async Task<bool> UpdateDeviceProfileAsync(
+    public async Task<DeviceProfileUpdateResult> UpdateDeviceProfileAsync(
         string deviceCode,
         DeviceProfileWriteRequest request,
         CancellationToken cancellationToken)
@@ -136,17 +162,68 @@ internal sealed partial class SqlServerDataContext
         await using var connection = new SqlConnection(options.ConnectionString);
         await connection.OpenAsync(cancellationToken);
         var table = options.PcTable;
+        var assignedCode = NullIfWhiteSpace(request.AssignedDeviceCode);
+        if (assignedCode is not null)
+        {
+            var conflict = $"""
+                SELECT 1
+                FROM {Name(options.SchemaName, table.TableName)}
+                WHERE ({Name(table.DeviceCodeColumn)} = @assignedDeviceCode
+                    OR {Name(table.AssignedDeviceCodeColumn)} = @assignedDeviceCode)
+                  AND NOT ({PcLookupPredicate()});
+                """;
+            await using var conflictCommand = new SqlCommand(conflict, connection);
+            conflictCommand.Parameters.Add(new SqlParameter("@assignedDeviceCode", assignedCode));
+            conflictCommand.Parameters.Add(new SqlParameter("@deviceCode", deviceCode));
+            if (await conflictCommand.ExecuteScalarAsync(cancellationToken) is not null and not DBNull)
+            {
+                return DeviceProfileUpdateResult.Conflict;
+            }
+        }
+
         var sql = $"""
             UPDATE {Name(options.SchemaName, table.TableName)}
             SET {Name(table.AssignedHostNameColumn)} = @assignedHostName,
-                {Name(table.AdminNotesColumn)} = @adminNotes
-            WHERE {Name(table.DeviceCodeColumn)} = @deviceCode;
+                {Name(table.AdminNotesColumn)} = @adminNotes,
+                {Name(table.AssignedDeviceCodeColumn)} = @assignedDeviceCode
+            WHERE {PcLookupPredicate()};
             """;
         await using var command = new SqlCommand(sql, connection);
         command.Parameters.Add(new SqlParameter("@deviceCode", deviceCode));
         command.Parameters.Add(new SqlParameter("@assignedHostName", DbValue(NullIfWhiteSpace(request.AssignedHostName))));
         command.Parameters.Add(new SqlParameter("@adminNotes", DbValue(NullIfWhiteSpace(request.AdminNotes))));
-        return await command.ExecuteNonQueryAsync(cancellationToken) > 0;
+        command.Parameters.Add(new SqlParameter("@assignedDeviceCode", DbValue(assignedCode)));
+        return await command.ExecuteNonQueryAsync(cancellationToken) > 0
+            ? DeviceProfileUpdateResult.Updated
+            : DeviceProfileUpdateResult.NotFound;
+    }
+
+    public async Task BindDeviceEnrollmentAsync(
+        string deviceCode,
+        string? deviceId,
+        string devicePublicKey,
+        string deviceCertificate,
+        string issuedDeviceId,
+        CancellationToken cancellationToken)
+    {
+        await using var connection = new SqlConnection(options.ConnectionString);
+        await connection.OpenAsync(cancellationToken);
+        var table = options.PcTable;
+        var sql = $"""
+            UPDATE {Name(options.SchemaName, table.TableName)}
+            SET {Name(table.DeviceIdColumn)} = @issuedDeviceId,
+                {Name(table.DevicePublicKeyColumn)} = @devicePublicKey,
+                {Name(table.DeviceCertificateColumn)} = @deviceCertificate
+            WHERE ({PcLookupPredicate()} OR (@deviceId IS NOT NULL AND {Name(table.DeviceIdColumn)} = @deviceId))
+              AND {Name(table.DeviceIdColumn)} IS NULL;
+            """;
+        await using var command = new SqlCommand(sql, connection);
+        command.Parameters.Add(new SqlParameter("@deviceCode", deviceCode));
+        command.Parameters.Add(new SqlParameter("@deviceId", DbValue(NullIfWhiteSpace(deviceId))));
+        command.Parameters.Add(new SqlParameter("@issuedDeviceId", issuedDeviceId));
+        command.Parameters.Add(new SqlParameter("@devicePublicKey", devicePublicKey));
+        command.Parameters.Add(new SqlParameter("@deviceCertificate", deviceCertificate));
+        await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
 }

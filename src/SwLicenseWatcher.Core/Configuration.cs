@@ -184,6 +184,19 @@ public sealed class PcTableOptions
     public string AssignedHostNameColumn { get; set; } = "assigned_host_name";
 
     public string AdminNotesColumn { get; set; } = "admin_notes";
+
+    public string AssignedDeviceCodeColumn { get; set; } = "assigned_device_code";
+
+    public string DeviceIdColumn { get; set; } = "device_id";
+
+    public string DevicePublicKeyColumn { get; set; } = "device_public_key";
+
+    public string DeviceCertificateColumn { get; set; } = "device_certificate";
+}
+
+public sealed class DeviceEnrollmentOptions
+{
+    public string CaKeyPath { get; set; } = "device-ca.mldsa87.json";
 }
 
 public sealed class InstalledSoftwareTableOptions

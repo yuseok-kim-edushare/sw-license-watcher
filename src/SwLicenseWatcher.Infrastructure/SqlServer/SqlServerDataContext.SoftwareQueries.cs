@@ -83,7 +83,7 @@ internal sealed partial class SqlServerDataContext
                 s.{Name(software.DisplayVersionColumn)}, s.{Name(software.PublisherColumn)},
                 s.{Name(software.ClassificationColumn)},
                 l.{Name(license.LicenseSourceColumn)} AS license_source_override,
-                p.{Name(pc.AssignedHostNameColumn)}
+                p.{Name(pc.AssignedHostNameColumn)}, p.{Name(pc.AssignedDeviceCodeColumn)}
             FROM {Name(options.SchemaName, software.TableName)} AS s
             INNER JOIN {Name(options.SchemaName, pc.TableName)} AS p
                 ON p.{Name(pc.PrimaryKeyColumn)} = s.{Name(software.PcForeignKeyColumn)}
@@ -112,8 +112,10 @@ internal sealed partial class SqlServerDataContext
 
             var storedClassification = ReadClassification(reader, software.ClassificationColumn);
             var overrideSource = ReadNullableString(reader, "license_source_override");
+            var storedCode = reader.GetString(reader.GetOrdinal(pc.DeviceCodeColumn));
+            var assignedCode = ReadNullableString(reader, pc.AssignedDeviceCodeColumn);
             items.Add(new SoftwareDevice(
-                reader.GetString(reader.GetOrdinal(pc.DeviceCodeColumn)),
+                DeviceCodes.Official(storedCode, assignedCode),
                 reader.GetString(reader.GetOrdinal(pc.HostNameColumn)),
                 reader.GetString(reader.GetOrdinal(pc.DomainNameColumn)),
                 reader.GetString(reader.GetOrdinal(pc.OperatingSystemColumn)),

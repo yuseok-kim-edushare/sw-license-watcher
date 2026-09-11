@@ -46,8 +46,22 @@ public sealed class AgentApiClient
             if (response.IsSuccessStatusCode)
             {
                 var json = await response.Content.ReadAsStringAsync(cancellationToken);
-                AgentAssignmentStore.TryReadAssignedHostName(json, out var assignmentSpecified, out var assignedHostName);
-                return new AgentPublishOutcome(AgentPublishResult.Succeeded, assignmentSpecified, assignedHostName);
+                AgentAssignmentStore.TryReadAssignment(
+                    json,
+                    out var assignmentSpecified,
+                    out var assignedHostName,
+                    out var deviceCodeSpecified,
+                    out var assignedDeviceCode,
+                    out var deviceId,
+                    out var deviceCertificate);
+                return new AgentPublishOutcome(
+                    AgentPublishResult.Succeeded,
+                    assignmentSpecified,
+                    assignedHostName,
+                    deviceCodeSpecified,
+                    assignedDeviceCode,
+                    deviceId,
+                    deviceCertificate);
             }
 
             var statusCode = (int)response.StatusCode;
