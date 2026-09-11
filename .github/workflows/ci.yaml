@@ -53,6 +53,72 @@ jobs:
       - name: Build Api for IIS (non-AOT)
         run: dotnet build src/SwLicenseWatcher.Api/SwLicenseWatcher.Api.csproj -c Release -p:PublishAot=false --no-restore
 
+      - name: Start SQL Server LocalDB
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          function Get-SqlLocalDbExe {
+            $cmd = Get-Command sqllocaldb -ErrorAction SilentlyContinue
+            if ($cmd) {
+              return $cmd.Source
+            }
+            $roots = @(
+              "${env:ProgramFiles}\Microsoft SQL Server",
+              "${env:ProgramFiles(x86)}\Microsoft SQL Server"
+            )
+            foreach ($root in $roots) {
+              if (-not (Test-Path -LiteralPath $root)) {
+                continue
+              }
+              $candidates = @(
+                Get-ChildItem -LiteralPath $root -Directory -ErrorAction SilentlyContinue |
+                  ForEach-Object {
+                    Join-Path $_.FullName 'Tools\Binn\SqlLocalDB.exe'
+                    Join-Path $_.FullName 'LocalDB\Binn\SqlLocalDB.exe'
+                  }
+              )
+              $found = $candidates |
+                Where-Object { Test-Path -LiteralPath $_ } |
+                Sort-Object -Descending |
+                Select-Object -First 1
+              if ($found) {
+                return $found
+              }
+            }
+            return $null
+          }
+
+          $exe = Get-SqlLocalDbExe
+          if (-not $exe) {
+            throw 'SqlLocalDB.exe was not found. The hosted image is missing SQL Server LocalDB (VS SQL.LocalDB.Runtime).'
+          }
+
+          Write-Host "Using $exe"
+          & $exe info
+          & $exe start MSSQLLocalDB
+          if ($LASTEXITCODE -ne 0) {
+            Write-Host "start MSSQLLocalDB failed; creating the automatic instance."
+            & $exe create MSSQLLocalDB
+            & $exe start MSSQLLocalDB
+            if ($LASTEXITCODE -ne 0) {
+              throw "sqllocaldb start MSSQLLocalDB failed with exit code $LASTEXITCODE."
+            }
+          }
+
+          $connection = 'Server=(localdb)\MSSQLLocalDB;Integrated Security=True;TrustServerCertificate=True;Connect Timeout=15'
+          $sqlcmd = Get-Command sqlcmd -ErrorAction SilentlyContinue
+          if ($sqlcmd) {
+            & sqlcmd -S '(localdb)\MSSQLLocalDB' -E -Q 'SELECT @@VERSION' -b
+            if ($LASTEXITCODE -ne 0) {
+              throw "sqlcmd could not connect to (localdb)\MSSQLLocalDB (exit $LASTEXITCODE)."
+            }
+          } else {
+            Write-Host 'sqlcmd not on PATH; tests will probe the connection string.'
+          }
+
+          echo "SWLW_SQLSERVER_CONNECTION=$connection" >> $env:GITHUB_ENV
+          Write-Host 'LocalDB is ready for integration tests.'
+
       - name: Test
         run: dotnet test SwLicenseWatcher.slnx -c Release --no-restore
 

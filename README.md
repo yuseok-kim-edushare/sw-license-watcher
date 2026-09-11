@@ -76,7 +76,7 @@
 
 ## CI/CD
 
-- **CI (`ci.yaml`)**: `main` 대상 push/PR에서 `windows-latest`로 솔루션 Restore/Build/Test를 검증합니다. 이와 병행해 win-x64 Native AOT publish를 수행합니다. IL trim/AOT 경고는 자체 코드(SwLicenseWatcher.*)에서 발생하면 실패하고, `Microsoft.Data.SqlClient` 등 서드파티 어셈블리 경고는 요약만 보고합니다. 산출된 native 실행 파일을 smoke-run합니다. Dependabot PR이 두 job을 모두 통과하면 auto-merge 워크플로우를 트리거합니다.
+- **CI (`ci.yaml`)**: `main` 대상 push/PR에서 `windows-latest`로 솔루션 Restore/Build/Test를 검증합니다. `build-test`는 SQL Server LocalDB를 기동한 뒤 회사 스키마 매핑으로 스냅샷·정책·위반·heartbeat 통합 테스트를 돌립니다(로컬에 LocalDB가 없으면 해당 테스트는 skip, CI에서는 실패). 이와 병행해 win-x64 Native AOT publish를 수행합니다. AOT 스모크는 의도적으로 DB 없이 `/health` 503을 확인합니다. IL trim/AOT 경고는 자체 코드(SwLicenseWatcher.*)에서 발생하면 실패하고, `Microsoft.Data.SqlClient` 등 서드파티 어셈블리 경고는 요약만 보고합니다. 산출된 native 실행 파일을 smoke-run합니다. Dependabot PR이 두 job을 모두 통과하면 auto-merge 워크플로우를 트리거합니다.
 - **CD (`cd.yaml`)**: `main`에서 CI가 성공하면 다음 릴리스 버전을 먼저 계산합니다(최신 `x.y.z` 태그 patch+1). 커밋 메시지 `Update Version To x.y.z`(대소문자·공백 무시, 선택적 `v`)가 있으면 그 버전으로 재정의하고, Actions에서 CD를 `workflow_dispatch`로 돌릴 때 `version` 입력을 넣어도 됩니다. 그 버전으로 `Agent.Watchdog`/`Agent.Worker` Native AOT와 API Native AOT(Kestrel)·IIS in-process, Setup 런처 AOT, Setup/Packager WinForms self-contained를 publish하고, 에이전트 폴더에 `.version`을 씁니다. GitHub 시크릿 `SIGNING_CERTIFICATE_PFX_BASE64`·`SIGNING_CERTIFICATE_PASSWORD`(선택 `SIGNING_TIMESTAMP_URL`)가 있으면 EXE/DLL에 Authenticode 서명을 합니다. Release 자산은 전체 구성 `SwLicenseWatcher-{version}.zip`(API·에이전트·Packager·Setup), Worker 자체 패치용 `SwLicenseWatcher.Agent.Worker-{version}.zip`, API 없이 더 작은 IT용 `SwLicenseWatcher.Packager-{version}.zip`, `SHA256SUMS.txt`입니다.
 
 Release ZIP 구조:
