@@ -89,8 +89,10 @@ internal sealed class PackagerForm : Form
         using var dialog = new OpenFileDialog
         {
             Filter = "Release ZIP (*.zip)|*.zip|All files (*.*)|*.*",
-            Title = "SwLicenseWatcher 릴리스 ZIP"
+            Title = "SwLicenseWatcher 릴리스 ZIP",
+            RestoreDirectory = true
         };
+        ApplyExistingPath(dialog, _releaseZip.Text);
         if (dialog.ShowDialog(this) == DialogResult.OK)
         {
             _releaseZip.Text = dialog.FileName;
@@ -102,12 +104,48 @@ internal sealed class PackagerForm : Form
         using var dialog = new SaveFileDialog
         {
             Filter = "Setup (*.exe)|*.exe",
+            DefaultExt = "exe",
+            AddExtension = true,
+            OverwritePrompt = true,
+            RestoreDirectory = true,
             FileName = PayloadLayout.LauncherFileName,
             Title = "회사 Setup.exe"
         };
+        ApplyExistingPath(dialog, _output.Text);
         if (dialog.ShowDialog(this) == DialogResult.OK)
         {
             _output.Text = dialog.FileName;
+        }
+    }
+
+    private static void ApplyExistingPath(FileDialog dialog, string currentPath)
+    {
+        var trimmed = currentPath.Trim();
+        if (trimmed.Length == 0)
+        {
+            return;
+        }
+
+        try
+        {
+            var fileName = Path.GetFileName(trimmed);
+            if (fileName.Length > 0)
+            {
+                dialog.FileName = fileName;
+            }
+
+            var directory = Path.GetDirectoryName(trimmed);
+            if (string.IsNullOrWhiteSpace(directory)
+                || directory.StartsWith(@"\\", StringComparison.Ordinal)
+                || !Directory.Exists(directory))
+            {
+                return;
+            }
+
+            dialog.InitialDirectory = directory;
+        }
+        catch (ArgumentException)
+        {
         }
     }
 
