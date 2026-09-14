@@ -63,6 +63,7 @@ builder.Services.AddHttpClient<AgentApiClient>((sp, client) =>
 builder.Services.AddSingleton<IAgentWindowsServiceControl, ScAgentWindowsServiceControl>();
 builder.Services.AddSingleton<IRemoteUninstallProcessStarter, RemoteUninstallProcessStarter>();
 builder.Services.AddSingleton<RemoteAgentUninstaller>();
+builder.Services.AddSingleton<IUninstallRegistryVersionWriter, UninstallRegistryVersionWriter>();
 builder.Services.AddHostedService<Worker>();
 
 await builder.Build().RunAsync();

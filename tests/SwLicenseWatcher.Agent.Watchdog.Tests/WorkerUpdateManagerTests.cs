@@ -272,11 +272,13 @@ public class WorkerUpdateManagerTests : IDisposable
         var verifier = new RecordingVerifier();
         var extractor = new RecordingExtractor();
         var deployment = new RecordingDeploymentManager();
+        var uninstallRegistry = new RecordingUninstallRegistryVersionWriter();
         var manager = CreateManager(
             downloader: downloader,
             verifier: verifier,
             extractor: extractor,
-            deploymentManager: deployment);
+            deploymentManager: deployment,
+            uninstallRegistry: uninstallRegistry);
         var manifest = Manifest() with { RequireAuthenticode = true };
 
         await manager.ApplyAsync(manifest, CancellationToken.None);
@@ -287,7 +289,42 @@ public class WorkerUpdateManagerTests : IDisposable
         Assert.Equal(extractor.PayloadDirectory, deployment.Source);
         Assert.Equal(manifest.Version, deployment.Version);
         Assert.Equal(TimeSpan.FromMinutes(manifest.RollbackAfterMinutes), deployment.HealthTimeout);
+        Assert.Equal(manifest.Version, uninstallRegistry.Version);
+        Assert.Equal(1, uninstallRegistry.CallCount);
         Assert.False(Directory.Exists(downloader.OperationDirectory));
+    }
+
+    [Fact]
+    public async Task ApplyAsync_does_not_update_uninstall_registry_when_deployment_fails()
+    {
+        var uninstallRegistry = new RecordingUninstallRegistryVersionWriter();
+        var manager = CreateManager(
+            downloader: new RecordingDownloader(),
+            verifier: new RecordingVerifier(),
+            extractor: new RecordingExtractor(),
+            uninstallRegistry: uninstallRegistry);
+
+        await Assert.ThrowsAsync<InvalidOperationException>(
+            () => manager.ApplyAsync(Manifest(), CancellationToken.None));
+
+        Assert.Equal(0, uninstallRegistry.CallCount);
+    }
+
+    [Fact]
+    public async Task ApplyAsync_refreshes_uninstall_registry_when_the_installed_version_already_matches()
+    {
+        var watchdogOptions = CreateWatchdogOptions();
+        Directory.CreateDirectory(watchdogOptions.WorkerInstallDirectory);
+        await File.WriteAllTextAsync(Path.Combine(watchdogOptions.WorkerInstallDirectory, ".version"), "1.2.3");
+        var uninstallRegistry = new RecordingUninstallRegistryVersionWriter();
+        var handler = new StaticHandler("unused"u8.ToArray());
+        var manager = CreateManager(handler, uninstallRegistry: uninstallRegistry);
+
+        await manager.ApplyAsync(Manifest(version: "1.2.3"), CancellationToken.None);
+
+        Assert.Equal(0, handler.RequestCount);
+        Assert.Equal("1.2.3", uninstallRegistry.Version);
+        Assert.Equal(1, uninstallRegistry.CallCount);
     }
 
     [Fact]
@@ -452,7 +489,8 @@ public class WorkerUpdateManagerTests : IDisposable
         IPackageDownloader? downloader = null,
         IUpdatePackageVerifier? verifier = null,
         ISafeZipExtractor? extractor = null,
-        IWorkerDeploymentManager? deploymentManager = null)
+        IWorkerDeploymentManager? deploymentManager = null,
+        IUninstallRegistryVersionWriter? uninstallRegistry = null)
     {
         var options = CreateWatchdogOptions();
         configure?.Invoke(options);
@@ -462,6 +500,7 @@ public class WorkerUpdateManagerTests : IDisposable
             verifier ?? new UpdatePackageVerifier(),
             extractor ?? new SafeZipExtractor(wrappedOptions),
             deploymentManager ?? new ThrowingDeploymentManager(),
+            uninstallRegistry ?? new RecordingUninstallRegistryVersionWriter(),
             new WorkerUpdateFileSystem(),
             wrappedOptions,
             NullLogger<WorkerUpdateManager>.Instance);
@@ -542,6 +581,18 @@ public class WorkerUpdateManagerTests : IDisposable
             {
                 Content = new ByteArrayContent(body)
             });
+        }
+    }
+
+    private sealed class RecordingUninstallRegistryVersionWriter : IUninstallRegistryVersionWriter
+    {
+        public string? Version { get; private set; }
+        public int CallCount { get; private set; }
+
+        public void TryUpdateDisplayVersion(string version)
+        {
+            CallCount++;
+            Version = version;
         }
     }
 

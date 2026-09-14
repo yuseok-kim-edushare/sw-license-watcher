@@ -38,6 +38,7 @@ builder.Services.AddSingleton<WorkerUpdateFileSystem>();
 builder.Services.AddSingleton<IWorkerServiceControl, WorkerServiceControl>();
 builder.Services.AddSingleton<WorkerHealthMonitor>();
 builder.Services.AddSingleton<IWorkerDeploymentManager, WorkerDeploymentManager>();
+builder.Services.AddSingleton<IUninstallRegistryVersionWriter, UninstallRegistryVersionWriter>();
 builder.Services.AddSingleton<WorkerUpdateManager>();
 builder.Services.AddHostedService<Worker>();
 

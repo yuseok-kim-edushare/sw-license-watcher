@@ -8,6 +8,7 @@ public sealed class WorkerUpdateManager(
     IUpdatePackageVerifier packageVerifier,
     ISafeZipExtractor zipExtractor,
     IWorkerDeploymentManager deploymentManager,
+    IUninstallRegistryVersionWriter uninstallRegistryVersionWriter,
     WorkerUpdateFileSystem fileSystem,
     IOptions<WatchdogOptions> options,
     ILogger<WorkerUpdateManager> logger)
@@ -32,6 +33,11 @@ public sealed class WorkerUpdateManager(
         if (File.Exists(currentVersionFile) &&
             string.Equals((await File.ReadAllTextAsync(currentVersionFile, cancellationToken)).Trim(), manifest.Version, StringComparison.Ordinal))
         {
+            if (!IsPlaceholderManifest(manifest))
+            {
+                uninstallRegistryVersionWriter.TryUpdateDisplayVersion(manifest.Version);
+            }
+
             return;
         }
 
@@ -71,6 +77,7 @@ public sealed class WorkerUpdateManager(
                 manifest.Version,
                 TimeSpan.FromMinutes(manifest.RollbackAfterMinutes),
                 cancellationToken);
+            uninstallRegistryVersionWriter.TryUpdateDisplayVersion(manifest.Version);
         }
         finally
         {

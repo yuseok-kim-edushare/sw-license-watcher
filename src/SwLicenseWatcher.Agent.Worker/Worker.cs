@@ -16,6 +16,7 @@ public sealed class Worker(
     AgentAssignmentStore assignmentStore,
     AgentDeviceIdentityStore identityStore,
     RemoteAgentUninstaller remoteUninstaller,
+    IUninstallRegistryVersionWriter uninstallRegistryVersionWriter,
     IHostApplicationLifetime applicationLifetime) : BackgroundService
 {
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -28,6 +29,7 @@ public sealed class Worker(
             try
             {
                 var queueDrained = await snapshotQueue.FlushAsync(apiClient, stoppingToken);
+                uninstallRegistryVersionWriter.TryUpdateDisplayVersion(ResolveInstalledVersion());
                 var snapshot = await CollectSnapshotAsync(agentOptions, stoppingToken);
                 await WriteHealthReportAsync(agentOptions, stoppingToken);
                 logger.LogInformation(
