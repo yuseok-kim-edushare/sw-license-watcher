@@ -71,6 +71,13 @@ public class SqlServerSchemaScriptBuilderTests
         Assert.Contains("IF OBJECT_ID(N'[inventory].[pc_uninstall_request]', N'U') IS NULL", sql);
         Assert.Contains("IF OBJECT_ID(N'[inventory].[pc_sw_license]', N'U') IS NULL", sql);
         Assert.Contains("IF OBJECT_ID(N'[inventory].[worker_update_pin]', N'U') IS NULL", sql);
+        Assert.Contains("CREATE TABLE [inventory].[pc_user_message]", sql);
+        Assert.Contains("[title] NVARCHAR(128) NOT NULL", sql);
+        Assert.Contains("[body] NVARCHAR(1024) NOT NULL", sql);
+        Assert.Contains("CONSTRAINT [FK_pc_user_message_pc_entity] FOREIGN KEY ([pc_id]) REFERENCES [inventory].[pc_entity]([pc_id]) ON DELETE CASCADE", sql);
+        Assert.Contains("CREATE INDEX [IX_pc_user_message_pc_id] ON [inventory].[pc_user_message]([pc_id]);", sql);
+        Assert.Contains("CREATE INDEX [IX_pc_user_message_status] ON [inventory].[pc_user_message]([status]);", sql);
+        Assert.Contains("IF OBJECT_ID(N'[inventory].[pc_user_message]', N'U') IS NULL", sql);
         Assert.Contains("IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_pc_installed_sw_pc_id' AND object_id = OBJECT_ID(N'[inventory].[pc_installed_sw]'))", sql);
         Assert.Contains("IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_pc_installed_sw_classification' AND object_id = OBJECT_ID(N'[inventory].[pc_installed_sw]'))", sql);
         Assert.Contains("IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_software_policy_list_classification' AND object_id = OBJECT_ID(N'[inventory].[software_policy_list]'))", sql);
@@ -98,6 +105,8 @@ public class SqlServerSchemaScriptBuilderTests
         Assert.Contains("CREATE TABLE [ops_inventory].[pc_sw_license]", sql);
         Assert.Contains("CONSTRAINT [FK_pc_sw_license_machines] FOREIGN KEY ([pc_id]) REFERENCES [ops_inventory].[machines]([id]) ON DELETE CASCADE", sql);
         Assert.Contains("CREATE TABLE [ops_inventory].[worker_update_pin]", sql);
+        Assert.Contains("CREATE TABLE [ops_inventory].[pc_user_message]", sql);
+        Assert.Contains("CONSTRAINT [FK_pc_user_message_machines] FOREIGN KEY ([pc_id]) REFERENCES [ops_inventory].[machines]([id]) ON DELETE CASCADE", sql);
     }
 
     [Fact]
@@ -267,6 +276,18 @@ public class SqlIdentifierValidatorTests
         var options = new SqlServerStorageOptions
         {
             SoftwarePolicyTable = new SoftwarePolicyTableOptions { DefaultLicenseSourceColumn = "default-source" }
+        };
+
+        var ex = Assert.Throws<ArgumentException>(() => SqlIdentifierValidator.Validate(options));
+        Assert.Contains("SQL identifiers must start with a letter or underscore", ex.Message);
+    }
+
+    [Fact]
+    public void Validate_rejects_invalid_user_message_table()
+    {
+        var options = new SqlServerStorageOptions
+        {
+            UserMessageTable = new UserMessageTableOptions { TableName = "pc-user-message" }
         };
 
         var ex = Assert.Throws<ArgumentException>(() => SqlIdentifierValidator.Validate(options));

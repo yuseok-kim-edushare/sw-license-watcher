@@ -169,6 +169,38 @@ public interface IUninstallRequestStore
     Task<bool> CancelDirectedUninstallRequestAsync(long id, CancellationToken cancellationToken);
 }
 
+public sealed record EnqueuedUserMessage(
+    AgentUserMessageCommand Command,
+    IReadOnlyList<string> DeviceAliases);
+
+public interface IUserMessageStore
+{
+    Task<EnqueuedUserMessage?> EnqueueAsync(
+        string deviceCode,
+        string title,
+        string body,
+        CancellationToken cancellationToken);
+
+    Task<IReadOnlyList<EnqueuedUserMessage>> BroadcastAsync(
+        string title,
+        string body,
+        CancellationToken cancellationToken);
+
+    Task<IReadOnlyList<AgentUserMessageCommand>> ListPendingAsync(
+        string deviceCode,
+        int take,
+        CancellationToken cancellationToken);
+
+    Task<AgentUserMessageCommand?> GetOldestPendingAsync(
+        string deviceCode,
+        CancellationToken cancellationToken);
+
+    Task<bool> ConsumeAsync(
+        long id,
+        string deviceCode,
+        CancellationToken cancellationToken);
+}
+
 public interface IWorkerUpdatePinStore
 {
     Task<UpdateManifest?> GetWorkerUpdatePinAsync(

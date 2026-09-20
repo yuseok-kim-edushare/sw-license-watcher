@@ -133,3 +133,18 @@ public sealed record DeviceProfileWriteRequest(
     string? AssignedHostName,
     string? AdminNotes,
     string? AssignedDeviceCode = null);
+
+public sealed record AgentUserMessageCommand(long Id, string Title, string Body);
+
+public sealed record UserMessageWriteRequest(string Title, string Body);
+
+public sealed record UserMessageCreatedResponse(
+    long Id,
+    string DeviceCode,
+    string Title,
+    string Body,
+    DateTimeOffset CreatedAtUtc);
+
+public sealed record UserMessageBroadcastResponse(int Count);
+
+public sealed record UserMessageConsumeRequest(string DeviceCode);

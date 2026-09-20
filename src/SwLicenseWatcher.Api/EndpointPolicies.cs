@@ -6,6 +6,8 @@ internal static class AgentPaths
     internal const string Heartbeats = "/api/agents/heartbeats";
     internal const string WorkerManifest = "/api/updates/worker/manifest";
     internal const string UninstallRequests = "/api/agents/uninstall-requests";
+    internal const string UserMessages = "/api/agents/user-messages";
+    internal const string Events = "/api/agents/events";
     internal const string UpgradeAuthorizations = "/api/agents/upgrade-authorizations";
 }
 
@@ -23,7 +25,9 @@ internal static class EndpointPolicies
 
         return path.Equals(AgentPaths.InventorySnapshots, StringComparison.OrdinalIgnoreCase) |
             path.Equals(AgentPaths.Heartbeats, StringComparison.OrdinalIgnoreCase) |
+            path.Equals(AgentPaths.Events, StringComparison.OrdinalIgnoreCase) |
             path.StartsWithSegments(AgentPaths.UninstallRequests, StringComparison.OrdinalIgnoreCase) |
+            path.StartsWithSegments(AgentPaths.UserMessages, StringComparison.OrdinalIgnoreCase) |
             path.StartsWithSegments(AgentPaths.UpgradeAuthorizations, StringComparison.OrdinalIgnoreCase);
     }
 

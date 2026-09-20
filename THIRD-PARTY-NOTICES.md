@@ -11,7 +11,7 @@ sw-license-watcher는 아래의 서드파티 소프트웨어를 사용합니다.
 | Microsoft.Extensions.Hosting | MIT | © .NET Foundation and Contributors | https://github.com/dotnet/runtime |
 | Microsoft.Extensions.Hosting.WindowsServices | MIT | © .NET Foundation and Contributors | https://github.com/dotnet/runtime |
 | Microsoft.Extensions.Http | MIT | © .NET Foundation and Contributors | https://github.com/dotnet/runtime |
-| System.Security.Cryptography.ProtectedData | MIT | © .NET Foundation and Contributors | https://github.com/dotnet/runtime |
+| Microsoft.Toolkit.Uwp.Notifications | MIT | © .NET Foundation and Contributors | https://github.com/CommunityToolkit/WindowsCommunityToolkit |
 
 ## 런타임 / 프레임워크
 

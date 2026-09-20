@@ -159,7 +159,9 @@ Invoke-RestMethod -Headers @{ Authorization = "Bearer $adminToken" } `
 
 대시보드 `/admin`에서 자기 PC와 설치 SW가 보이면 수집 경로가 된 것입니다.
 
-기본 수집 주기는 **30분 ± 15분**입니다. 바로 보려면 설치 후 Worker `appsettings.json`에서:
+PC 상세에서 알림 제목·본문을 넣고 **이 PC에 알림 보내기**를 누르면, Worker SSE가 붙어 있으면 바로 OS Toast가 뜹니다. 서비스로 설치되어 있어야 사용자 세션에 Toast 헬퍼가 기동됩니다.
+
+기본 수집 주기는 **15분 ± 5분**입니다. 바로 보려면 설치 후 Worker `appsettings.json`에서:
 
 ```json
 "PollInterval": "00:01:00",

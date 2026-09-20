@@ -17,6 +17,7 @@ public sealed class Worker(
     AgentDeviceIdentityStore identityStore,
     RemoteAgentUninstaller remoteUninstaller,
     IUninstallRegistryVersionWriter uninstallRegistryVersionWriter,
+    UserMessageDelivery userMessages,
     IHostApplicationLifetime applicationLifetime) : BackgroundService
 {
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -50,6 +51,7 @@ public sealed class Worker(
                     var snapshotOutcome = await apiClient.PublishSnapshotAsync(snapshot, stoppingToken);
                     publishResult = snapshotOutcome.Result;
                     await ApplyAssignmentAsync(snapshotOutcome, stoppingToken);
+                    await userMessages.DeliverAsync(snapshotOutcome, stoppingToken);
                     if (await TryRemoteUninstallAsync(snapshotOutcome, stoppingToken))
                     {
                         return;
@@ -78,6 +80,7 @@ public sealed class Worker(
                         snapshot.Pc.DeviceProof),
                     stoppingToken);
                 await ApplyAssignmentAsync(heartbeatOutcome, stoppingToken);
+                await userMessages.DeliverAsync(heartbeatOutcome, stoppingToken);
                 if (await TryRemoteUninstallAsync(heartbeatOutcome, stoppingToken))
                 {
                     return;

@@ -27,9 +27,10 @@ public sealed class AgentConfigurationWriter
                 "ServerBaseUrl": {{Json(settings.ServerBaseUrl)}},
                 "SnapshotPath": "/api/inventory/snapshots",
                 "HeartbeatPath": "/api/agents/heartbeats",
+                "EventsPath": "/api/agents/events",
                 "ApiToken": {{Json(settings.AgentToken)}},
-                "PollInterval": "00:30:00",
-                "MaxJitter": "00:15:00",
+                "PollInterval": "00:15:00",
+                "MaxJitter": "00:05:00",
                 "RunOnceForDiagnostics": false,
                 "HealthFilePath": {{Json(healthPath)}}
               },

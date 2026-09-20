@@ -316,6 +316,7 @@ jobs:
           $ErrorActionPreference = 'Stop'
           $required = @(
             'publish/agent-worker/win-x64/SwLicenseWatcher.Agent.Worker.exe',
+            'publish/agent-worker/win-x64/toast/SwLicenseWatcher.Agent.Toast.exe',
             'publish/agent-watchdog/win-x64/SwLicenseWatcher.Agent.Watchdog.exe',
             'publish/api/win-x64/SwLicenseWatcher.Api.exe',
             'publish/api/iis/win-x64/SwLicenseWatcher.Api.dll',

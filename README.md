@@ -14,6 +14,7 @@
   - `LocalState:MaxQueuedSnapshots`, `LocalState:MaxQueueBytes` 할당량 초과 시 가장 오래된 스냅샷부터 제거
 - **서버 측 API**
   - 수집 API: `/api/inventory/snapshots`, `/api/agents/heartbeats`
+  - 사용자 알림: 관리자가 `/admin`에서 명시적으로 보낸 제목·본문만. Worker는 `GET /api/agents/events` SSE로 받고, 끊기면 heartbeat/snapshot 응답의 `UserMessageCommand`로 보조 전달. Session 0 서비스가 `toast/SwLicenseWatcher.Agent.Toast.exe`를 사용자 세션에서 띄워 OS 표준 Toast를 표시
   - 조회 API: `/api/inventory/devices`, `/api/inventory/software` (JSON 및 `?format=csv`, `?classification=` 필터)
   - SQL Server 트랜잭션 기반 PC UPSERT 및 설치 소프트웨어 교체 저장(정책 매칭 분류 포함)
   - 현장 설치 시 자산코드는 임시값(기본 컴퓨터 이름)이고, 관리자가 서버에서 바꿀 수 있다. 기기의 고윳값은 서버 CA가 발급하는 **ML-DSA-87**(FIPS 204 최상위, NIST Level 5) 사설 인증서다. 서명·검증은 44/65보다 느리다.
@@ -57,7 +58,8 @@
 - `/src/SwLicenseWatcher.Infrastructure`: Application port의 SQL Server 구현, 데이터 컨텍스트, 스키마 적용 및 DI 등록
 - `/src/SwLicenseWatcher.Api`: 인증·HTTP endpoint·호스팅을 구성하고 Application/Infrastructure를 조립하는 ASP.NET Core API
 - `/src/SwLicenseWatcher.Admin`: 기능별 Devices/Software/Policies/Violations/Uninstall/Updates 컴포넌트와 공통 drawer·pagination으로 구성된 `/admin` Blazor WebAssembly (API `wwwroot/admin`으로 publish)
-- `/src/SwLicenseWatcher.Agent.Worker`: inventory 수집 Windows Service
+- `/src/SwLicenseWatcher.Agent.Worker`: inventory 수집 Windows Service. 사용자 Toast 헬퍼를 `toast/`에 같이 publish
+- `/src/SwLicenseWatcher.Agent.Toast`: OS 표준 Toast만 띄우고 종료하는 사용자 세션 헬퍼
 - `/src/SwLicenseWatcher.Agent.Watchdog`: manifest 조회·다운로드·검증·안전한 압축 해제·서비스 제어·배포·health 확인/롤백 collaborator로 구성된 self-update Windows Service
 - `/src/SwLicenseWatcher.Setup.Core`: 페이로드 생성/검증과 회사 설정, 에이전트 설치·서비스 등록, 관리자 승인 기반 제거를 조율하는 공통 orchestration
 - `/src/SwLicenseWatcher.Setup.Launcher`: Native AOT 런처. 뒤에 붙은 zip을 풀어 설치 GUI를 실행
@@ -93,7 +95,7 @@ SwLicenseWatcher-{version}.zip
     SwLicenseWatcher-Setup.exe   런처 스텁 (페이로드 없음)
     setup-ui/SwLicenseWatcher.Setup.exe
 
-SwLicenseWatcher.Agent.Worker-{version}.zip   Worker 자체 패치 (ZIP 루트에 exe·.version)
+SwLicenseWatcher.Agent.Worker-{version}.zip   Worker 자체 패치 (ZIP 루트에 exe·.version, toast/ 헬퍼)
 SwLicenseWatcher.Packager-{version}.zip       위와 같되 API 없음 (IT만 받을 때)
 SHA256SUMS.txt                                위 ZIP의 SHA-256
 ```
@@ -116,6 +118,7 @@ SHA256SUMS.txt                                위 ZIP의 SHA-256
 - `UninstallRequestTable.TableName`
 - `SoftwareLicenseTable.TableName`
 - `WorkerUpdatePinTable.TableName`
+- `UserMessageTable.TableName`
 - `SoftwarePolicyTable.DefaultLicenseSourceColumn`
 
 현재 기본 예시는 다음처럼 커스텀되어 있습니다.
@@ -173,7 +176,7 @@ Worker/Watchdog 클라이언트가 접속할 서버 주소는 설정 파일로 �
 
 토큰과 SQL Server 연결 문자열은 소스에 저장하지 말고 환경 변수 또는 비밀 저장소로 주입합니다. 설정한 토큰은 각각 32자 이상이어야 합니다. `New-ApiToken.ps1`을 두 번 실행해 에이전트용과 관리자용을 따로 만드세요.
 
-토큰은 역할을 분리합니다. `AgentToken`은 에이전트 수집·하트비트·제거 요청·업데이트 manifest 조회만, `AdminToken`은 조회·정책 CRUD·위반·CSV·제거 지시/승인·`/api/design`·`/api/schema/sql`과 업데이트 핀 저장을 허용합니다. 두 토큰은 모두 필수이며 서로 달라야 합니다. 예전 공용 `Security:Token`은 더 이상 받지 않습니다.
+토큰은 역할을 분리합니다. `AgentToken`은 에이전트 수집·하트비트·SSE 이벤트·제거 요청·업데이트 manifest 조회만, `AdminToken`은 조회·정책 CRUD·위반·CSV·제거 지시/승인·사용자 알림 발송·`/api/design`·`/api/schema/sql`과 업데이트 핀 저장을 허용합니다. 두 토큰은 모두 필수이며 서로 달라야 합니다. 예전 공용 `Security:Token`은 더 이상 받지 않습니다.
 
 ```text
 Security__AgentToken=<agent-token>
@@ -338,6 +341,10 @@ API 실행 후:
 | PUT | `/api/inventory/software/{name}/classification` | 정확 일치 활성 정책을 만들거나 갱신한 뒤, 이미 모인 설치 행의 분류를 즉시 다시 칠함 | 본문 `classification`, `publisher?`, `defaultLicenseSource?`, `notes?` |
 | PUT | `/api/inventory/software/classifications` | 소프트웨어 분류를 한 번에 여러 개 지정(최대 100). 한 트랜잭션 | 본문 `items: [{ name, classification, publisher?, defaultLicenseSource? }]` |
 | PUT | `/api/inventory/devices/{deviceCode}/software/{name}/license-source` | PC별 회사/BYO 할당. `null`이면 할당을 지워 정책 기본값으로 복귀 | 본문 `licenseSource`: `company` \| `byo` \| `null` |
+| POST | `/api/inventory/devices/{deviceCode}/user-messages` | 해당 PC에 사용자 OS Toast 대기열 추가. SSE가 붙어 있으면 즉시 전달 | 본문 `title`, `body` |
+| POST | `/api/inventory/user-messages/broadcast` | 등록된 모든 PC에 같은 알림을 복제 | 본문 `title`, `body` |
+| GET | `/api/agents/events` | 에이전트 SSE (`text/event-stream`). `user-message` 이벤트 | `deviceCode` |
+| POST | `/api/agents/user-messages/{id}/consume` | Toast 표시 성공 후 대기열 소비(멱등) | 본문 `deviceCode` |
 
 페이징 기본값은 JSON `take=100`, CSV `take=10000`이며 최대 10000입니다. `staleAfterHours`는 마지막 heartbeat가 없거나 지정 시간보다 오래된 PC만 남깁니다. `search`는 SQL `LIKE` 와일드카드가 이스케이프된 부분 일치입니다. `classification`은 `white` | `managed` | `black` | `unclassified`이며, 설치 SW 행에 저장된 분류로 필터링합니다(예: `?classification=unclassified`).
 
@@ -345,7 +352,7 @@ API 실행 후:
 
 ## 관리자 대시보드
 
-브라우저에서 `https://<server>/admin` 으로 관리자 화면을 엽니다. UI는 Blazor WebAssembly이며, Interactive Server/Auto 회로는 쓰지 않습니다. API가 같은 출처의 `/admin/_framework`를 제공하므로 외부 CDN이 없습니다. curl이나 CSV 없이 PC 목록, 소프트웨어 집계, 위반, 정책, 제거 요청을 조회하고 정책을 만들고 고칠 수 있습니다. 자산코드·PC 명·소프트웨어 이름을 누르면 서랍에서 관련 목록을 보고, 자산코드·PC 명·메모를 남기거나 소프트웨어 분류·메모를 저장할 수 있습니다. PC 상세의 **원격 제거 지시**는 승인된 제거 그랜트를 만들고, 해당 PC Worker가 다음 heartbeat에서 서비스를 지웁니다. 관리자가 지정한 자산코드와 PC 명은 다음 에이전트 heartbeat/스냅샷 응답으로 클라이언트에 부여됩니다. 기기 고유값은 서버가 서명하는 ML-DSA-87 사설 인증서이며, 44/65보다 느린 대신 최상위 등급을 씁니다. 소프트웨어 목록에서 행을 체크한 뒤 `white` / `managed` / `black`을 현재 페이지 선택 항목에 일괄 지정할 수 있고, 서랍에서는 개별 분류와 `managed`의 정책 기본 라이선스(회사/BYO)·PC별 덮어쓰기를 편집합니다.
+브라우저에서 `https://<server>/admin` 으로 관리자 화면을 엽니다. UI는 Blazor WebAssembly이며, Interactive Server/Auto 회로는 쓰지 않습니다. API가 같은 출처의 `/admin/_framework`를 제공하므로 외부 CDN이 없습니다. curl이나 CSV 없이 PC 목록, 소프트웨어 집계, 위반, 정책, 제거 요청을 조회하고 정책을 만들고 고칠 수 있습니다. 자산코드·PC 명·소프트웨어 이름을 누르면 서랍에서 관련 목록을 보고, 자산코드·PC 명·메모를 남기거나 소프트웨어 분류·메모를 저장할 수 있습니다. PC 상세에서 **이 PC에 알림 보내기**, 장치 탭에서 **전체 PC에 알림 보내기**로 OS Toast를 명시 발송합니다. SSE가 붙은 에이전트는 바로 받고, 아니면 다음 수집(기본 15분 ± 5분, 최대 약 20분)에 실립니다. PC 상세의 **원격 제거 지시**는 승인된 제거 그랜트를 만들고, 해당 PC Worker가 다음 heartbeat에서 서비스를 지웁니다. 관리자가 지정한 자산코드와 PC 명은 다음 에이전트 heartbeat/스냅샷 응답으로 클라이언트에 부여됩니다. 기기 고유값은 서버가 서명하는 ML-DSA-87 사설 인증서이며, 44/65보다 느린 대신 최상위 등급을 씁니다. 소프트웨어 목록에서 행을 체크한 뒤 `white` / `managed` / `black`을 현재 페이지 선택 항목에 일괄 지정할 수 있고, 서랍에서는 개별 분류와 `managed`의 정책 기본 라이선스(회사/BYO)·PC별 덮어쓰기를 편집합니다.
 
 정적 파일(`/admin`, `/admin/`, CSS, `_framework`)은 인증 없이 내려갑니다. 비밀은 없고, 인벤토리·정책 데이터는 모두 `AdminToken`이 있어야 합니다. 토큰은 브라우저 `sessionStorage`에만 두고, 탭을 닫으면 사라집니다. 쿠키와 `localStorage`는 쓰지 않습니다.
 

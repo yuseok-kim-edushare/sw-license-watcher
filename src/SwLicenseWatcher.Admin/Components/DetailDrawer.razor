@@ -48,9 +48,16 @@
                     <label class="wide">메모
                         <textarea maxlength="1024" @bind="_deviceNotes"></textarea>
                     </label>
-                    <p class="hint">자산코드와 PC 명은 다음 heartbeat/스냅샷 응답으로 클라이언트에 부여됩니다. 자산코드를 비우면 현장에서 넣은 임시값을 씁니다. 기기 고유값은 서버가 발급한 ML-DSA-87 인증서입니다. 원격 제거는 다음 heartbeat에서 Worker가 수행합니다.</p>
+                    <p class="hint">자산코드와 PC 명은 다음 heartbeat/스냅샷 응답으로 클라이언트에 부여됩니다. 자산코드를 비우면 현장에서 넣은 임시값을 씁니다. 기기 고유값은 서버가 발급한 ML-DSA-87 인증서입니다. 원격 제거는 다음 heartbeat에서 Worker가 수행합니다. 사용자 알림은 SSE가 붙어 있으면 바로, 아니면 다음 수집(최대 약 20분)에 표시됩니다. 로그아웃 상태면 로그인 후에 뜹니다.</p>
+                    <label>알림 제목
+                        <input maxlength="128" @bind="_messageTitle" />
+                    </label>
+                    <label class="wide">알림 본문
+                        <textarea maxlength="1024" @bind="_messageBody"></textarea>
+                    </label>
                     <div class="row-actions">
                     <button type="button" class="primary" @onclick="SaveDeviceProfileAsync">자산코드·PC 명·메모 저장</button>
+                    <button type="button" @onclick="SendUserMessageAsync">이 PC에 알림 보내기</button>
                     <button type="button" class="danger" @onclick="DirectUninstallAsync">원격 제거 지시</button>
                     </div>
                 </div>
@@ -167,6 +174,8 @@
     private string _assignedHostName = "";
     private string _assignedDeviceCode = "";
     private string _deviceNotes = "";
+    private string _messageTitle = "";
+    private string _messageBody = "";
     private string _softwareNotes = "";
     private DeviceDetail? _device;
     private IReadOnlyList<SoftwareDevice> _softwareDevices = [];
@@ -327,6 +336,25 @@
             message => _error = message);
         if (succeeded)
         {
+            await Changed.InvokeAsync();
+        }
+    }
+
+    private async Task SendUserMessageAsync()
+    {
+        _error = "";
+        if (_device is not { } detail)
+        {
+            return;
+        }
+
+        var succeeded = await Requests.RunAsync(
+            () => Api.SendDeviceUserMessageAsync(detail.DeviceCode, new UserMessageWriteRequest(_messageTitle, _messageBody)),
+            message => _error = message);
+        if (succeeded)
+        {
+            _messageTitle = "";
+            _messageBody = "";
             await Changed.InvokeAsync();
         }
     }

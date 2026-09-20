@@ -239,6 +239,78 @@ public sealed class AgentAssignmentStore
         }
     }
 
+    public static bool TryReadUserMessageCommand(string? json, out AgentUserMessageCommand? command)
+    {
+        command = null;
+        if (string.IsNullOrWhiteSpace(json))
+        {
+            return false;
+        }
+
+        try
+        {
+            using var document = JsonDocument.Parse(json);
+            var root = document.RootElement;
+            if (!TryGetProperty(root, "UserMessageCommand", out var value) &&
+                !TryGetProperty(root, "userMessageCommand", out value))
+            {
+                return false;
+            }
+
+            if (value.ValueKind is JsonValueKind.Null or JsonValueKind.Undefined)
+            {
+                return false;
+            }
+
+            return TryReadUserMessageCommandObject(value, out command);
+        }
+        catch (JsonException)
+        {
+            return false;
+        }
+    }
+
+    public static bool TryReadUserMessageCommandObject(string? json, out AgentUserMessageCommand? command)
+    {
+        command = null;
+        if (string.IsNullOrWhiteSpace(json))
+        {
+            return false;
+        }
+
+        try
+        {
+            using var document = JsonDocument.Parse(json);
+            return TryReadUserMessageCommandObject(document.RootElement, out command);
+        }
+        catch (JsonException)
+        {
+            return false;
+        }
+    }
+
+    private static bool TryReadUserMessageCommandObject(JsonElement value, out AgentUserMessageCommand? command)
+    {
+        command = null;
+        if (!TryReadInt64(value, "Id", "id", out var id) || id <= 0)
+        {
+            return false;
+        }
+
+        if (!TryReadString(value, "Title", "title", out var title) || string.IsNullOrWhiteSpace(title))
+        {
+            return false;
+        }
+
+        if (!TryReadString(value, "Body", "body", out var body) || string.IsNullOrWhiteSpace(body))
+        {
+            return false;
+        }
+
+        command = new AgentUserMessageCommand(id, title, body);
+        return true;
+    }
+
     private static bool TryReadInt64(JsonElement parent, string pascal, string camel, out long value)
     {
         value = 0;
@@ -339,4 +411,5 @@ public readonly record struct AgentPublishOutcome(
     string? AssignedDeviceCode = null,
     string? DeviceId = null,
     string? DeviceCertificate = null,
-    AgentUninstallCommand? UninstallCommand = null);
+    AgentUninstallCommand? UninstallCommand = null,
+    AgentUserMessageCommand? UserMessageCommand = null);

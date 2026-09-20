@@ -16,9 +16,11 @@ public sealed class WorkerAgentOptions
 
     public string DomainName { get; set; } = "WORKGROUP";
 
-    public TimeSpan PollInterval { get; set; } = TimeSpan.FromMinutes(30);
+    public string EventsPath { get; set; } = "/api/agents/events";
 
-    public TimeSpan MaxJitter { get; set; } = TimeSpan.FromMinutes(15);
+    public TimeSpan PollInterval { get; set; } = TimeSpan.FromMinutes(15);
+
+    public TimeSpan MaxJitter { get; set; } = TimeSpan.FromMinutes(5);
 
     public bool RunOnceForDiagnostics { get; set; }
 
@@ -159,6 +161,8 @@ public sealed class SqlServerStorageOptions
     public SoftwareLicenseTableOptions SoftwareLicenseTable { get; set; } = new();
 
     public WorkerUpdatePinTableOptions WorkerUpdatePinTable { get; set; } = new();
+
+    public UserMessageTableOptions UserMessageTable { get; set; } = new();
 }
 
 public sealed class PcTableOptions
@@ -334,6 +338,38 @@ public sealed class WorkerUpdatePinTableOptions
     public string RollbackAfterMinutesColumn { get; set; } = "rollback_after_minutes";
 
     public string UpdatedAtUtcColumn { get; set; } = "updated_at_utc";
+}
+
+public sealed class UserMessageTableOptions
+{
+    public string TableName { get; set; } = "pc_user_message";
+
+    public string PrimaryKeyColumn { get; set; } = "user_message_id";
+
+    public string PcForeignKeyColumn { get; set; } = "pc_id";
+
+    public string TitleColumn { get; set; } = "title";
+
+    public string BodyColumn { get; set; } = "body";
+
+    public string StatusColumn { get; set; } = "status";
+
+    public string CreatedAtUtcColumn { get; set; } = "created_at_utc";
+
+    public string ConsumedAtUtcColumn { get; set; } = "consumed_at_utc";
+}
+
+public static class UserMessageGrant
+{
+    public const string Pending = "pending";
+
+    public const string Consumed = "consumed";
+
+    public const int MaxTitleLength = 128;
+
+    public const int MaxBodyLength = 1024;
+
+    public const int PendingFlushLimit = 5;
 }
 
 public sealed class NotificationOptions

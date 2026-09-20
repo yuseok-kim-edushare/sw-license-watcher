@@ -14,6 +14,7 @@ internal static class InventoryIngestionEndpoints
             NotificationPublisher notifications,
             DeviceEnrollmentService enrollment,
             IUninstallRequestStore uninstallRequests,
+            IUserMessageStore userMessages,
             CancellationToken cancellationToken) =>
         {
             if (!InventorySnapshotValidator.TryValidate(request, out var validationError))
@@ -41,6 +42,7 @@ internal static class InventoryIngestionEndpoints
             var deviceCode = assignment?.DeviceCode ?? request.Pc.DeviceCode;
             var uninstallCommand = await uninstallRequests.GetDirectedUninstallCommandAsync(
                 deviceCode, cancellationToken);
+            var userMessageCommand = await userMessages.GetOldestPendingAsync(deviceCode, cancellationToken);
             return Results.Accepted($"/api/inventory/devices/{deviceCode}", new SnapshotAcceptedResponse(
                 deviceCode,
                 request.InstalledSoftware.Count,
@@ -49,7 +51,8 @@ internal static class InventoryIngestionEndpoints
                 assignment?.DeviceCode,
                 assignment?.DeviceId,
                 assignment?.DeviceCertificate,
-                uninstallCommand));
+                uninstallCommand,
+                userMessageCommand));
         });
         endpoints.MapPost(AgentPaths.Heartbeats, async (
             AgentHeartbeat heartbeat,
@@ -57,6 +60,7 @@ internal static class InventoryIngestionEndpoints
             IHeartbeatRepository repository,
             DeviceEnrollmentService enrollment,
             IUninstallRequestStore uninstallRequests,
+            IUserMessageStore userMessages,
             CancellationToken cancellationToken) =>
         {
             if (!InventorySnapshotValidator.TryValidate(heartbeat, out var validationError))
@@ -82,6 +86,7 @@ internal static class InventoryIngestionEndpoints
             var deviceCode = assignment?.DeviceCode ?? heartbeat.DeviceCode;
             var uninstallCommand = await uninstallRequests.GetDirectedUninstallCommandAsync(
                 deviceCode, cancellationToken);
+            var userMessageCommand = await userMessages.GetOldestPendingAsync(deviceCode, cancellationToken);
             return Results.Accepted($"/api/agents/heartbeats/{deviceCode}", new AgentHeartbeatAcceptedResponse(
                 deviceCode,
                 heartbeat.HostName,
@@ -93,7 +98,8 @@ internal static class InventoryIngestionEndpoints
                 assignment?.DeviceCode,
                 assignment?.DeviceId,
                 assignment?.DeviceCertificate,
-                uninstallCommand));
+                uninstallCommand,
+                userMessageCommand));
         });
 
         return endpoints;

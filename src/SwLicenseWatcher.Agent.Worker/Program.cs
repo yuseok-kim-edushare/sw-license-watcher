@@ -60,10 +60,20 @@ builder.Services.AddHttpClient<AgentApiClient>((sp, client) =>
     var options = sp.GetRequiredService<IOptions<WorkerAgentOptions>>().Value;
     client.BaseAddress = new Uri(options.ServerBaseUrl);
 });
+builder.Services.AddHttpClient<AgentEventStreamClient>((sp, client) =>
+{
+    var options = sp.GetRequiredService<IOptions<WorkerAgentOptions>>().Value;
+    client.BaseAddress = new Uri(options.ServerBaseUrl);
+    client.Timeout = Timeout.InfiniteTimeSpan;
+});
 builder.Services.AddSingleton<IAgentWindowsServiceControl, ScAgentWindowsServiceControl>();
 builder.Services.AddSingleton<IRemoteUninstallProcessStarter, RemoteUninstallProcessStarter>();
 builder.Services.AddSingleton<RemoteAgentUninstaller>();
 builder.Services.AddSingleton<IUninstallRegistryVersionWriter, UninstallRegistryVersionWriter>();
+builder.Services.AddSingleton<IToastHelperProcessStarter, UserSessionToastProcessStarter>();
+builder.Services.AddSingleton<UserToastLauncher>();
+builder.Services.AddSingleton<UserMessageDelivery>();
+builder.Services.AddHostedService<AgentEventStreamService>();
 builder.Services.AddHostedService<Worker>();
 
 await builder.Build().RunAsync();

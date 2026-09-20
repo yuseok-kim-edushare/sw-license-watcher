@@ -149,7 +149,7 @@ Native AOT는 IIS in-process를 지원하지 않습니다. `api/iis/win-x64`를 
 2. IIS에서 애플리케이션 풀을 만듭니다. **.NET CLR 버전: No Managed Code**, 32비트 사용 안 함.
 3. 사이트를 만들고 실제 경로를 `api/iis/win-x64` 폴더로 지정합니다. HTTPS 바인딩과 인증서는 IIS에서 설정합니다.
 4. [appsettings.api.iis.company.json](../deploy/examples/appsettings.api.iis.company.json)을 해당 폴더의 `appsettings.json`으로 복사하고 토큰·연결 문자열을 넣습니다. `Kestrel:Endpoints`는 넣지 않습니다.
-5. 게시 산출물의 `web.config`는 `hostingModel="InProcess"`, `processPath="dotnet"`, `arguments=".\SwLicenseWatcher.Api.dll"`입니다. stdout 로그를 쓰려면 `stdoutLogEnabled="true"`로 바꾸고 `logs` 폴더를 만듭니다.
+5. 게시 산출물의 `web.config`는 `hostingModel="InProcess"`, `processPath="dotnet"`, `arguments=".\SwLicenseWatcher.Api.dll"`입니다. SSE(`/api/agents/events`)가 끊기지 않도록 `requestTimeout="20:00:00"`이 들어 있습니다. stdout 로그를 쓰려면 `stdoutLogEnabled="true"`로 바꾸고 `logs` 폴더를 만듭니다.
 6. 풀을 재순환한 뒤 사이트 URL로 `/health`를 확인하고, 브라우저에서 `/admin` 대시보드가 열리는지 봅니다.
 
 IIS가 TLS를 종료하므로 에이전트의 `ServerBaseUrl`은 사이트 HTTPS 주소입니다.
@@ -197,7 +197,8 @@ Invoke-RestMethod -Uri "https://license-watcher.contoso.local/api/schema/sql" -H
 | `Agent:ApiToken` | 예 | 서버 `Security:AgentToken`과 **동일**, 32자 이상 |
 | `Agent:SnapshotPath` | | `/api/inventory/snapshots` |
 | `Agent:HeartbeatPath` | | `/api/agents/heartbeats` |
-| `Agent:PollInterval` / `MaxJitter` | | `00:30:00` / `00:15:00` |
+| `Agent:EventsPath` | | `/api/agents/events` |
+| `Agent:PollInterval` / `MaxJitter` | | `00:15:00` / `00:05:00` |
 | `Agent:HealthFilePath` | 예 | `C:\ProgramData\SwLicenseWatcher\state\worker-health.json` |
 | `LocalState:QueueDirectory` | 예 | `C:\ProgramData\SwLicenseWatcher\state\queue` |
 | `LocalState:DpapiScope` | | `LocalMachine` (LocalSystem 서비스) |

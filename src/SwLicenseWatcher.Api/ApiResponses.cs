@@ -33,7 +33,9 @@ public sealed record SnapshotAcceptedResponse(
     string? DeviceId = null,
     string? DeviceCertificate = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    AgentUninstallCommand? UninstallCommand = null);
+    AgentUninstallCommand? UninstallCommand = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    AgentUserMessageCommand? UserMessageCommand = null);
 
 public sealed record AgentHeartbeatAcceptedResponse(
     string DeviceCode,
@@ -47,7 +49,9 @@ public sealed record AgentHeartbeatAcceptedResponse(
     string? DeviceId = null,
     string? DeviceCertificate = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    AgentUninstallCommand? UninstallCommand = null);
+    AgentUninstallCommand? UninstallCommand = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    AgentUserMessageCommand? UserMessageCommand = null);
 
 public sealed record SchemaStatusResponse(
     bool ApplyOnStartup,

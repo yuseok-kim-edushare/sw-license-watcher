@@ -112,6 +112,7 @@ internal static class ApiServiceCollectionExtensions
         });
         services.AddSingleton<DeviceEnrollmentService>();
         services.AddSingleton<WorkerUpdatePinService>();
+        services.AddSingleton<UserMessageEventHub>();
         services.AddHttpClient(WebhookNotificationSender.HttpClientName, (sp, client) =>
         {
             var timeout = sp.GetRequiredService<IOptions<NotificationOptions>>().Value.Webhook.Timeout;

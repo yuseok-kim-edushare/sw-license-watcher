@@ -19,6 +19,7 @@ public sealed class SqlServerSchemaScriptBuilder
         var uninstall = options.UninstallRequestTable;
         var license = options.SoftwareLicenseTable;
         var workerPin = options.WorkerUpdatePinTable;
+        var userMessage = options.UserMessageTable;
 
         var sql = new StringBuilder();
         sql.AppendLine($"IF SCHEMA_ID(N'{schemaLiteral}') IS NULL EXEC(N'CREATE SCHEMA [{schemaCommandIdentifier}]');");
@@ -139,6 +140,19 @@ public sealed class SqlServerSchemaScriptBuilder
         sql.AppendLine(");");
         sql.AppendLine("END");
         sql.AppendLine();
+        AppendTableIfMissing(sql, schema, userMessage.TableName);
+        sql.AppendLine($"CREATE TABLE [{schema}].[{Escape(userMessage.TableName)}] (");
+        sql.AppendLine($"    [{Escape(userMessage.PrimaryKeyColumn)}] BIGINT IDENTITY(1,1) NOT NULL PRIMARY KEY,");
+        sql.AppendLine($"    [{Escape(userMessage.PcForeignKeyColumn)}] BIGINT NOT NULL,");
+        sql.AppendLine($"    [{Escape(userMessage.TitleColumn)}] NVARCHAR(128) NOT NULL,");
+        sql.AppendLine($"    [{Escape(userMessage.BodyColumn)}] NVARCHAR(1024) NOT NULL,");
+        sql.AppendLine($"    [{Escape(userMessage.StatusColumn)}] NVARCHAR(16) NOT NULL,");
+        sql.AppendLine($"    [{Escape(userMessage.CreatedAtUtcColumn)}] DATETIMEOFFSET NOT NULL,");
+        sql.AppendLine($"    [{Escape(userMessage.ConsumedAtUtcColumn)}] DATETIMEOFFSET NULL,");
+        sql.AppendLine($"    CONSTRAINT [{Escape(BuildIdentifier("FK", userMessage.TableName, pc.TableName))}] FOREIGN KEY ([{Escape(userMessage.PcForeignKeyColumn)}]) REFERENCES [{schema}].[{Escape(pc.TableName)}]([{Escape(pc.PrimaryKeyColumn)}]) ON DELETE CASCADE");
+        sql.AppendLine(");");
+        sql.AppendLine("END");
+        sql.AppendLine();
         AppendColumnIfMissing(sql, schema, policy.TableName, policy.DefaultLicenseSourceColumn, "NVARCHAR(16) NULL");
         AppendColumnIfMissing(sql, schema, pc.TableName, pc.AssignedHostNameColumn, "NVARCHAR(128) NULL");
         AppendColumnIfMissing(sql, schema, pc.TableName, pc.AdminNotesColumn, "NVARCHAR(1024) NULL");
@@ -162,6 +176,8 @@ public sealed class SqlServerSchemaScriptBuilder
         AppendIndexIfMissing(sql, schema, uninstall.TableName, uninstall.PcForeignKeyColumn);
         AppendIndexIfMissing(sql, schema, uninstall.TableName, uninstall.StatusColumn);
         AppendIndexIfMissing(sql, schema, license.TableName, license.PcForeignKeyColumn);
+        AppendIndexIfMissing(sql, schema, userMessage.TableName, userMessage.PcForeignKeyColumn);
+        AppendIndexIfMissing(sql, schema, userMessage.TableName, userMessage.StatusColumn);
         return sql.ToString();
     }
 
@@ -270,7 +286,11 @@ public static class SqlIdentifierValidator
             options.WorkerUpdatePinTable.TableName, options.WorkerUpdatePinTable.TargetServiceNameColumn,
             options.WorkerUpdatePinTable.VersionColumn, options.WorkerUpdatePinTable.PackageUrlColumn,
             options.WorkerUpdatePinTable.Sha256Column, options.WorkerUpdatePinTable.RequireAuthenticodeColumn,
-            options.WorkerUpdatePinTable.RollbackAfterMinutesColumn, options.WorkerUpdatePinTable.UpdatedAtUtcColumn
+            options.WorkerUpdatePinTable.RollbackAfterMinutesColumn, options.WorkerUpdatePinTable.UpdatedAtUtcColumn,
+            options.UserMessageTable.TableName, options.UserMessageTable.PrimaryKeyColumn,
+            options.UserMessageTable.PcForeignKeyColumn, options.UserMessageTable.TitleColumn,
+            options.UserMessageTable.BodyColumn, options.UserMessageTable.StatusColumn,
+            options.UserMessageTable.CreatedAtUtcColumn, options.UserMessageTable.ConsumedAtUtcColumn
         };
 
         if (identifiers.Any(identifier => !IsValid(identifier)))

@@ -12,6 +12,7 @@ internal static class ApiEndpoints
         app.MapPolicyQuery();
         app.MapPolicyCrudEndpoints();
         app.MapUninstallRequests();
+        app.MapUserMessageEndpoints();
         app.MapUpgradeAuthorizations();
         return app;
     }

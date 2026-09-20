@@ -73,6 +73,45 @@ public sealed class AgentApiClient
         }
     }
 
+    public async Task<bool> ConsumeUserMessageAsync(
+        long id,
+        string deviceCode,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            using var request = new HttpRequestMessage(
+                HttpMethod.Post,
+                $"/api/agents/user-messages/{id}/consume")
+            {
+                Content = JsonContent.Create(
+                    new UserMessageConsumeRequest(deviceCode),
+                    InventoryJsonSerializerContext.Default.UserMessageConsumeRequest)
+            };
+            request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _options.ApiToken);
+            using var response = await _httpClient.SendAsync(request, cancellationToken);
+            if (response.IsSuccessStatusCode)
+            {
+                return true;
+            }
+
+            _logger.LogWarning(
+                "POST user-message consume {Id} returned {StatusCode}.",
+                id,
+                (int)response.StatusCode);
+            return false;
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException)
+        {
+            _logger.LogWarning(ex, "Failed to consume user message {Id}.", id);
+            return false;
+        }
+    }
+
     private async Task<AgentPublishOutcome> PostAsync<TPayload>(string path, TPayload payload, JsonTypeInfo<TPayload> typeInfo, CancellationToken cancellationToken)
     {
         try
@@ -95,6 +134,7 @@ public sealed class AgentApiClient
                     out var deviceId,
                     out var deviceCertificate);
                 AgentAssignmentStore.TryReadUninstallCommand(json, out var uninstallCommand);
+                AgentAssignmentStore.TryReadUserMessageCommand(json, out var userMessageCommand);
                 return new AgentPublishOutcome(
                     AgentPublishResult.Succeeded,
                     assignmentSpecified,
@@ -103,7 +143,8 @@ public sealed class AgentApiClient
                     assignedDeviceCode,
                     deviceId,
                     deviceCertificate,
-                    uninstallCommand);
+                    uninstallCommand,
+                    userMessageCommand);
             }
 
             var statusCode = (int)response.StatusCode;

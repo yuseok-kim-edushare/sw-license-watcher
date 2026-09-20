@@ -115,6 +115,25 @@ public sealed class AdminApiClient(HttpClient http, IJSRuntime js)
             new UninstallRequestCreateRequest(deviceCode),
             cancellationToken);
 
+    public Task SendDeviceUserMessageAsync(
+        string deviceCode,
+        UserMessageWriteRequest request,
+        CancellationToken cancellationToken = default) =>
+        SendAsync(
+            HttpMethod.Post,
+            $"/api/inventory/devices/{Uri.EscapeDataString(deviceCode)}/user-messages",
+            request,
+            cancellationToken);
+
+    public Task<UserMessageBroadcastResponse> BroadcastUserMessageAsync(
+        UserMessageWriteRequest request,
+        CancellationToken cancellationToken = default) =>
+        SendJsonAsync<UserMessageBroadcastResponse>(
+            HttpMethod.Post,
+            "/api/inventory/user-messages/broadcast",
+            request,
+            cancellationToken);
+
     public Task CancelDirectedUninstallAsync(long id, CancellationToken cancellationToken = default) =>
         SendAsync(HttpMethod.Post, $"/api/uninstall-requests/{id}/cancel", body: null, cancellationToken);
 

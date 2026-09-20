@@ -230,6 +230,34 @@ public class SqlServerInventorySqlTests
     }
 
     [Fact]
+    public void BuildListPendingUserMessagesSql_orders_oldest_first()
+    {
+        var sql = new SqlServerDataContext(new SqlServerStorageOptions()).BuildListPendingUserMessagesSql();
+        Assert.Contains("TOP (@take)", sql, StringComparison.Ordinal);
+        Assert.Contains("[status] = @status", sql, StringComparison.Ordinal);
+        Assert.Contains("ORDER BY m.[created_at_utc], m.[user_message_id]", sql, StringComparison.Ordinal);
+        Assert.Contains("p.[device_code] = @deviceCode", sql, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void BuildConsumeUserMessageSql_is_idempotent_for_consumed_rows()
+    {
+        var sql = new SqlServerDataContext(new SqlServerStorageOptions()).BuildConsumeUserMessageSql();
+        Assert.Contains("m.[user_message_id] = @id", sql, StringComparison.Ordinal);
+        Assert.Contains("m.[status] = @pending", sql, StringComparison.Ordinal);
+        Assert.Contains("m.[status] = @consumed", sql, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void BuildBroadcastUserMessagesSql_merges_from_pc_table()
+    {
+        var sql = new SqlServerDataContext(new SqlServerStorageOptions()).BuildBroadcastUserMessagesSql();
+        Assert.Contains("MERGE [inventory].[pc_user_message]", sql, StringComparison.Ordinal);
+        Assert.Contains("USING [inventory].[pc_entity] AS p", sql, StringComparison.Ordinal);
+        Assert.Contains("ON 1 = 0", sql, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void BuildGetAgentUninstallRequestSql_binds_request_to_device_code()
     {
         var sql = new SqlServerDataContext(new SqlServerStorageOptions()).BuildGetAgentUninstallRequestSql();

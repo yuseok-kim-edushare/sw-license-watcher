@@ -1,5 +1,6 @@
 @inherits AdminTabComponent
 @using static DashboardPresentation
+@inject IJSRuntime Js
 
 <div class="toolbar">
     <label>검색
@@ -9,8 +10,22 @@
         <input type="number" min="1" step="1" @bind="_staleHours" />
     </label>
     <button type="button" class="primary" @onclick="QueryAsync">조회</button>
+    <button type="button" @onclick="BroadcastAsync">전체 PC에 알림 보내기</button>
     <button type="button" @onclick="@(() => DownloadCsvAsync("/api/inventory/devices", "devices.csv"))">CSV 다운로드</button>
 </div>
+@if (_broadcastOpen)
+{
+    <div class="toolbar stack">
+        <label>알림 제목
+            <input maxlength="128" @bind="_broadcastTitle" />
+        </label>
+        <label>알림 본문
+            <input maxlength="1024" @bind="_broadcastBody" />
+        </label>
+        <button type="button" class="primary" @onclick="SendBroadcastAsync">보내기</button>
+        <button type="button" @onclick="() => _broadcastOpen = false">취소</button>
+    </div>
+}
 
 @if (!string.IsNullOrEmpty(Error))
 {
@@ -43,6 +58,9 @@
 
 @code {
     private string _staleHours = "";
+    private bool _broadcastOpen;
+    private string _broadcastTitle = "";
+    private string _broadcastBody = "";
     private IReadOnlyList<DeviceSummary> _devices = [];
 
     public override async Task RefreshAsync()
@@ -65,5 +83,29 @@
         {
             parts.Add("staleAfterHours=" + Uri.EscapeDataString(_staleHours.Trim()));
         }
+    }
+
+    private void BroadcastAsync()
+    {
+        _broadcastOpen = true;
+        Error = "";
+    }
+
+    private async Task SendBroadcastAsync()
+    {
+        if (!await Js.InvokeAsync<bool>("confirm", "등록된 모든 PC에 알림을 보낼까요? SSE가 붙은 PC는 바로, 아니면 다음 수집 주기에 표시됩니다."))
+        {
+            return;
+        }
+
+        Error = "";
+        await Requests.RunAsync(async () =>
+        {
+            var result = await Api.BroadcastUserMessageAsync(new UserMessageWriteRequest(_broadcastTitle, _broadcastBody));
+            Meta = $"{result.Count}대에 알림을 넣었습니다.";
+            _broadcastOpen = false;
+            _broadcastTitle = "";
+            _broadcastBody = "";
+        }, message => Error = message);
     }
 }

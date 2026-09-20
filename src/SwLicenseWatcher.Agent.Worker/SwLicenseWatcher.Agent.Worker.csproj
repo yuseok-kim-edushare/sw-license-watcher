@@ -21,4 +21,20 @@
     <ProjectReference Include="..\SwLicenseWatcher.Core\SwLicenseWatcher.Core.csproj" GlobalPropertiesToRemove="PublishAot;PublishTrimmed;RuntimeIdentifier;SelfContained" />
     <ProjectReference Include="..\SwLicenseWatcher.Crypto\SwLicenseWatcher.Crypto.csproj" GlobalPropertiesToRemove="PublishAot;PublishTrimmed;RuntimeIdentifier;SelfContained" />
   </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="SwLicenseWatcher.Agent.Worker.Tests" />
+  </ItemGroup>
+
+  <Target Name="PublishToastBesideWorker"
+          AfterTargets="Publish"
+          Condition="'$(DesignTimeBuild)' != 'true' And '$(PublishDir)' != ''">
+    <PropertyGroup>
+      <_ToastPublishDir>$(PublishDir)toast\</_ToastPublishDir>
+    </PropertyGroup>
+    <MSBuild Projects="..\SwLicenseWatcher.Agent.Toast\SwLicenseWatcher.Agent.Toast.csproj"
+             Targets="Publish"
+             Properties="Configuration=$(Configuration);PublishDir=$(_ToastPublishDir);RuntimeIdentifier=win-x64;SelfContained=true;PublishSingleFile=true;IncludeNativeLibrariesForSelfExtract=true;PublishAot=false;PublishTrimmed=false;UseAppHost=true"
+             RemoveProperties="PublishAot;PublishTrimmed" />
+  </Target>
 </Project>

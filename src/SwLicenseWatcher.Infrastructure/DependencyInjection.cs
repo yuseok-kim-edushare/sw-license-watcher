@@ -31,6 +31,8 @@ public static class DependencyInjection
         services.AddSingleton<IViolationQuery>(sp => sp.GetRequiredService<SqlServerViolationQueryRepository>());
         services.AddSingleton<SqlServerUninstallRepository>();
         services.AddSingleton<IUninstallRequestStore>(sp => sp.GetRequiredService<SqlServerUninstallRepository>());
+        services.AddSingleton<SqlServerUserMessageRepository>();
+        services.AddSingleton<IUserMessageStore>(sp => sp.GetRequiredService<SqlServerUserMessageRepository>());
         services.AddSingleton<SqlServerWorkerUpdatePinRepository>();
         services.AddSingleton<IWorkerUpdatePinStore>(sp => sp.GetRequiredService<SqlServerWorkerUpdatePinRepository>());
 
