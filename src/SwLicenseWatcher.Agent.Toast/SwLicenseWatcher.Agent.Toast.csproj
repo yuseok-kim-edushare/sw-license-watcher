@@ -1,4 +1,4 @@
-<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk" TreatAsLocalProperty="RuntimeIdentifier;SelfContained;PublishAot;PublishTrimmed">
 
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
@@ -9,6 +9,7 @@
     <PublishTrimmed>false</PublishTrimmed>
     <AssemblyName>SwLicenseWatcher.Agent.Toast</AssemblyName>
     <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
+    <RuntimeIdentifiers>win-x64</RuntimeIdentifiers>
   </PropertyGroup>
 
   <Import Project="..\..\NonAotFlavour.props" Condition="'$(PublishAot)' == 'false'" />
