@@ -85,13 +85,16 @@ internal static class RequestPolicyMiddleware
         }
 
         var supplied = context.Request.Headers.Authorization.ToString();
-        if (!BearerTokenAuthenticator.IsAuthorized(
+        var jwt = context.RequestServices.GetRequiredService<IJwtAccessTokenAuthenticator>();
+        if (!await RequestAuthenticator.IsAuthorizedAsync(
+                context,
                 supplied,
                 security,
-                context.Request.Path,
-                context.Request.Method))
+                jwt,
+                context.RequestAborted))
         {
             context.Response.StatusCode = StatusCodes.Status401Unauthorized;
+            context.Response.Headers.WWWAuthenticate = "Bearer";
             return;
         }
 

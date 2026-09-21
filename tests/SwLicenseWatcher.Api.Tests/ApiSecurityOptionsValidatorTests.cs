@@ -91,4 +91,62 @@ public class ApiSecurityOptionsValidatorTests
             AdminToken = Admin
         }));
     }
+
+    [Fact]
+    public void HasValidJwt_allows_empty_authority()
+    {
+        Assert.True(ApiSecurityOptionsValidator.HasValidJwt(new ApiSecurityOptions()));
+    }
+
+    [Fact]
+    public void HasValidJwt_requires_audience_and_http_authority()
+    {
+        Assert.False(ApiSecurityOptionsValidator.HasValidJwt(new ApiSecurityOptions
+        {
+            Jwt = { Authority = "https://login.example/tenant/v2.0" }
+        }));
+        Assert.False(ApiSecurityOptionsValidator.HasValidJwt(new ApiSecurityOptions
+        {
+            Jwt =
+            {
+                Authority = "not-a-uri",
+                Audience = "api://swlw"
+            }
+        }));
+        Assert.False(ApiSecurityOptionsValidator.HasValidJwt(new ApiSecurityOptions
+        {
+            Jwt =
+            {
+                Authority = "https://login.example/tenant/v2.0",
+                Audience = "api://swlw",
+                ClockSkew = TimeSpan.FromSeconds(-1)
+            }
+        }));
+        Assert.True(ApiSecurityOptionsValidator.HasValidJwt(new ApiSecurityOptions
+        {
+            Jwt =
+            {
+                Authority = "https://login.example/tenant/v2.0",
+                Audience = "api://swlw"
+            }
+        }));
+    }
+
+    [Fact]
+    public void ResolveMetadataAddress_defaults_to_well_known_openid_configuration()
+    {
+        var jwt = new ApiJwtOptions
+        {
+            Authority = "https://login.example/tenant/v2.0/"
+        };
+
+        Assert.Equal(
+            "https://login.example/tenant/v2.0/.well-known/openid-configuration",
+            jwt.ResolveMetadataAddress());
+
+        jwt.MetadataAddress = "https://login.example/custom/openid-configuration/";
+        Assert.Equal(
+            "https://login.example/custom/openid-configuration",
+            jwt.ResolveMetadataAddress());
+    }
 }

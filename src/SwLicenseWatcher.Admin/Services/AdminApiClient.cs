@@ -215,7 +215,7 @@ public sealed class AdminApiClient(HttpClient http, IJSRuntime js)
 
         if (response.StatusCode == HttpStatusCode.Unauthorized)
         {
-            return "인증에 실패했습니다. 관리자 토큰을 다시 입력하세요.";
+            return "인증에 실패했습니다. 관리자 토큰 또는 JWT를 다시 입력하세요.";
         }
 
         var text = (await response.Content.ReadAsStringAsync()).Trim();

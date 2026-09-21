@@ -84,6 +84,39 @@ public sealed class ApiSecurityOptions
     public string AdminToken { get; set; } = string.Empty;
 
     public bool RequireHttps { get; set; } = true;
+
+    public ApiJwtOptions Jwt { get; set; } = new();
+}
+
+public sealed class ApiJwtOptions
+{
+    public string Authority { get; set; } = string.Empty;
+
+    public string Audience { get; set; } = string.Empty;
+
+    public string MetadataAddress { get; set; } = string.Empty;
+
+    public string RequiredScope { get; set; } = string.Empty;
+
+    public string RequiredRole { get; set; } = string.Empty;
+
+    public string RoleClaimType { get; set; } = "roles";
+
+    public string NameClaimType { get; set; } = "name";
+
+    public TimeSpan ClockSkew { get; set; } = TimeSpan.FromMinutes(5);
+
+    public bool IsEnabled => !string.IsNullOrWhiteSpace(Authority);
+
+    public string ResolveMetadataAddress()
+    {
+        if (!string.IsNullOrWhiteSpace(MetadataAddress))
+        {
+            return MetadataAddress.TrimEnd('/');
+        }
+
+        return string.Concat(Authority.TrimEnd('/'), "/.well-known/openid-configuration");
+    }
 }
 
 public static class ApiSecurityOptionsValidator
@@ -107,8 +140,30 @@ public static class ApiSecurityOptionsValidator
     public static bool HasDistinctRoleTokens(ApiSecurityOptions options) =>
         !string.Equals(options.AgentToken, options.AdminToken, StringComparison.Ordinal);
 
+    public static bool HasValidJwt(ApiSecurityOptions options)
+    {
+        var jwt = options.Jwt;
+        if (!jwt.IsEnabled)
+        {
+            return true;
+        }
+
+        if (string.IsNullOrWhiteSpace(jwt.Audience) || jwt.ClockSkew < TimeSpan.Zero)
+        {
+            return false;
+        }
+
+        return IsHttpOrHttpsAbsoluteUri(jwt.Authority) &&
+            (string.IsNullOrWhiteSpace(jwt.MetadataAddress) ||
+             IsHttpOrHttpsAbsoluteUri(jwt.MetadataAddress));
+    }
+
     private static bool IsMissingOrUsable(string? value) =>
         string.IsNullOrWhiteSpace(value) || value.Length >= MinimumTokenLength;
+
+    private static bool IsHttpOrHttpsAbsoluteUri(string value) =>
+        Uri.TryCreate(value, UriKind.Absolute, out var uri) &&
+        (uri.Scheme == Uri.UriSchemeHttps || uri.Scheme == Uri.UriSchemeHttp);
 }
 
 public sealed class UpdateManifestOptions

@@ -163,7 +163,7 @@ public partial class App : IAsyncDisposable
     {
         StopAutoRefreshLoop();
         _hasToken = false;
-        _tokenError = "인증에 실패했습니다. 관리자 토큰을 다시 입력하세요.";
+        _tokenError = "인증에 실패했습니다. 관리자 토큰 또는 JWT를 다시 입력하세요.";
         _tabs.Reset();
         Drawer.Close();
         ClearTabReferences();

@@ -18,13 +18,13 @@
   - 조회 API: `/api/inventory/devices`, `/api/inventory/software` (JSON 및 `?format=csv`, `?classification=` 필터)
   - SQL Server 트랜잭션 기반 PC UPSERT 및 설치 소프트웨어 교체 저장(정책 매칭 분류 포함)
   - 현장 설치 시 자산코드는 임시값(기본 컴퓨터 이름)이고, 관리자가 서버에서 바꿀 수 있다. 기기의 고윳값은 서버 CA가 발급하는 **ML-DSA-87**(FIPS 204 최상위, NIST Level 5) 사설 인증서다. 서명·검증은 44/65보다 느리다.
-  - Bearer 토큰 인증(에이전트/관리자 역할 분리), 원격 요청 HTTPS 강제, 수집 POST 본문 크기 제한(스냅샷 8 MiB, 하트비트 64 KiB)
+  - Bearer 토큰 인증(에이전트/관리자 역할 분리). 관리자 API는 선택적으로 OAuth 2 Resource Server JWT도 허용. 원격 요청 HTTPS 강제, 수집 POST 본문 크기 제한(스냅샷 8 MiB, 하트비트 64 KiB)
   - 헬스체크: `/health`(인증 제외)는 SQL Server에 `SELECT 1`로 연결을 확인하고, 실패 시 503과 일반화된 사유만 반환
   - 설계/스키마 API: `/api/design`, `/api/schema`, `GET`/`POST` `/api/schema/sql`. 기동 후 백그라운드에서 없는 테이블/컬럼을 맞춤
   - 업데이트: `/api/updates/worker/manifest`, GitHub Release 가져오기 `/api/updates/worker/github`, 캐시된 Worker ZIP `/api/updates/worker/package/{version}`
   - 소프트웨어 정책 CRUD: `/api/policies` (목록은 페이징·검색·분류 필터·CSV)
   - 블랙리스트 위반 목록: `/api/violations` (페이징·검색·기간 필터·CSV)
-  - 관리자 대시보드: `/admin` (Blazor WebAssembly, 외부 CDN/npm 없음). 페이지는 인증 없이 열리고, 데이터 API는 `AdminToken`이 필요. API가 `_framework`를 같이 제공합니다. PC 상세에서 원격 제거를 지시하면 다음 heartbeat/스냅샷 응답으로 Worker가 일회용 그랜트를 소비하고 서비스를 지웁니다.
+  - 관리자 대시보드: `/admin` (Blazor WebAssembly, 외부 CDN/npm 없음). 페이지는 인증 없이 열리고, 데이터 API는 `AdminToken` 또는 설정된 JWT access token이 필요. API가 `_framework`를 같이 제공합니다. PC 상세에서 원격 제거를 지시하면 다음 heartbeat/스냅샷 응답으로 Worker가 일회용 그랜트를 소비하고 서비스를 지웁니다.
   - 제거 그랜트: 현장 Setup/`Uninstall-Agent.ps1` 요청은 `/admin` 승인 후에만 해제되고, 관리자 `POST /api/uninstall-requests`는 이미 승인된 원격 지시(7일)로 기록됩니다. 대시보드에는 해제 코드를 보여 주지 않습니다.
   - 스냅샷 수신 시 설치 SW를 정책과 매칭해 white/managed/black/unclassified로 분류하고, 분류 결과를 설치 SW 테이블에 저장하며, 블랙리스트 적발을 `company_sw_violation`에 기록
 - **서버 알림 (웹훅 + SMTP)**
@@ -178,9 +178,14 @@ Worker/Watchdog 클라이언트가 접속할 서버 주소는 설정 파일로 �
 
 토큰은 역할을 분리합니다. `AgentToken`은 에이전트 수집·하트비트·SSE 이벤트·제거 요청·업데이트 manifest 조회만, `AdminToken`은 조회·정책 CRUD·위반·CSV·제거 지시/승인·사용자 알림 발송·`/api/design`·`/api/schema/sql`과 업데이트 핀 저장을 허용합니다. 두 토큰은 모두 필수이며 서로 달라야 합니다. 예전 공용 `Security:Token`은 더 이상 받지 않습니다.
 
+관리자 API는 OAuth 2 Resource Server로도 받을 수 있습니다. `Security:Jwt:Authority`와 `Audience`를 넣으면 해당 IdP가 발급한 access token을 `AdminToken` 대신 쓸 수 있습니다. 에이전트 전용 경로는 정적 `AgentToken`만 허용합니다. `Authority`가 비어 있으면 JWT는 꺼지고 동작은 이전과 같습니다.
+
 ```text
 Security__AgentToken=<agent-token>
 Security__AdminToken=<admin-token>
+Security__Jwt__Authority=https://login.microsoftonline.com/<tenant-id>/v2.0
+Security__Jwt__Audience=api://sw-license-watcher
+Security__Jwt__RequiredScope=admin
 Storage__SqlServer__ConnectionString=<sql-server-connection-string>
 Agent__ApiToken=<agent-token>
 Watchdog__ApiToken=<agent-token>
@@ -329,7 +334,7 @@ API 실행 후:
 - `GET /api/inventory/devices`: 수집된 PC 목록 (페이징·검색·stale heartbeat 필터)
 - `GET /api/inventory/software`: 소프트웨어별 설치 PC 수 집계 (`?classification=`으로 분류 필터)
 
-조회 API는 `AdminToken`이 필요합니다. 에이전트 `AgentToken`으로는 호출할 수 없습니다. `?format=csv`를 붙이면 UTF-8 BOM이 포함된 CSV를 내려받아 Excel에서 한글을 깨지지 않게 열 수 있습니다.
+조회 API는 `AdminToken` 또는 JWT access token이 필요합니다. 에이전트 `AgentToken`으로는 호출할 수 없습니다. `?format=csv`를 붙이면 UTF-8 BOM이 포함된 CSV를 내려받아 Excel에서 한글을 깨지지 않게 열 수 있습니다.
 
 | 메서드 | 경로 | 설명 | 주요 쿼리 |
 | --- | --- | --- | --- |
@@ -354,7 +359,7 @@ API 실행 후:
 
 브라우저에서 `https://<server>/admin` 으로 관리자 화면을 엽니다. UI는 Blazor WebAssembly이며, Interactive Server/Auto 회로는 쓰지 않습니다. API가 같은 출처의 `/admin/_framework`를 제공하므로 외부 CDN이 없습니다. curl이나 CSV 없이 PC 목록, 소프트웨어 집계, 위반, 정책, 제거 요청을 조회하고 정책을 만들고 고칠 수 있습니다. 자산코드·PC 명·소프트웨어 이름을 누르면 서랍에서 관련 목록을 보고, 자산코드·PC 명·메모를 남기거나 소프트웨어 분류·메모를 저장할 수 있습니다. PC 상세에서 **이 PC에 알림 보내기**, 장치 탭에서 **전체 PC에 알림 보내기**로 OS Toast를 명시 발송합니다. SSE가 붙은 에이전트는 바로 받고, 아니면 다음 수집(기본 15분 ± 5분, 최대 약 20분)에 실립니다. PC 상세의 **원격 제거 지시**는 승인된 제거 그랜트를 만들고, 해당 PC Worker가 다음 heartbeat에서 서비스를 지웁니다. 관리자가 지정한 자산코드와 PC 명은 다음 에이전트 heartbeat/스냅샷 응답으로 클라이언트에 부여됩니다. 기기 고유값은 서버가 서명하는 ML-DSA-87 사설 인증서이며, 44/65보다 느린 대신 최상위 등급을 씁니다. 소프트웨어 목록에서 행을 체크한 뒤 `white` / `managed` / `black`을 현재 페이지 선택 항목에 일괄 지정할 수 있고, 서랍에서는 개별 분류와 `managed`의 정책 기본 라이선스(회사/BYO)·PC별 덮어쓰기를 편집합니다.
 
-정적 파일(`/admin`, `/admin/`, CSS, `_framework`)은 인증 없이 내려갑니다. 비밀은 없고, 인벤토리·정책 데이터는 모두 `AdminToken`이 있어야 합니다. 토큰은 브라우저 `sessionStorage`에만 두고, 탭을 닫으면 사라집니다. 쿠키와 `localStorage`는 쓰지 않습니다.
+정적 파일(`/admin`, `/admin/`, CSS, `_framework`)은 인증 없이 내려갑니다. 비밀은 없고, 인벤토리·정책 데이터는 모두 `AdminToken` 또는 JWT access token이 있어야 합니다. 값은 브라우저 `sessionStorage`에만 두고, 탭을 닫으면 사라집니다. 쿠키와 `localStorage`는 쓰지 않습니다. 이 화면은 OIDC 로그인 UI를 붙이지 않으며, IdP에서 받은 access token을 같은 입력란에 붙여 넣습니다.
 
 페이지는 외부 CDN·npm 없이 동작하므로 인터넷이 없는 사내망에서도 열립니다. `/admin` 응답에는 `Content-Security-Policy`(`script-src 'self' 'wasm-unsafe-eval'`, 인라인 스크립트/스타일 없음), `X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer`, `Cache-Control: no-store`를 붙입니다.
 

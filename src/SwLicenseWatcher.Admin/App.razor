@@ -42,12 +42,12 @@ else
                 <p class="error">@_tokenError</p>
             }
             <div class="form-actions">
-                <label>AdminToken
+                <label>AdminToken 또는 JWT
                     <input type="password" autocomplete="off" @bind="_tokenInput" @onkeydown="OnTokenKey" />
                 </label>
                 <button type="button" class="primary" @onclick="SaveTokenAsync">저장</button>
             </div>
-            <p class="hint">토큰은 이 브라우저 탭의 sessionStorage에만 저장됩니다.</p>
+            <p class="hint">서버 AdminToken 또는 IdP access token을 이 브라우저 탭의 sessionStorage에만 저장합니다.</p>
         </section>
     }
     else

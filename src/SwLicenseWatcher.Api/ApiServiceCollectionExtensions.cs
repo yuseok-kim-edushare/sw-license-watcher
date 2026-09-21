@@ -46,6 +46,9 @@ internal static class ApiServiceCollectionExtensions
             .Validate(
                 ApiSecurityOptionsValidator.HasDistinctRoleTokens,
                 "Security:AgentToken must differ from Security:AdminToken.")
+            .Validate(
+                ApiSecurityOptionsValidator.HasValidJwt,
+                "Security:Jwt:Authority requires Security:Jwt:Audience and HTTP(S) Authority (and MetadataAddress when set). ClockSkew must not be negative.")
             .ValidateOnStart();
         services.AddOptions<UpdateManifestOptions>()
             .Bind(configuration.GetSection("Updates:Worker"))
@@ -157,6 +160,11 @@ internal static class ApiServiceCollectionExtensions
         services.AddHostedService<NotificationDispatchService>();
         services.AddHostedService<StaleHeartbeatMonitor>();
         services.AddHostedService<SchemaReconcileService>();
+        services.AddHttpClient(JwtAccessTokenAuthenticator.HttpClientName, client =>
+        {
+            client.Timeout = TimeSpan.FromSeconds(15);
+        });
+        services.AddSingleton<IJwtAccessTokenAuthenticator, JwtAccessTokenAuthenticator>();
         return services;
     }
 }
