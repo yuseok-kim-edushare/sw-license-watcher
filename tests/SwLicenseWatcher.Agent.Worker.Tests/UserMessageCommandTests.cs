@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using SwLicenseWatcher.Agent.Worker;
@@ -68,19 +69,27 @@ public class UserToastLauncherTests : IDisposable
     }
 
     [Fact]
-    public async Task ShowAsync_returns_true_only_when_helper_exits_zero()
+    public async Task ShowAsync_writes_an_ml_dsa_signed_envelope()
     {
         Directory.CreateDirectory(Path.Combine(_root, "queue"));
         File.WriteAllText(Path.Combine(_root, UserToastLauncher.HelperFileName), "helper");
         var starter = new RecordingStarter { ExitCode = 0 };
+        var identity = new AgentDeviceIdentityStore(
+            Path.Combine(_root, "device-identity.bin"),
+            new PassthroughProtector());
         var launcher = new UserToastLauncher(
             NullLogger<UserToastLauncher>.Instance,
             starter,
-            Options.Create(new LocalStateStoreOptions { QueueDirectory = Path.Combine(_root, "queue") }));
+            Options.Create(new LocalStateStoreOptions { QueueDirectory = Path.Combine(_root, "queue") }),
+            identity);
 
         Assert.True(await launcher.ShowAsync(new AgentUserMessageCommand(8, "T", "B"), _root, CancellationToken.None));
         Assert.Equal(1, starter.Calls);
-        Assert.NotNull(starter.PayloadPath);
+        Assert.NotNull(starter.Envelope);
+        Assert.Equal(8, starter.Envelope.Id);
+        Assert.Equal(DeviceIdentityAlgorithms.Mldsa87, starter.Envelope.Alg);
+        Assert.False(string.IsNullOrWhiteSpace(starter.Envelope.Signature));
+        Assert.True(File.Exists(UserToastProofs.PublicKeyPath(_root)));
         Assert.False(File.Exists(starter.PayloadPath));
 
         starter.ExitCode = 1;
@@ -101,12 +110,23 @@ public class UserToastLauncherTests : IDisposable
         public int Calls { get; private set; }
         public string? PayloadPath { get; private set; }
 
+        public SignedUserToastPayload? Envelope { get; private set; }
+
         public int? StartAndWait(string exePath, string payloadPath, TimeSpan timeout)
         {
             Calls++;
             PayloadPath = payloadPath;
             Assert.True(File.Exists(payloadPath));
+            Envelope = JsonSerializer.Deserialize(
+                File.ReadAllText(payloadPath),
+                InventoryJsonSerializerContext.Default.SignedUserToastPayload);
             return ExitCode;
         }
+    }
+
+    private sealed class PassthroughProtector : ILocalStateProtector
+    {
+        public string Protect(string plaintext) => plaintext;
+        public string Unprotect(string protectedPayload) => protectedPayload;
     }
 }

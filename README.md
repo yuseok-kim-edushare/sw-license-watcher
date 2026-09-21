@@ -14,7 +14,7 @@
   - `LocalState:MaxQueuedSnapshots`, `LocalState:MaxQueueBytes` 할당량 초과 시 가장 오래된 스냅샷부터 제거
 - **서버 측 API**
   - 수집 API: `/api/inventory/snapshots`, `/api/agents/heartbeats`
-  - 사용자 알림: 관리자가 `/admin`에서 명시적으로 보낸 제목·본문만. Worker는 `GET /api/agents/events` SSE로 받고, 끊기면 heartbeat/snapshot 응답의 `UserMessageCommand`로 보조 전달. Session 0 서비스가 `toast/SwLicenseWatcher.Agent.Toast.exe`를 사용자 세션에서 띄워 OS 표준 Toast를 표시
+  - 사용자 알림: 관리자가 `/admin`에서 명시적으로 보낸 제목·본문만. Worker는 `GET /api/agents/events` SSE로 받고, 끊기면 heartbeat/snapshot 응답의 `UserMessageCommand`로 보조 전달. Session 0 서비스가 장치 ML-DSA-87 키로 서명한 페이로드만 `toast/SwLicenseWatcher.Agent.Toast.exe`가 받아 사용자 세션에서 OS 표준 Toast를 표시
   - 조회 API: `/api/inventory/devices`, `/api/inventory/software` (JSON 및 `?format=csv`, `?classification=` 필터)
   - SQL Server 트랜잭션 기반 PC UPSERT 및 설치 소프트웨어 교체 저장(정책 매칭 분류 포함)
   - 현장 설치 시 자산코드는 임시값(기본 컴퓨터 이름)이고, 관리자가 서버에서 바꿀 수 있다. 기기의 고윳값은 서버 CA가 발급하는 **ML-DSA-87**(FIPS 204 최상위, NIST Level 5) 사설 인증서다. 서명·검증은 44/65보다 느리다.

@@ -45,6 +45,36 @@ public static class DeviceProofs
         Encoding.UTF8.GetBytes($"v1|{deviceId}|{deviceCode}");
 }
 
+public static class UserToastProofs
+{
+    public const string PublicKeyFileName = "device-public-key";
+
+    public static TimeSpan MaxAge { get; } = TimeSpan.FromMinutes(2);
+
+    public static TimeSpan ClockSkew { get; } = TimeSpan.FromSeconds(30);
+
+    public static string DefaultDirectory { get; } = Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData),
+        "SwLicenseWatcher",
+        "state");
+
+    public static string DefaultPublicKeyPath { get; } = Path.Combine(DefaultDirectory, PublicKeyFileName);
+
+    public static string PublicKeyPath(string identityDirectory) =>
+        Path.Combine(identityDirectory, PublicKeyFileName);
+
+    public static byte[] CanonicalBytes(long id, string title, string body, long issuedAtUnix) =>
+        Encoding.UTF8.GetBytes($"v1|toast|{id}|{title}|{body}|{issuedAtUnix}\n");
+}
+
+public sealed record SignedUserToastPayload(
+    long Id,
+    string Title,
+    string Body,
+    long IssuedAtUnix,
+    string Alg,
+    string Signature);
+
 public sealed record DeviceCertificateDocument(
     [property: JsonPropertyName("v")] int V,
     [property: JsonPropertyName("alg")] string Alg,

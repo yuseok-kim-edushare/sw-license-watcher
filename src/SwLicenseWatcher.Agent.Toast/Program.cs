@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Microsoft.Toolkit.Uwp.Notifications;
 using SwLicenseWatcher.Core;
+using SwLicenseWatcher.Crypto;
 
 internal static class Program
 {
@@ -14,16 +15,21 @@ internal static class Program
 
         try
         {
+            if (!UserToastAccess.TryLoadPublicKey(UserToastProofs.DefaultPublicKeyPath, out var publicKey))
+            {
+                return 4;
+            }
+
             var json = File.ReadAllText(args[0]);
-            var payload = JsonSerializer.Deserialize(json, InventoryJsonSerializerContext.Default.AgentUserMessageCommand);
-            if (payload is null || string.IsNullOrWhiteSpace(payload.Title) || string.IsNullOrWhiteSpace(payload.Body))
+            var payload = JsonSerializer.Deserialize(json, InventoryJsonSerializerContext.Default.SignedUserToastPayload);
+            if (!UserToastAccess.TryAccept(payload, publicKey, DateTimeOffset.UtcNow, out var command) || command is null)
             {
                 return 3;
             }
 
             new ToastContentBuilder()
-                .AddText(payload.Title)
-                .AddText(payload.Body)
+                .AddText(command.Title)
+                .AddText(command.Body)
                 .Show();
             Thread.Sleep(500);
             return 0;

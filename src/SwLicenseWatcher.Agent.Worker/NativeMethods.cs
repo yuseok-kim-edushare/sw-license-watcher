@@ -65,6 +65,26 @@ internal static class NativeMethods
     [DllImport("kernel32.dll", SetLastError = true)]
     internal static extern bool GetExitCodeProcess(nint hProcess, out uint lpExitCode);
 
+    internal const uint DaclSecurityInformation = 0x00000004;
+    internal const uint ProtectedDaclSecurityInformation = 0x80000000;
+    internal const uint SddlRevision1 = 1;
+
+    [DllImport("advapi32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    internal static extern bool ConvertStringSecurityDescriptorToSecurityDescriptor(
+        string stringSecurityDescriptor,
+        uint stringSdRevision,
+        out nint securityDescriptor,
+        nint securityDescriptorSize);
+
+    [DllImport("advapi32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    internal static extern bool SetFileSecurity(
+        string fileName,
+        uint securityInformation,
+        nint securityDescriptor);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    internal static extern nint LocalFree(nint handle);
+
     [StructLayout(LayoutKind.Sequential)]
     internal struct WtsSessionInfo
     {

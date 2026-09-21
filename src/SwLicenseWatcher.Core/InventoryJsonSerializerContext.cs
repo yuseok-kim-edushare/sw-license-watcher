@@ -17,6 +17,7 @@ namespace SwLicenseWatcher.Core;
 [JsonSerializable(typeof(StoredAgentAssignment))]
 [JsonSerializable(typeof(AgentUninstallCommand))]
 [JsonSerializable(typeof(AgentUserMessageCommand))]
+[JsonSerializable(typeof(SignedUserToastPayload))]
 [JsonSerializable(typeof(UninstallRequestConsumeRequest))]
 [JsonSerializable(typeof(UserMessageConsumeRequest))]
 [JsonSerializable(typeof(UserMessageWriteRequest))]

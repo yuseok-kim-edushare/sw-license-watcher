@@ -23,22 +23,30 @@ public sealed class AgentDeviceIdentityStore(string filePath, ILocalStateProtect
 
     public StoredDeviceIdentity Ensure()
     {
+        var generated = false;
         lock (_gate)
         {
-            if (!string.IsNullOrWhiteSpace(_identity.PublicKey) && !string.IsNullOrWhiteSpace(_identity.PrivateKey))
+            if (string.IsNullOrWhiteSpace(_identity.PublicKey) || string.IsNullOrWhiteSpace(_identity.PrivateKey))
             {
-                return _identity;
+                var (publicKey, privateKey) = MldsaDeviceCrypto.GenerateKeyPair();
+                _identity = new StoredDeviceIdentity(
+                    null,
+                    MldsaDeviceCrypto.ToBase64(publicKey),
+                    MldsaDeviceCrypto.ToBase64(privateKey),
+                    null);
+                generated = true;
             }
-
-            var (publicKey, privateKey) = MldsaDeviceCrypto.GenerateKeyPair();
-            _identity = new StoredDeviceIdentity(
-                null,
-                MldsaDeviceCrypto.ToBase64(publicKey),
-                MldsaDeviceCrypto.ToBase64(privateKey),
-                null);
         }
 
-        Write();
+        if (generated)
+        {
+            Write();
+        }
+        else
+        {
+            ExportPublicKey(Current);
+        }
+
         return Current;
     }
 
@@ -85,6 +93,29 @@ public sealed class AgentDeviceIdentityStore(string filePath, ILocalStateProtect
         var temporaryPath = filePath + ".tmp";
         File.WriteAllText(temporaryPath, protector.Protect(json));
         File.Move(temporaryPath, filePath, true);
+        LocalIdentityFileAcl.RestrictPrivateKey(filePath);
+        ExportPublicKey(identity);
+    }
+
+    private void ExportPublicKey(StoredDeviceIdentity identity)
+    {
+        if (string.IsNullOrWhiteSpace(identity.PublicKey))
+        {
+            return;
+        }
+
+        var directory = Path.GetDirectoryName(filePath);
+        if (string.IsNullOrEmpty(directory))
+        {
+            return;
+        }
+
+        Directory.CreateDirectory(directory);
+        var publicKeyPath = UserToastProofs.PublicKeyPath(directory);
+        var temporaryPath = publicKeyPath + ".tmp";
+        File.WriteAllText(temporaryPath, identity.PublicKey.Trim());
+        File.Move(temporaryPath, publicKeyPath, true);
+        LocalIdentityFileAcl.AllowUsersRead(publicKeyPath);
     }
 
     private static StoredDeviceIdentity Read(string path, ILocalStateProtector protector)
