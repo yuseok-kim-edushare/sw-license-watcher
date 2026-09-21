@@ -28,6 +28,8 @@ public class PublicPathsTests
             [InlineData("/api/schema")]
             [InlineData("/api/schema/sql")]
     [InlineData("/api/updates/worker/manifest")]
+    [InlineData("/api/updates/worker/package/1.2.3")]
+    [InlineData("/api/updates/worker/github")]
     [InlineData("/api/admin")]
     [InlineData("/adminfoo")]
     [InlineData("/healthz")]

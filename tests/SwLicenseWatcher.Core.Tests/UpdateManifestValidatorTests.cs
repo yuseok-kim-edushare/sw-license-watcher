@@ -26,6 +26,15 @@ public class UpdateManifestValidatorTests
     }
 
     [Fact]
+    public void Accepts_loopback_http_so_the_API_can_serve_packages_in_local_diagnostics()
+    {
+        Assert.True(UpdateManifestValidator.TryValidate(
+            Valid() with { PackageUrl = "http://127.0.0.1:5080/api/updates/worker/package/0.0.20" },
+            out var error));
+        Assert.Equal(string.Empty, error);
+    }
+
+    [Fact]
     public void Rejects_http_package_urls_and_short_digests()
     {
         Assert.False(UpdateManifestValidator.TryValidate(Valid() with { PackageUrl = "http://example.local/worker.zip" }, out var httpError));

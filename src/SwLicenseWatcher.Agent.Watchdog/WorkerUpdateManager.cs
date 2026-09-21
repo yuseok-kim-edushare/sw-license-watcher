@@ -102,8 +102,7 @@ public sealed class WorkerUpdateManager(
             return true;
         }
 
-        return !Uri.TryCreate(manifest.PackageUrl, UriKind.Absolute, out var packageUri) ||
-            packageUri.Scheme != Uri.UriSchemeHttps;
+        return !UpdatePackageUri.TryCreateAllowed(manifest.PackageUrl, out _);
     }
 
     private static bool ContainsPlaceholderToken(string? value) =>
@@ -113,10 +112,9 @@ public sealed class WorkerUpdateManager(
 
     internal static void ValidateManifest(UpdateManifest manifest)
     {
-        if (!Uri.TryCreate(manifest.PackageUrl, UriKind.Absolute, out var packageUri) ||
-            packageUri.Scheme != Uri.UriSchemeHttps)
+        if (!UpdatePackageUri.TryCreateAllowed(manifest.PackageUrl, out _))
         {
-            throw new InvalidOperationException("Update packages must use an absolute HTTPS URL.");
+            throw new InvalidOperationException(UpdatePackageUri.AbsoluteHttpsOrLoopbackHttpRule);
         }
 
         if (manifest.Sha256.Length != 64 || !manifest.Sha256.All(Uri.IsHexDigit))

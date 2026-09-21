@@ -84,7 +84,10 @@ API는 서버에서만 호스팅합니다. PC 에이전트 설치 대상이 아�
 | `Storage:SqlServer:SchemaName` 및 테이블/컬럼 | 예 | 기본 예시는 `inventory.company_pc`, `inventory.company_stale_heartbeat_notification`, `inventory.company_pc_uninstall_request`, `inventory.company_pc_sw_license`, `inventory.company_worker_update_pin` 등. 정책 테이블에는 `default_license_source` 컬럼이 있습니다. 식별자는 영문·숫자·밑줄만 |
 | `Database:ApplySchemaInBackground` | | 기본 `true`. 기동 후 백그라운드에서 없는 테이블/컬럼을 `CREATE`/`ALTER TABLE ADD`. 실패 시 재시도 |
 | `Database:ApplySchemaOnStartup` | | 기본 `false`. `true`면 요청을 받기 전에 같은 DDL을 적용하고, 실패하면 기동하지 않음 |
-| `Updates:Worker:PackageUrl` | 예 | 기동 시드용 절대 HTTPS URI. 살아 있는 핀은 DB이며 `/admin` **업데이트** 또는 `PUT /api/updates/worker/manifest`로 바꿈 |
+| `Updates:Worker:PackageUrl` | 예 | 기동 시드용 절대 HTTPS URI. 살아 있는 핀은 DB이며 `/admin` **업데이트** 또는 `PUT /api/updates/worker/manifest`로 바꿈. GitHub에서 가져오면 캐시된 패키지 URL로 바뀜 |
+| `Updates:GitHub:Owner` / `Repository` | | GitHub 저장소. 비우면 가져오기 UI는 숨겨지고 수동 핀만 사용 |
+| `Updates:GitHub:Token` | 비공개 repo | `repo` 범위 PAT. 공개 저장소는 비워도 됨 |
+| `Updates:GitHub:PackageDirectory` | | Worker ZIP 캐시 폴더. 기본은 API 콘텐츠 루트의 `update-packages` |
 | `Updates:Worker:Sha256` | | 시드용. 64자 hex 또는 플레이스홀더. 첫 패키지 전까지 플레이스홀더라도 API는 기동함 |
 | `Updates:Worker:Version` | | 시드용. Watchdog는 DB 핀의 Version을 Worker `.version`과 비교 |
 | `Updates:Worker:RequireAuthenticode` | | 시드용. 운영 핀은 `true` |
@@ -298,9 +301,11 @@ appsettings `Updates:Worker`는 **기동 시드**입니다. 테이블에 행이 
 
 운영 절차:
 
-1. GitHub Release의 `SHA256SUMS.txt` 또는 릴리스 노트의 Worker 스니펫에서 `Sha256`을 가져옵니다.
-2. Worker ZIP을 회사 HTTPS 서버에 올립니다. PC가 GitHub에 닿으면 릴리스 자산 URL(`https://github.com/<owner>/<repo>/releases/download/{version}/SwLicenseWatcher.Agent.Worker-{version}.zip`)을 그대로 쓸 수 있습니다.
-3. `/admin` **업데이트** 탭(또는 관리자 `PUT /api/updates/worker/manifest`)에 `Version`, `PackageUrl`, `Sha256`을 넣습니다. Watchdog은 `CheckInterval`(+ Jitter) 후에 따라갑니다. API를 재시작할 필요는 없습니다.
+1. API `Updates:GitHub:Owner`와 `Repository`에 CD가 올리는 저장소를 넣습니다. 비공개면 `Token`도 넣습니다.
+2. `/admin` **업데이트**에서 릴리스를 고르고 **패키지 가져오고 핀 저장**을 누릅니다. 서버가 `SHA256SUMS.txt`로 Worker ZIP을 검증한 뒤 `Updates:GitHub:PackageDirectory`에 캐시하고 핀을 갱신합니다.
+3. Watchdog은 `GET /api/updates/worker/manifest`의 `PackageUrl`을 따라갑니다. 캐시가 있으면 이 URL은 `https://<API>/api/updates/worker/package/{version}`이며, AgentToken으로 받습니다. PC가 GitHub에 나갈 필요가 없습니다.
+
+직접 GitHub 자산 URL을 핀에 넣을 수도 있습니다. PC가 GitHub에 닿을 때만 그렇게 하세요. 별도 회사 파일 서버에 ZIP을 올리는 절차는 더 이상 필요하지 않습니다.
 
 Watchdog은 설치 디렉터리를 패키지 내용으로 교체하기 전에 PC의 `appsettings.json`과 `appsettings.*.json`을 보존하고, 복사 후 다시 덮어씁니다. 패키지에 들어 있는 개발용 `appsettings.json`은 이미 설치된 PC에서는 쓰이지 않습니다.
 

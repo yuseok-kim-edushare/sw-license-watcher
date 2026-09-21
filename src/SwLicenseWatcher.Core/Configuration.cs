@@ -130,6 +130,26 @@ public sealed class UpdateManifestOptions
         new(TargetServiceName, Version, PackageUrl, Sha256, RequireAuthenticode, RollbackAfterMinutes);
 }
 
+public sealed class GitHubUpdateOptions
+{
+    public string Owner { get; set; } = string.Empty;
+
+    public string Repository { get; set; } = string.Empty;
+
+    public string Token { get; set; } = string.Empty;
+
+    public string PackageDirectory { get; set; } = "update-packages";
+
+    public long MaxPackageBytes { get; set; } = 512 * 1024 * 1024;
+
+    public TimeSpan Timeout { get; set; } = TimeSpan.FromMinutes(2);
+
+    public int ReleaseListLimit { get; set; } = 15;
+
+    public bool IsConfigured =>
+        !string.IsNullOrWhiteSpace(Owner) && !string.IsNullOrWhiteSpace(Repository);
+}
+
 public sealed class DatabaseOptions
 {
     public bool ApplySchemaOnStartup { get; set; }

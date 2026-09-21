@@ -56,6 +56,24 @@ internal static class ApiServiceCollectionExtensions
                 options => Uri.TryCreate(options.PackageUrl, UriKind.Absolute, out _),
                 "Updates:Worker:PackageUrl must be an absolute URI.")
             .ValidateOnStart();
+        services.AddOptions<GitHubUpdateOptions>()
+            .Bind(configuration.GetSection("Updates:GitHub"))
+            .Validate(
+                options => options.MaxPackageBytes > 0,
+                "Updates:GitHub:MaxPackageBytes must be positive.")
+            .Validate(
+                options => !string.IsNullOrWhiteSpace(options.PackageDirectory),
+                "Updates:GitHub:PackageDirectory is required.")
+            .Validate(
+                options => options.Timeout > TimeSpan.Zero,
+                "Updates:GitHub:Timeout must be positive.")
+            .Validate(
+                options => options.ReleaseListLimit is >= 1 and <= 100,
+                "Updates:GitHub:ReleaseListLimit must be between 1 and 100.")
+            .Validate(
+                options => string.IsNullOrWhiteSpace(options.Owner) == string.IsNullOrWhiteSpace(options.Repository),
+                "Updates:GitHub:Owner and Updates:GitHub:Repository must both be set, or both left empty.")
+            .ValidateOnStart();
         services.AddOptions<DeviceEnrollmentOptions>()
             .Bind(configuration.GetSection("DeviceEnrollment"));
         services.AddOptions<NotificationOptions>()
@@ -112,6 +130,21 @@ internal static class ApiServiceCollectionExtensions
         });
         services.AddSingleton<DeviceEnrollmentService>();
         services.AddSingleton<WorkerUpdatePinService>();
+        services.AddSingleton<WorkerUpdatePackageStore>();
+        services.AddHttpClient<GitHubReleaseClient>((sp, client) =>
+        {
+            var github = sp.GetRequiredService<IOptions<GitHubUpdateOptions>>().Value;
+            client.BaseAddress = new Uri("https://api.github.com/");
+            client.Timeout = github.Timeout > TimeSpan.Zero ? github.Timeout : TimeSpan.FromMinutes(2);
+            client.DefaultRequestHeaders.UserAgent.ParseAdd("SwLicenseWatcher.Api");
+            client.DefaultRequestHeaders.Accept.ParseAdd("application/vnd.github+json");
+            if (!string.IsNullOrWhiteSpace(github.Token))
+            {
+                client.DefaultRequestHeaders.Authorization =
+                    new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", github.Token);
+            }
+        });
+        services.AddTransient<GitHubWorkerUpdateImporter>();
         services.AddSingleton<UserMessageEventHub>();
         services.AddHttpClient(WebhookNotificationSender.HttpClientName, (sp, client) =>
         {

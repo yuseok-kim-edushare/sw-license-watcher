@@ -138,6 +138,33 @@ public sealed record UpdateManifest(
     bool RequireAuthenticode,
     int RollbackAfterMinutes);
 
+public sealed record GitHubWorkerUpdateImportRequest(
+    string? Version = null,
+    bool UpdatePin = true);
+
+public sealed record GitHubWorkerUpdateImportResponse(
+    string Version,
+    string PackageUrl,
+    string Sha256,
+    string SourceAssetUrl,
+    bool Pinned,
+    bool ServedByApi);
+
+public sealed record GitHubWorkerReleaseSummary(
+    string Version,
+    DateTimeOffset? PublishedAtUtc,
+    bool HasWorkerPackage,
+    bool HasChecksums,
+    bool Cached);
+
+public sealed record GitHubUpdateSourceResponse(
+    bool Configured,
+    string Owner,
+    string Repository,
+    IReadOnlyList<GitHubWorkerReleaseSummary> Releases,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    string? Error = null);
+
 public sealed record NewBlacklistViolation(
     InstalledSoftwareEntry Software,
     SoftwarePolicyEntry Policy);

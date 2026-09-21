@@ -17,6 +17,19 @@ public class WorkerUpdateManagerTests : IDisposable
     private readonly string _root = Path.Combine(Path.GetTempPath(), "slw-watchdog-" + Guid.NewGuid().ToString("N"));
 
     [Fact]
+    public void ValidateManifest_accepts_loopback_http_package_urls()
+    {
+        WorkerUpdateManager.ValidateManifest(Manifest(packageUrl: "http://127.0.0.1:5080/api/updates/worker/package/1.2.3"));
+    }
+
+    [Fact]
+    public void IsPlaceholderManifest_is_false_for_a_loopback_http_package_url()
+    {
+        Assert.False(WorkerUpdateManager.IsPlaceholderManifest(
+            Manifest(packageUrl: "http://127.0.0.1:5080/api/updates/worker/package/1.2.3")));
+    }
+
+    [Fact]
     public void ValidateManifest_accepts_an_https_url_64_character_sha_and_in_range_rollback()
     {
         WorkerUpdateManager.ValidateManifest(Manifest());
@@ -37,7 +50,7 @@ public class WorkerUpdateManagerTests : IDisposable
     public void ValidateManifest_rejects_package_urls_that_are_not_absolute_https(string packageUrl)
     {
         var ex = Assert.Throws<InvalidOperationException>(() => WorkerUpdateManager.ValidateManifest(Manifest(packageUrl: packageUrl)));
-        Assert.Equal("Update packages must use an absolute HTTPS URL.", ex.Message);
+        Assert.Equal(UpdatePackageUri.AbsoluteHttpsOrLoopbackHttpRule, ex.Message);
     }
 
     [Theory]

@@ -6,6 +6,9 @@
 # Generated Blazor WASM copied into the API host
 src/SwLicenseWatcher.Api/wwwroot/admin/
 
+# Cached GitHub Worker update packages (API content-root default)
+src/SwLicenseWatcher.Api/update-packages/
+
 # Server-issued ML-DSA-87 device CA private key
 **/device-ca.mldsa87.json
 

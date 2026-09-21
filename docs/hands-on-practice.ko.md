@@ -211,8 +211,8 @@ IIS HTTP 바인딩만 열고 `http://localhost`로 에이전트를 붙이는 것
 
 Watchdog 기본 주기는 **4시간 ± 1시간**입니다. 테스트 시 `CheckInterval`을 줄이세요.
 
-1. Worker ZIP(`SwLicenseWatcher.Agent.Worker-{version}.zip`)을 IIS 가상 디렉터리나 다른 HTTPS 경로에 둡니다. URL은 **HTTPS**여야 합니다.
-2. `/admin` **업데이트** 탭에 `Version`, `PackageUrl`, `Sha256`을 넣습니다. API `appsettings.json`의 `Updates:Worker`는 테이블이 비어 있을 때만 시드됩니다.
+1. API `Updates:GitHub`에 저장소(집 테스트면 이 프로젝트의 GitHub Owner/Repository)를 넣습니다.
+2. `/admin` **업데이트**에서 릴리스를 가져와 핀을 저장합니다. Worker ZIP은 API가 캐시하고, Watchdog는 `GET /api/updates/worker/package/{version}`에서 받습니다. API `appsettings.json`의 `Updates:Worker`는 테이블이 비어 있을 때만 시드됩니다.
 
 ```powershell
 (Get-FileHash -Algorithm SHA256 C:\SwLw\packages\SwLicenseWatcher.Agent.Worker-1.0.x.zip).Hash

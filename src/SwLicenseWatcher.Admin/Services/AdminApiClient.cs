@@ -143,6 +143,14 @@ public sealed class AdminApiClient(HttpClient http, IJSRuntime js)
     public Task<UpdateManifest> PutWorkerUpdatePinAsync(UpdateManifest request, CancellationToken cancellationToken = default) =>
         SendJsonAsync<UpdateManifest>(HttpMethod.Put, "/api/updates/worker/manifest", request, cancellationToken);
 
+    public Task<GitHubUpdateSourceResponse> GetGitHubUpdateSourceAsync(CancellationToken cancellationToken = default) =>
+        GetAsync<GitHubUpdateSourceResponse>("/api/updates/worker/github", cancellationToken);
+
+    public Task<GitHubWorkerUpdateImportResponse> ImportGitHubWorkerUpdateAsync(
+        GitHubWorkerUpdateImportRequest request,
+        CancellationToken cancellationToken = default) =>
+        SendJsonAsync<GitHubWorkerUpdateImportResponse>(HttpMethod.Post, "/api/updates/worker/github", request, cancellationToken);
+
     public async Task DownloadCsvAsync(string path, string fileName, CancellationToken cancellationToken = default)
     {
         using var response = await http.GetAsync(path, cancellationToken);

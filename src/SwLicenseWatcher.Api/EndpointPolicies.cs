@@ -5,6 +5,8 @@ internal static class AgentPaths
     internal const string InventorySnapshots = "/api/inventory/snapshots";
     internal const string Heartbeats = "/api/agents/heartbeats";
     internal const string WorkerManifest = "/api/updates/worker/manifest";
+    internal const string WorkerPackage = "/api/updates/worker/package";
+    internal const string WorkerGitHub = "/api/updates/worker/github";
     internal const string UninstallRequests = "/api/agents/uninstall-requests";
     internal const string UserMessages = "/api/agents/user-messages";
     internal const string Events = "/api/agents/events";
@@ -23,6 +25,11 @@ internal static class EndpointPolicies
             return HttpMethods.IsGet(httpMethod);
         }
 
+        if (path.StartsWithSegments(AgentPaths.WorkerPackage, StringComparison.OrdinalIgnoreCase))
+        {
+            return HttpMethods.IsGet(httpMethod);
+        }
+
         return path.Equals(AgentPaths.InventorySnapshots, StringComparison.OrdinalIgnoreCase) |
             path.Equals(AgentPaths.Heartbeats, StringComparison.OrdinalIgnoreCase) |
             path.Equals(AgentPaths.Events, StringComparison.OrdinalIgnoreCase) |
@@ -36,6 +43,16 @@ internal static class EndpointPolicies
         if (path.Equals(AgentPaths.WorkerManifest, StringComparison.OrdinalIgnoreCase))
         {
             return HttpMethods.IsGet(httpMethod) | HttpMethods.IsPut(httpMethod);
+        }
+
+        if (path.StartsWithSegments(AgentPaths.WorkerPackage, StringComparison.OrdinalIgnoreCase))
+        {
+            return HttpMethods.IsGet(httpMethod);
+        }
+
+        if (path.StartsWithSegments(AgentPaths.WorkerGitHub, StringComparison.OrdinalIgnoreCase))
+        {
+            return HttpMethods.IsGet(httpMethod) | HttpMethods.IsPost(httpMethod);
         }
 
         return !IsAgentEndpoint(path, httpMethod);

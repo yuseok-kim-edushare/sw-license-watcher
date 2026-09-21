@@ -23,10 +23,9 @@ public static class UpdateManifestValidator
             return false;
         }
 
-        if (!Uri.TryCreate(manifest.PackageUrl, UriKind.Absolute, out var packageUri) ||
-            packageUri.Scheme != Uri.UriSchemeHttps)
+        if (!UpdatePackageUri.TryCreateAllowed(manifest.PackageUrl, out _))
         {
-            error = "The Worker update package URL must be an absolute HTTPS URI.";
+            error = UpdatePackageUri.AbsoluteHttpsOrLoopbackHttpRule;
             return false;
         }
 

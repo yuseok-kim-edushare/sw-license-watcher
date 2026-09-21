@@ -430,7 +430,7 @@ jobs:
           $releaseNotes += "`n`n### Worker self-update package`n`n"
           $releaseNotes += "- Asset: $workerZipName`n"
           $releaseNotes += "- SHA-256: $workerSha`n"
-          $releaseNotes += "`nReady-to-paste Worker update pin (`/admin` 업데이트 or ``PUT /api/updates/worker/manifest``):`n`n"
+          $releaseNotes += "`nReady-to-paste Worker update pin (`/admin` 업데이트, ``PUT /api/updates/worker/manifest``, or ``POST /api/updates/worker/github``):`n`n"
           $releaseNotes += "``````json`n"
           $releaseNotes += "{`n"
           $releaseNotes += "  `"Version`": `"$newVersionString`",`n"

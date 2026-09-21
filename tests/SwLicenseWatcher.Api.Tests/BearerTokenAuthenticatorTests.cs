@@ -80,6 +80,7 @@ public class BearerTokenAuthenticatorTests
     [InlineData("/api/design")]
     [InlineData("/api/schema")]
     [InlineData("/api/schema/sql")]
+    [InlineData("/api/updates/worker/github")]
     public void IsAuthorized_admin_token_is_accepted_on_admin_endpoints(string path)
     {
         var security = RoleSeparated();
@@ -98,6 +99,30 @@ public class BearerTokenAuthenticatorTests
         Assert.True(BearerTokenAuthenticator.IsAuthorized("Bearer " + AdminToken, security, path, HttpMethods.Get));
         Assert.False(BearerTokenAuthenticator.IsAuthorized("Bearer " + AgentToken, security, path, HttpMethods.Put));
         Assert.True(BearerTokenAuthenticator.IsAuthorized("Bearer " + AdminToken, security, path, HttpMethods.Put));
+    }
+
+    [Fact]
+    public void IsAuthorized_both_tokens_can_download_a_cached_worker_package()
+    {
+        var security = RoleSeparated();
+        const string path = "/api/updates/worker/package/1.2.3";
+
+        Assert.True(BearerTokenAuthenticator.IsAuthorized("Bearer " + AgentToken, security, path, HttpMethods.Get));
+        Assert.True(BearerTokenAuthenticator.IsAuthorized("Bearer " + AdminToken, security, path, HttpMethods.Get));
+        Assert.False(BearerTokenAuthenticator.IsAuthorized("Bearer " + AgentToken, security, path, HttpMethods.Post));
+        Assert.False(BearerTokenAuthenticator.IsAuthorized("Bearer " + AdminToken, security, path, HttpMethods.Post));
+    }
+
+    [Fact]
+    public void IsAuthorized_only_admin_can_import_github_releases()
+    {
+        var security = RoleSeparated();
+        const string path = "/api/updates/worker/github";
+
+        Assert.False(BearerTokenAuthenticator.IsAuthorized("Bearer " + AgentToken, security, path, HttpMethods.Get));
+        Assert.True(BearerTokenAuthenticator.IsAuthorized("Bearer " + AdminToken, security, path, HttpMethods.Get));
+        Assert.False(BearerTokenAuthenticator.IsAuthorized("Bearer " + AgentToken, security, path, HttpMethods.Post));
+        Assert.True(BearerTokenAuthenticator.IsAuthorized("Bearer " + AdminToken, security, path, HttpMethods.Post));
     }
 
     [Fact]
@@ -124,6 +149,8 @@ public class BearerTokenAuthenticatorTests
     [InlineData("/API/INVENTORY/SNAPSHOTS")]
     [InlineData("/api/agents/heartbeats")]
     [InlineData("/api/updates/worker/manifest")]
+    [InlineData("/api/updates/worker/package/1.2.3")]
+    [InlineData("/API/UPDATES/WORKER/PACKAGE/1.2.3")]
     [InlineData("/api/agents/uninstall-requests")]
     [InlineData("/API/AGENTS/UNINSTALL-REQUESTS/3/CONSUME")]
     [InlineData("/api/agents/upgrade-authorizations")]
@@ -139,6 +166,7 @@ public class BearerTokenAuthenticatorTests
     [InlineData("/api/inventory/devices")]
     [InlineData("/api/uninstall-requests")]
     [InlineData("/api/uninstall-requests/3/approve")]
+    [InlineData("/api/updates/worker/github")]
     [InlineData("/health")]
     public void IsAgentEndpoint_rejects_non_agent_paths(string path)
     {
@@ -152,6 +180,11 @@ public class BearerTokenAuthenticatorTests
         Assert.False(EndpointPolicies.IsAgentEndpoint(AgentPaths.WorkerManifest, HttpMethods.Put));
         Assert.True(EndpointPolicies.IsAdminEndpoint(AgentPaths.WorkerManifest, HttpMethods.Get));
         Assert.True(EndpointPolicies.IsAdminEndpoint(AgentPaths.WorkerManifest, HttpMethods.Put));
+        Assert.True(EndpointPolicies.IsAgentEndpoint(AgentPaths.WorkerPackage + "/1.2.3", HttpMethods.Get));
+        Assert.True(EndpointPolicies.IsAdminEndpoint(AgentPaths.WorkerPackage + "/1.2.3", HttpMethods.Get));
+        Assert.False(EndpointPolicies.IsAgentEndpoint(AgentPaths.WorkerGitHub, HttpMethods.Get));
+        Assert.True(EndpointPolicies.IsAdminEndpoint(AgentPaths.WorkerGitHub, HttpMethods.Get));
+        Assert.True(EndpointPolicies.IsAdminEndpoint(AgentPaths.WorkerGitHub, HttpMethods.Post));
     }
 
     [Fact]

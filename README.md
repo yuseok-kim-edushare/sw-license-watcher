@@ -21,7 +21,7 @@
   - Bearer 토큰 인증(에이전트/관리자 역할 분리), 원격 요청 HTTPS 강제, 수집 POST 본문 크기 제한(스냅샷 8 MiB, 하트비트 64 KiB)
   - 헬스체크: `/health`(인증 제외)는 SQL Server에 `SELECT 1`로 연결을 확인하고, 실패 시 503과 일반화된 사유만 반환
   - 설계/스키마 API: `/api/design`, `/api/schema`, `GET`/`POST` `/api/schema/sql`. 기동 후 백그라운드에서 없는 테이블/컬럼을 맞춤
-  - 업데이트 manifest API: `/api/updates/worker/manifest`
+  - 업데이트: `/api/updates/worker/manifest`, GitHub Release 가져오기 `/api/updates/worker/github`, 캐시된 Worker ZIP `/api/updates/worker/package/{version}`
   - 소프트웨어 정책 CRUD: `/api/policies` (목록은 페이징·검색·분류 필터·CSV)
   - 블랙리스트 위반 목록: `/api/violations` (페이징·검색·기간 필터·CSV)
   - 관리자 대시보드: `/admin` (Blazor WebAssembly, 외부 CDN/npm 없음). 페이지는 인증 없이 열리고, 데이터 API는 `AdminToken`이 필요. API가 `_framework`를 같이 제공합니다. PC 상세에서 원격 제거를 지시하면 다음 heartbeat/스냅샷 응답으로 Worker가 일회용 그랜트를 소비하고 서비스를 지웁니다.

@@ -1,5 +1,6 @@
 using Microsoft.Extensions.Options;
 using SwLicenseWatcher.Core;
+using System.Net.Http.Headers;
 
 namespace SwLicenseWatcher.Agent.Watchdog;
 
@@ -16,7 +17,13 @@ public sealed class PackageDownloader(
 
     public async Task DownloadAsync(Uri uri, string path, CancellationToken cancellationToken)
     {
-        using var response = await httpClient.GetAsync(uri, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+        using var request = new HttpRequestMessage(HttpMethod.Get, uri);
+        if (ShouldAttachAgentToken(uri))
+        {
+            request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _options.ApiToken);
+        }
+
+        using var response = await httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
         response.EnsureSuccessStatusCode();
         if (response.Content.Headers.ContentLength > _options.MaxPackageBytes)
         {
@@ -39,4 +46,10 @@ public sealed class PackageDownloader(
             await destination.WriteAsync(buffer.AsMemory(0, read), cancellationToken);
         }
     }
+
+    internal bool ShouldAttachAgentToken(Uri uri) =>
+        Uri.TryCreate(_options.ServerBaseUrl, UriKind.Absolute, out var server) &&
+        string.Equals(uri.Scheme, server.Scheme, StringComparison.OrdinalIgnoreCase) &&
+        string.Equals(uri.Host, server.Host, StringComparison.OrdinalIgnoreCase) &&
+        uri.Port == server.Port;
 }

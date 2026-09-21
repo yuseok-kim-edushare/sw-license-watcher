@@ -1,8 +1,44 @@
 @inherits AdminTabComponent
 
 <section class="card">
+    <h2>GitHub Release에서 Worker 패키지 가져오기</h2>
+    <p class="hint">서버가 Release의 Worker ZIP과 SHA256SUMS.txt를 받아 캐시합니다. Watchdog는 GitHub가 아니라 API의 패키지 엔드포인트에서 받습니다.</p>
+    @if (!string.IsNullOrEmpty(_githubError))
+    {
+        <p class="error">@_githubError</p>
+    }
+    @if (!string.IsNullOrEmpty(_imported))
+    {
+        <p class="meta">@_imported</p>
+    }
+    @if (!_githubConfigured)
+    {
+        <p class="hint">API <code>Updates:GitHub:Owner</code>와 <code>Updates:GitHub:Repository</code>를 설정하면 여기서 가져올 수 있습니다. 비공개 저장소면 <code>Updates:GitHub:Token</code>도 필요합니다.</p>
+    }
+    else
+    {
+        <p class="meta">@_githubOwner/@_githubRepository</p>
+        <div class="form-grid">
+            <label>릴리스
+                <select @bind="_selectedRelease">
+                    <option value="">최신 릴리스</option>
+                    @foreach (var release in _releases)
+                    {
+                        <option value="@release.Version">@ReleaseLabel(release)</option>
+                    }
+                </select>
+            </label>
+        </div>
+        <div class="form-actions">
+            <button type="button" class="primary" disabled="@_importing" @onclick="ImportAsync">패키지 가져오고 핀 저장</button>
+            <button type="button" disabled="@_importing" @onclick="RefreshGitHubAsync">릴리스 다시 읽기</button>
+        </div>
+    }
+</section>
+
+<section class="card">
     <h2>Worker 업데이트 핀</h2>
-    <p class="hint">GitHub Release의 Version · PackageUrl · Sha256을 저장하면 Watchdog가 다음 확인 주기에 Worker를 교체합니다. appsettings <code>Updates:Worker</code>는 테이블이 비어 있을 때만 시드되며, 이미 핀이 있으면 파일을 고쳐도 바뀌지 않습니다.</p>
+    <p class="hint">GitHub Release의 Version · PackageUrl · Sha256을 저장하면 Watchdog가 다음 확인 주기에 Worker를 교체합니다. 서버가 패키지를 캐시하면 PackageUrl은 자동으로 API 주소로 바뀝니다. appsettings <code>Updates:Worker</code>는 테이블이 비어 있을 때만 시드되며, 이미 핀이 있으면 파일을 고쳐도 바뀌지 않습니다.</p>
     @if (!string.IsNullOrEmpty(Error))
     {
         <p class="error">@Error</p>
@@ -33,6 +69,14 @@
     private bool _requireAuthenticode = true;
     private int _rollbackMinutes = 10;
     private string _saved = "";
+    private string _imported = "";
+    private string _githubError = "";
+    private bool _githubConfigured;
+    private string _githubOwner = "";
+    private string _githubRepository = "";
+    private string _selectedRelease = "";
+    private bool _importing;
+    private IReadOnlyList<GitHubWorkerReleaseSummary> _releases = [];
 
     public override async Task RefreshAsync()
     {
@@ -42,9 +86,52 @@
         {
             Apply(await Api.GetWorkerUpdatePinAsync());
         }, message => Error = message);
+        await RefreshGitHubAsync();
         if (succeeded)
         {
             await Refreshed.InvokeAsync();
+        }
+    }
+
+    private async Task RefreshGitHubAsync()
+    {
+        _githubError = "";
+        await Requests.RunAsync(async () =>
+        {
+            var source = await Api.GetGitHubUpdateSourceAsync();
+            _githubConfigured = source.Configured;
+            _githubOwner = source.Owner;
+            _githubRepository = source.Repository;
+            _releases = source.Releases;
+            if (!string.IsNullOrEmpty(source.Error))
+            {
+                _githubError = source.Error;
+            }
+        }, message => _githubError = message);
+    }
+
+    private async Task ImportAsync()
+    {
+        Error = "";
+        _saved = "";
+        _imported = "";
+        _githubError = "";
+        _importing = true;
+        try
+        {
+            await Requests.RunAsync(async () =>
+            {
+                var imported = await Api.ImportGitHubWorkerUpdateAsync(
+                    new GitHubWorkerUpdateImportRequest(
+                        string.IsNullOrWhiteSpace(_selectedRelease) ? null : _selectedRelease,
+                        UpdatePin: true));
+                Apply(await Api.GetWorkerUpdatePinAsync());
+                _imported = $"GitHub {imported.Version} 패키지를 가져왔습니다. Watchdog는 {imported.PackageUrl}에서 받습니다.";
+            }, message => _githubError = message);
+        }
+        finally
+        {
+            _importing = false;
         }
     }
 
@@ -75,5 +162,12 @@
         _sha256 = pin.Sha256;
         _requireAuthenticode = pin.RequireAuthenticode;
         _rollbackMinutes = pin.RollbackAfterMinutes;
+    }
+
+    private static string ReleaseLabel(GitHubWorkerReleaseSummary release)
+    {
+        var cached = release.Cached ? " · 캐시됨" : "";
+        var ready = release.HasWorkerPackage && release.HasChecksums ? "" : " · 자산 없음";
+        return $"{release.Version}{cached}{ready}";
     }
 }
