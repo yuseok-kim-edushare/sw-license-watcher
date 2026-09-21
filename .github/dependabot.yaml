@@ -8,6 +8,12 @@ updates:
       timezone: Asia/Seoul
     open-pull-requests-limit: 10
     target-branch: main
+    # NuGet updates only packages declared in Directory.Packages.props.
+    # dependency-type: all does not include NuGet transitive packages, so those
+    # versions are pinned there. default-days: 0 turns off the 3-day cooldown
+    # that otherwise delays version-update pull requests.
+    cooldown:
+      default-days: 0
     labels:
       - dependencies
       - nuget
@@ -15,8 +21,6 @@ updates:
       nuget-dependencies:
         patterns:
           - "*"
-    allow:
-      - dependency-type: all
 
   - package-ecosystem: github-actions
     directory: "/"
@@ -24,6 +28,8 @@ updates:
       interval: daily
       time: "09:00"
       timezone: UTC
+    cooldown:
+      default-days: 0
     labels:
       - dependencies
       - github-actions
