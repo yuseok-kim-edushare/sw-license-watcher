@@ -65,6 +65,7 @@ internal sealed class GitHubWorkerUpdateImporter(
 
     public async Task<GitHubWorkerUpdateImportResponse> ImportAsync(
         GitHubWorkerUpdateImportRequest request,
+        Func<string, string> packageUrlForVersion,
         CancellationToken cancellationToken)
     {
         var release = await ResolveReleaseAsync(request.Version, cancellationToken);
@@ -116,12 +117,19 @@ internal sealed class GitHubWorkerUpdateImporter(
         }
 
         var sourceUrl = zip.BrowserDownloadUrl ?? zip.ApiUrl ?? string.Empty;
+        var packageUrl = packageUrlForVersion(version);
+        if (string.IsNullOrWhiteSpace(packageUrl))
+        {
+            packageUrl = sourceUrl;
+        }
+
         var pin = await workerPin.GetEffectiveAsync(cancellationToken);
         var updated = pin with
         {
             Version = version,
-            PackageUrl = sourceUrl,
-            Sha256 = sha256
+            PackageUrl = packageUrl,
+            Sha256 = sha256,
+            RequireAuthenticode = false
         };
         var pinned = request.UpdatePin;
         if (pinned)
@@ -137,11 +145,11 @@ internal sealed class GitHubWorkerUpdateImporter(
         logger.LogInformation("Imported Worker update package {Version} from GitHub.", version);
         return new GitHubWorkerUpdateImportResponse(
             version,
-            sourceUrl,
+            packageUrl,
             sha256,
             sourceUrl,
             pinned,
-            ServedByApi: true);
+            ServedByApi: !string.Equals(packageUrl, sourceUrl, StringComparison.Ordinal));
     }
 
     private async Task<GitHubReleaseDocument> ResolveReleaseAsync(string? version, CancellationToken cancellationToken)

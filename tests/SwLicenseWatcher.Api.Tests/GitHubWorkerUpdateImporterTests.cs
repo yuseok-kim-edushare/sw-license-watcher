@@ -107,13 +107,19 @@ public class GitHubWorkerUpdateImporterTests : IDisposable
         var store = new MemoryPinStore();
         var importer = CreateImporter(handler, store);
 
-        var imported = await importer.ImportAsync(new GitHubWorkerUpdateImportRequest("1.2.3"), CancellationToken.None);
+        var imported = await importer.ImportAsync(
+            new GitHubWorkerUpdateImportRequest("1.2.3"),
+            version => $"https://license.contoso.local/api/updates/worker/package/{version}",
+            CancellationToken.None);
 
         Assert.Equal("1.2.3", imported.Version);
         Assert.Equal(sha, imported.Sha256);
         Assert.True(imported.Pinned);
+        Assert.Equal("https://license.contoso.local/api/updates/worker/package/1.2.3", imported.PackageUrl);
         Assert.Equal("1.2.3", store.Pin?.Version);
         Assert.Equal(sha, store.Pin?.Sha256);
+        Assert.Equal("https://license.contoso.local/api/updates/worker/package/1.2.3", store.Pin?.PackageUrl);
+        Assert.False(store.Pin?.RequireAuthenticode);
         Assert.True(File.Exists(Path.Combine(_root, "SwLicenseWatcher.Agent.Worker-1.2.3.zip")));
         Assert.Contains("/releases/tags/1.2.3", handler.Paths, StringComparison.Ordinal);
     }
@@ -254,7 +260,7 @@ public class GitHubWorkerUpdateImporterTests : IDisposable
             "0.0.1",
             "https://example.local/worker.zip",
             "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-            false,
+            true,
             10);
 
         public Task<UpdateManifest?> GetWorkerUpdatePinAsync(string targetServiceName, CancellationToken cancellationToken) =>

@@ -58,11 +58,9 @@ internal static class WorkerUpdateEndpoints
             {
                 var imported = await importer.ImportAsync(
                     request ?? new GitHubWorkerUpdateImportRequest(),
+                    version => WorkerUpdatePackageUrls.ForRequest(http.Request, version),
                     cancellationToken);
-                return Results.Ok(imported with
-                {
-                    PackageUrl = WorkerUpdatePackageUrls.ForRequest(http.Request, imported.Version)
-                });
+                return Results.Ok(imported);
             }
             catch (GitHubReleaseImportException ex)
             {
