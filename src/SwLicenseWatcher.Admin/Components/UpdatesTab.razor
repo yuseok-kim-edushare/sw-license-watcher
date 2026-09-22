@@ -2,7 +2,7 @@
 
 <section class="card">
     <h2>GitHub Release에서 Worker 패키지 가져오기</h2>
-    <p class="hint">서버가 Release의 Worker ZIP과 SHA256SUMS.txt를 받아 캐시합니다. 핀의 패키지 주소는 <code>GET /api/updates/worker/package/{version}</code>으로 저장되고, Watchdog는 그 주소를 받습니다. Authenticode 필수는 가져올 때 켜지지 않습니다.</p>
+    <p class="hint">서버가 Release의 Worker ZIP과 SHA256SUMS.txt를 받아 캐시합니다. 핀의 패키지 주소는 <code>GET /api/updates/worker/package/{version}</code>이고, 이 주소는 토큰 없이 ZIP을 돌려줍니다. Authenticode 필수는 가져올 때 켜지지 않습니다.</p>
     @if (!string.IsNullOrEmpty(_githubError))
     {
         <p class="error">@_githubError</p>

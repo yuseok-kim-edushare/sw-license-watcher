@@ -318,7 +318,7 @@ appsettings `Updates:Worker`는 **기동 시드**입니다. 테이블에 행이 
 
 1. API `Updates:GitHub:Owner`와 `Repository`에 CD가 올리는 저장소를 넣습니다. 비공개면 `Token`도 넣습니다.
 2. `/admin` **업데이트**에서 릴리스를 고르고 **패키지 가져오고 핀 저장**을 누릅니다. 서버가 `SHA256SUMS.txt`로 Worker ZIP을 검증한 뒤 `Updates:GitHub:PackageDirectory`에 캐시하고, 핀의 `PackageUrl`을 `https://<API>/api/updates/worker/package/{version}`으로 저장합니다. `RequireAuthenticode`는 가져오기에서 `false`가 됩니다.
-3. Watchdog은 `GET /api/updates/worker/manifest`의 `PackageUrl`을 따라가 `GET /api/updates/worker/package/{version}`으로 ZIP을 받습니다. AgentToken을 씁니다. PC가 GitHub에 나갈 필요가 없습니다.
+3. Watchdog은 `GET /api/updates/worker/manifest`의 `PackageUrl`을 따라갑니다. 그 주소는 `https://<API>/api/updates/worker/package/{version}`이고, 이 GET은 토큰 없이 ZIP을 돌려줍니다. 0.1.8을 포함한 구 클라이언트는 패키지 주소에 Authorization을 넣지 않습니다. PC가 GitHub에 나갈 필요가 없습니다.
 
 직접 GitHub 자산 URL을 핀에 넣을 수도 있습니다. PC가 GitHub에 닿을 때만 그렇게 하세요. 별도 회사 파일 서버에 ZIP을 올리는 절차는 더 이상 필요하지 않습니다.
 

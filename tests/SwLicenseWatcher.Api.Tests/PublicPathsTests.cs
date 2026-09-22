@@ -16,7 +16,9 @@ public class PublicPathsTests
     [InlineData("/admin/_framework/blazor.webassembly.js")]
     [InlineData("/admin/_framework/icudt_CJK.tjcz0u77k5.dat")]
     [InlineData("/admin/css/admin.css")]
-    public void IsAnonymous_allows_health_and_admin_assets(string path)
+    [InlineData("/api/updates/worker/package/0.2.3")]
+    [InlineData("/API/UPDATES/WORKER/PACKAGE/0.1.8")]
+    public void IsAnonymous_allows_health_admin_assets_and_worker_package_downloads(string path)
     {
         Assert.True(PublicPaths.IsAnonymous(path));
     }
@@ -28,8 +30,8 @@ public class PublicPathsTests
             [InlineData("/api/schema")]
             [InlineData("/api/schema/sql")]
     [InlineData("/api/updates/worker/manifest")]
-    [InlineData("/api/updates/worker/package/1.2.3")]
     [InlineData("/api/updates/worker/github")]
+    [InlineData("/api/updates/worker/packages/1.2.3")]
     [InlineData("/api/admin")]
     [InlineData("/adminfoo")]
     [InlineData("/healthz")]
