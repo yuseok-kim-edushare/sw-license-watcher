@@ -331,7 +331,9 @@ public class WorkerUpdateManagerTests : IDisposable
         await File.WriteAllTextAsync(Path.Combine(watchdogOptions.WorkerInstallDirectory, ".version"), "1.2.3");
         var uninstallRegistry = new RecordingUninstallRegistryVersionWriter();
         var handler = new StaticHandler("unused"u8.ToArray());
-        var manager = CreateManager(handler, uninstallRegistry: uninstallRegistry);
+        var manager = CreateManager(
+            handler,
+            uninstallRegistry: uninstallRegistry);
 
         await manager.ApplyAsync(Manifest(version: "1.2.3"), CancellationToken.None);
 
@@ -363,7 +365,13 @@ public class WorkerUpdateManagerTests : IDisposable
         Directory.CreateDirectory(payload);
         File.WriteAllText(Path.Combine(payload, WorkerExeName), "exe");
 
-        Assert.Equal(payload, new WorkerUpdateFileSystem().ResolveWorkerPayload(extracted));
+        var watchdogUpdate = Path.Combine(payload, "watchdog-update");
+        Directory.CreateDirectory(watchdogUpdate);
+        File.WriteAllText(Path.Combine(watchdogUpdate, "SwLicenseWatcher.Agent.Watchdog.exe"), "watchdog");
+
+        var resolved = new WorkerUpdateFileSystem().ResolveWorkerPayload(extracted);
+        Assert.Equal(payload, resolved);
+        Assert.True(File.Exists(Path.Combine(resolved, "watchdog-update", "SwLicenseWatcher.Agent.Watchdog.exe")));
     }
 
     [Fact]

@@ -1,15 +1,22 @@
+using System.Text.Json.Serialization;
+
 namespace SwLicenseWatcher.Setup.Core;
 
 public sealed class UpgradeAuthorizationRequest
 {
+    [JsonPropertyName("DeviceCode")]
     public string DeviceCode { get; set; } = string.Empty;
 
+    [JsonPropertyName("DeviceId")]
     public string? DeviceId { get; set; }
 
+    [JsonPropertyName("DevicePublicKey")]
     public string? DevicePublicKey { get; set; }
 
+    [JsonPropertyName("DeviceCertificate")]
     public string? DeviceCertificate { get; set; }
 
+    [JsonPropertyName("DeviceProof")]
     public string? DeviceProof { get; set; }
 }
 

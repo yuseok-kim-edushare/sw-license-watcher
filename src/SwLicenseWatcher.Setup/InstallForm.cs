@@ -168,8 +168,9 @@ internal sealed class InstallForm : Form
         _status.Text = _existing.IsPresent
             ? (_existing.RequiresServerKeyAuthorization
                 ? "서버에서 장치 키를 확인하는 중입니다..."
-                : "인플레이스 업그레이드 중입니다...")
+                : _settings.Version + " 으로 업그레이드하는 중입니다...")
             : "설치하는 중입니다...";
+        _status.Refresh();
         UseWaitCursor = true;
         try
         {
@@ -181,10 +182,11 @@ internal sealed class InstallForm : Form
                 }
 
                 await _upgradeAuthorizer.AuthorizeAsync(_existing, deviceCode, CancellationToken.None);
-                _status.Text = "인플레이스 업그레이드 중입니다...";
+                _status.Text = _settings.Version + " 으로 업그레이드하는 중입니다...";
+                _status.Refresh();
             }
 
-            _setup.Install(_settings, _payloadDirectory, deviceCode, _sourceExePath);
+            await Task.Run(() => _setup.Install(_settings, _payloadDirectory, deviceCode, _sourceExePath));
             _status.ForeColor = Color.DarkGreen;
             _status.Text = _existing.IsPresent
                 ? "업그레이드가 끝났습니다. 서비스가 실행 중입니다."

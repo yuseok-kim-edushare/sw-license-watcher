@@ -147,6 +147,12 @@ function Stop-ServiceIfPresent {
     if ($null -eq $svc) {
         return
     }
+    # Failure recovery restarts Watchdog within 5 seconds of a stop and locks the exe,
+    # so an in-place copy leaves the previous binary in place.
+    & sc.exe failureflag $Name 0 | Out-Null
+    if ($LASTEXITCODE -ne 0) {
+        throw "sc.exe failureflag $Name 0 failed with exit code $LASTEXITCODE."
+    }
     if ($svc.Status -eq [System.ServiceProcess.ServiceControllerStatus]::Stopped) {
         return
     }

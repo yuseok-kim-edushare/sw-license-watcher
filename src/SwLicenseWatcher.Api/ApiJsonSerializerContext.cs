@@ -3,6 +3,7 @@ using SwLicenseWatcher.Core;
 
 namespace SwLicenseWatcher.Api;
 
+[JsonSourceGenerationOptions(PropertyNameCaseInsensitive = true)]
 [JsonSerializable(typeof(HealthResponse))]
 [JsonSerializable(typeof(ErrorResponse))]
 [JsonSerializable(typeof(DesignResponse))]

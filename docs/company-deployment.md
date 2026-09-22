@@ -50,7 +50,7 @@ deploy/
 - PC: Windows x64, 관리자 PowerShell 5.1 이상. Native AOT라 대상 PC에 .NET 런타임은 필요 없습니다.
 - 서버 API URL (HTTPS). HTTP는 loopback 진단만 허용됩니다.
 - 서버 `Security:AgentToken`(32자 이상). PC `ApiToken`과 동일. 조회·정책 API는 `Security:AdminToken` 또는 (설정한 경우) JWT access token을 씁니다. 두 정적 토큰은 모두 필수이며 서로 달라야 합니다.
-- 자체 패치를 쓸 때: 서버가 가리키는 Worker ZIP(`SwLicenseWatcher.Agent.Worker-{version}.zip`)에 `SwLicenseWatcher.Agent.Worker.exe`가 정확히 하나. `RequireAuthenticode`가 `true`이면 EXE/DLL이 신뢰된 Authenticode 서명
+- 자체 패치를 쓸 때: 서버가 가리키는 ZIP(`SwLicenseWatcher.Agent.Worker-{version}.zip`)은 Worker 실행 파일이 있는 폴더 안에 `watchdog-update/`를 두고, Worker 실행 파일은 하나. `RequireAuthenticode`가 `true`이면 EXE/DLL이 신뢰된 Authenticode 서명
 
 토큰과 서명용 PFX는 저장소에 커밋하지 마세요.
 
@@ -308,9 +308,9 @@ powershell.exe -ExecutionPolicy Bypass -File Uninstall-Agent.ps1 `
 
 `-DeviceCode`를 생략하면 컴퓨터 이름을 씁니다. 큐와 백업까지 지울 때만 `-RemoveState`를 붙입니다.
 
-## 7. Worker 자체 패치 (클라이언트 동작)
+## 7. 에이전트 자체 패치 (클라이언트 동작)
 
-Watchdog이 서버 `GET /api/updates/worker/manifest`를 읽고 Worker만 교체합니다. 패키지 URL은 HTTPS여야 합니다. Release의 `SwLicenseWatcher.Agent.Worker-{version}.zip`은 ZIP 루트에 Worker 산출물(exe, `.version`, dll)이 있고, 실행 파일은 하나여야 합니다.
+Watchdog이 서버 `GET /api/updates/worker/manifest`를 읽고 Worker를 교체합니다. 패키지 URL은 HTTPS여야 합니다. Release의 `SwLicenseWatcher.Agent.Worker-{version}.zip`은 Worker 실행 파일이 있는 폴더에 `watchdog-update/`를 함께 두고, Worker 실행 파일은 하나여야 합니다. 설치된 Watchdog는 그 폴더만 복사하므로, 다음 버전 ZIP이면 Watchdog 파일도 같이 전달됩니다. Watchdog는 Worker를 멈추고 백업한 뒤 교체하고, health가 확인되면 커밋 표시를 남깁니다. 그다음 Worker가 Watchdog를 백업하고 교체한 뒤 서비스를 다시 시작합니다. 예전 Worker-only ZIP은 `watchdog-update/`가 없어 Worker만 갱신합니다.
 
 appsettings `Updates:Worker`는 **기동 시드**입니다. 테이블에 행이 없을 때만 복사되고, 이후 핀은 DB가 권위입니다. 파일을 고쳐도 이미 시드된 핀은 바뀌지 않습니다.
 

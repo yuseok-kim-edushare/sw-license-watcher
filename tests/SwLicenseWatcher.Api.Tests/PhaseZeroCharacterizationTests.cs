@@ -118,6 +118,22 @@ public class PhaseZeroCharacterizationTests
     }
 
     [Fact]
+    public void Upgrade_authorization_request_reads_camel_case_from_setup()
+    {
+        var json = """{"deviceCode":"ASSET-1","deviceId":"id-1","devicePublicKey":"pk","deviceProof":"proof"}""";
+
+        var parsed = JsonSerializer.Deserialize(
+            json,
+            ApiJsonSerializerContext.Default.DeviceUpgradeAuthorizationRequest);
+
+        Assert.NotNull(parsed);
+        Assert.Equal("ASSET-1", parsed.DeviceCode);
+        Assert.Equal("id-1", parsed.DeviceId);
+        Assert.Equal("pk", parsed.DevicePublicKey);
+        Assert.Equal("proof", parsed.DeviceProof);
+    }
+
+    [Fact]
     public void DeviceDetail_json_preserves_nested_contract_and_omits_optional_inventory_fields()
     {
         var value = new DeviceDetail(

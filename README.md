@@ -80,7 +80,7 @@
 ## CI/CD
 
 - **CI (`ci.yaml`)**: `main` 대상 push/PR에서 `windows-latest`로 솔루션 Restore/Build/Test를 검증합니다. `build-test`는 SQL Server LocalDB를 기동한 뒤 회사 스키마 매핑으로 스냅샷·정책·위반·heartbeat 통합 테스트를 돌립니다(로컬에 LocalDB가 없으면 해당 테스트는 skip, CI에서는 실패). 이와 병행해 win-x64 Native AOT publish를 수행합니다. AOT 스모크는 의도적으로 DB 없이 `/health` 503을 확인합니다. IL trim/AOT 경고는 자체 코드(SwLicenseWatcher.*)에서 발생하면 실패하고, `Microsoft.Data.SqlClient` 등 서드파티 어셈블리 경고는 요약만 보고합니다. 산출된 native 실행 파일을 smoke-run합니다. Dependabot PR이 두 job을 모두 통과하면 auto-merge 워크플로우를 트리거합니다.
-- **CD (`cd.yaml`)**: `main`에서 CI가 성공하면 다음 릴리스 버전을 먼저 계산합니다(최신 `x.y.z` 태그 patch+1). 커밋 메시지 `Update Version To x.y.z`(대소문자·공백 무시, 선택적 `v`)가 있으면 그 버전으로 재정의하고, Actions에서 CD를 `workflow_dispatch`로 돌릴 때 `version` 입력을 넣어도 됩니다. 그 버전으로 `Agent.Watchdog`/`Agent.Worker` Native AOT와 API Native AOT(Kestrel)·IIS in-process, Setup 런처 AOT, Setup/Packager WinForms self-contained를 publish하고, 에이전트 폴더에 `.version`을 씁니다. GitHub 시크릿 `SIGNING_CERTIFICATE_PFX_BASE64`·`SIGNING_CERTIFICATE_PASSWORD`(선택 `SIGNING_TIMESTAMP_URL`)가 있으면 EXE/DLL에 Authenticode 서명을 합니다. Release 자산은 전체 구성 `SwLicenseWatcher-{version}.zip`(API·에이전트·Packager·Setup), Worker 자체 패치용 `SwLicenseWatcher.Agent.Worker-{version}.zip`, API 없이 더 작은 IT용 `SwLicenseWatcher.Packager-{version}.zip`, `SHA256SUMS.txt`입니다. OAuth 2 Resource Server(JWT) 관리자 인증은 0.2.0부터입니다.
+- **CD (`cd.yaml`)**: `main`에서 CI가 성공하면 다음 릴리스 버전을 먼저 계산합니다(최신 `x.y.z` 태그 patch+1). 커밋 메시지 `Update Version To x.y.z`(대소문자·공백 무시, 선택적 `v`)가 있으면 그 버전으로 재정의하고, Actions에서 CD를 `workflow_dispatch`로 돌릴 때 `version` 입력을 넣어도 됩니다. 그 버전으로 `Agent.Watchdog`/`Agent.Worker` Native AOT와 API Native AOT(Kestrel)·IIS in-process, Setup 런처 AOT, Setup/Packager WinForms self-contained를 publish하고, 에이전트 폴더에 `.version`을 씁니다. GitHub 시크릿 `SIGNING_CERTIFICATE_PFX_BASE64`·`SIGNING_CERTIFICATE_PASSWORD`(선택 `SIGNING_TIMESTAMP_URL`)가 있으면 EXE/DLL에 Authenticode 서명을 합니다. Release 자산은 전체 구성 `SwLicenseWatcher-{version}.zip`(API·에이전트·Packager·Setup), Worker·Watchdog 자체 패치용 `SwLicenseWatcher.Agent.Worker-{version}.zip`, API 없이 더 작은 IT용 `SwLicenseWatcher.Packager-{version}.zip`, `SHA256SUMS.txt`입니다. OAuth 2 Resource Server(JWT) 관리자 인증은 0.2.0부터입니다.
 
 Release ZIP 구조:
 
@@ -95,7 +95,7 @@ SwLicenseWatcher-{version}.zip
     SwLicenseWatcher-Setup.exe   런처 스텁 (페이로드 없음)
     setup-ui/SwLicenseWatcher.Setup.exe
 
-SwLicenseWatcher.Agent.Worker-{version}.zip   Worker 자체 패치 (ZIP 루트에 exe·.version, toast/ 헬퍼)
+SwLicenseWatcher.Agent.Worker-{version}.zip   자체 패치 (Worker 파일과 watchdog-update/)
 SwLicenseWatcher.Packager-{version}.zip       위와 같되 API 없음 (IT만 받을 때)
 SHA256SUMS.txt                                위 ZIP의 SHA-256
 ```
@@ -254,7 +254,7 @@ END
 
 회사 예시 매핑(`company_pc` / `company_stale_heartbeat_notification`)을 쓰는 기존 DB는 테이블·컬럼·FK 이름을 설정값에 맞게 바꿉니다.
 
-Watchdog에는 Worker 실행 파일이 설치된 `Watchdog__WorkerInstallDirectory`와 업데이트 후 확인할 `Watchdog__WorkerHealthFilePath`도 설정합니다. 이 경로는 Worker의 `Agent__HealthFilePath`와 동일해야 하며, Worker 서비스 계정이 쓰고 Watchdog 서비스 계정이 읽을 수 있어야 합니다. 자체 패치 ZIP(`SwLicenseWatcher.Agent.Worker-{version}.zip`)에는 정확히 하나의 `SwLicenseWatcher.Agent.Worker.exe`가 있어야 하며, Watchdog은 설치 폴더의 `appsettings.json`(및 `appsettings.*.json`)을 유지합니다. `RequireAuthenticode`가 `true`(기본)이면 ZIP의 모든 EXE/DLL이 신뢰된 Authenticode 서명을 가져야 합니다. CD에 서명 시크릿이 없으면 릴리스는 서명되지 않으므로, 회사 인증서로 ZIP 내용을 서명한 뒤 재해시하거나 `/admin` **업데이트** 탭에서 `RequireAuthenticode`를 끄세요(비권장).
+Watchdog에는 Worker 실행 파일이 설치된 `Watchdog__WorkerInstallDirectory`와 업데이트 후 확인할 `Watchdog__WorkerHealthFilePath`도 설정합니다. 이 경로는 Worker의 `Agent__HealthFilePath`와 동일해야 하며, Worker 서비스 계정이 쓰고 Watchdog 서비스 계정이 읽을 수 있어야 합니다. 자체 패치 ZIP(`SwLicenseWatcher.Agent.Worker-{version}.zip`)은 Worker 실행 파일이 있는 폴더에 `watchdog-update/`를 함께 넣습니다. Worker 실행 파일은 하나여야 합니다. Watchdog가 그 폴더로 Worker를 교체하고 health가 확인되면, Worker가 Watchdog를 백업한 뒤 교체하고 서비스를 다시 시작합니다. 두 서비스 모두 설치 폴더의 `appsettings.json`(및 `appsettings.*.json`)을 유지합니다. `RequireAuthenticode`가 `true`(기본)이면 ZIP의 모든 EXE/DLL이 신뢰된 Authenticode 서명을 가져야 합니다. CD에 서명 시크릿이 없으면 릴리스는 서명되지 않으므로, 회사 인증서로 ZIP 내용을 서명한 뒤 재해시하거나 `/admin` **업데이트** 탭에서 `RequireAuthenticode`를 끄세요(비권장).
 
 ## 서버 알림 (웹훅 / SMTP)
 

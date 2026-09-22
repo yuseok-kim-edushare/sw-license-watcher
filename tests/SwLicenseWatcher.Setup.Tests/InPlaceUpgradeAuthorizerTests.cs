@@ -23,6 +23,25 @@ public class InPlaceUpgradePolicyTests
 public class InPlaceUpgradeAuthorizerTests
 {
     [Fact]
+    public void Authorization_request_uses_the_api_pascal_case_contract()
+    {
+        var json = JsonSerializer.Serialize(
+            new UpgradeAuthorizationRequest
+            {
+                DeviceCode = "ASSET-1",
+                DeviceId = "id-1",
+                DevicePublicKey = "pk",
+                DeviceProof = "proof"
+            },
+            SetupJsonContext.Default.UpgradeAuthorizationRequest);
+
+        using var document = JsonDocument.Parse(json);
+        Assert.Equal("ASSET-1", document.RootElement.GetProperty("DeviceCode").GetString());
+        Assert.Equal("proof", document.RootElement.GetProperty("DeviceProof").GetString());
+        Assert.False(document.RootElement.TryGetProperty("deviceCode", out _));
+    }
+
+    [Fact]
     public async Task Pre_0_1_0_skips_server_key_authorization()
     {
         var api = new RecordingUpgradeApi();

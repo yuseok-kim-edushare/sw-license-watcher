@@ -220,7 +220,7 @@ Watchdog 기본 주기는 **4시간 ± 1시간**입니다. 테스트 시 `CheckI
 
 3. CD에 서명 시크릿이 없으면 ZIP 안 EXE가 서명되지 않습니다. 집에서는 `RequireAuthenticode: false`가 현실적입니다.
 
-Watchdog은 설치 폴더의 `appsettings.json`을 패치 후에도 유지합니다.
+Watchdog은 Worker를 교체하면서 `appsettings.json`을 유지합니다. 그다음 Worker가 Watchdog를 백업하고 교체합니다.
 
 ## 7. 자주 막히는 지점
 

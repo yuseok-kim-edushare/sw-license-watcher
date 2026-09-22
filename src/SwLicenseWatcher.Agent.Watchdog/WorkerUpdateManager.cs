@@ -29,18 +29,6 @@ public sealed class WorkerUpdateManager(
             throw new InvalidOperationException("The manifest targets a different service.");
         }
 
-        var currentVersionFile = Path.Combine(_options.WorkerInstallDirectory, ".version");
-        if (File.Exists(currentVersionFile) &&
-            string.Equals((await File.ReadAllTextAsync(currentVersionFile, cancellationToken)).Trim(), manifest.Version, StringComparison.Ordinal))
-        {
-            if (!IsPlaceholderManifest(manifest))
-            {
-                uninstallRegistryVersionWriter.TryUpdateDisplayVersion(manifest.Version);
-            }
-
-            return;
-        }
-
         if (IsPlaceholderManifest(manifest))
         {
             if (_placeholderLogged)
@@ -53,6 +41,12 @@ public sealed class WorkerUpdateManager(
                 _placeholderLogged = true;
             }
 
+            return;
+        }
+
+        if (await WorkerVersionMatchesAsync(manifest.Version, cancellationToken))
+        {
+            uninstallRegistryVersionWriter.TryUpdateDisplayVersion(manifest.Version);
             return;
         }
 
@@ -83,6 +77,18 @@ public sealed class WorkerUpdateManager(
         {
             fileSystem.TryDeleteDirectory(operationDirectory);
         }
+    }
+
+    private async Task<bool> WorkerVersionMatchesAsync(string version, CancellationToken cancellationToken)
+    {
+        var currentVersionFile = Path.Combine(_options.WorkerInstallDirectory, ".version");
+        if (!File.Exists(currentVersionFile))
+        {
+            return false;
+        }
+
+        var installed = (await File.ReadAllTextAsync(currentVersionFile, cancellationToken)).Trim();
+        return string.Equals(installed, version, StringComparison.Ordinal);
     }
 
     internal static bool IsPlaceholderManifest(UpdateManifest manifest)

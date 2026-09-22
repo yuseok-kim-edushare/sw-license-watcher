@@ -34,9 +34,46 @@ public static class WindowsServiceRegistration
     public static string[] FailureRestart(string name) =>
         ["failure", name, "reset=", "86400", "actions=", "restart/5000/restart/30000/restart/60000"];
 
+    public static string[] FailureFlagOff(string name) =>
+        ["failureflag", name, "0"];
+
+    public static string[] QueryProcess(string name) =>
+        ["queryex", name];
+
     public static string[] FailureFlag(string name) =>
         ["failureflag", name, "1"];
 
     public static string[] Delete(string name) =>
         ["delete", name];
+}
+
+public static class WindowsServiceProcessQuery
+{
+    public static bool TryReadProcessId(string queryOutput, out int processId)
+    {
+        processId = 0;
+        if (string.IsNullOrWhiteSpace(queryOutput))
+        {
+            return false;
+        }
+
+        foreach (var line in queryOutput.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries))
+        {
+            var separator = line.IndexOf(':');
+            if (separator < 0)
+            {
+                continue;
+            }
+
+            var label = line[..separator].Trim();
+            if (!label.Equals("PID", StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            return int.TryParse(line[(separator + 1)..].Trim(), out processId) && processId > 0;
+        }
+
+        return false;
+    }
 }

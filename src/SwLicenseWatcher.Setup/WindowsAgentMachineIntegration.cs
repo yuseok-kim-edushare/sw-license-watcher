@@ -29,6 +29,27 @@ internal sealed class WindowsAgentMachineIntegration : IAgentMachineIntegration
         service.WaitForStatus(ServiceControllerStatus.Running, TimeSpan.FromSeconds(30));
     }
 
+    public void PrepareForFileReplacement(string name)
+    {
+        if (!ServiceExists(name))
+        {
+            return;
+        }
+
+        RunSc(WindowsServiceRegistration.FailureFlagOff(name));
+        try
+        {
+            StopService(name);
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or System.ServiceProcess.TimeoutException)
+        {
+            TryTerminateServiceProcess(name);
+            return;
+        }
+
+        TryTerminateServiceProcess(name);
+    }
+
     public void StopService(string name)
     {
         if (!ServiceExists(name))
@@ -106,7 +127,47 @@ internal sealed class WindowsAgentMachineIntegration : IAgentMachineIntegration
         ServiceController.GetServices().Any(service =>
             string.Equals(service.ServiceName, name, StringComparison.OrdinalIgnoreCase));
 
+    private void TryTerminateServiceProcess(string name)
+    {
+        if (!TryQueryProcessId(name, out var processId))
+        {
+            return;
+        }
+
+        try
+        {
+            using var process = Process.GetProcessById(processId);
+            process.Kill(entireProcessTree: true);
+            process.WaitForExit(TimeSpan.FromSeconds(15));
+        }
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or System.ComponentModel.Win32Exception)
+        {
+        }
+    }
+
+    private static bool TryQueryProcessId(string name, out int processId)
+    {
+        processId = 0;
+        if (!TryRunSc(WindowsServiceRegistration.QueryProcess(name), out var output))
+        {
+            return false;
+        }
+
+        return WindowsServiceProcessQuery.TryReadProcessId(output, out processId);
+    }
+
     private static void RunSc(IReadOnlyList<string> arguments)
+    {
+        if (!TryRunSc(arguments, out var output))
+        {
+            throw new InvalidOperationException(output);
+        }
+    }
+
+    private static bool TryRunSc(IReadOnlyList<string> arguments) =>
+        TryRunSc(arguments, out _);
+
+    private static bool TryRunSc(IReadOnlyList<string> arguments, out string output)
     {
         if (arguments.Count == 0)
         {
@@ -128,18 +189,21 @@ internal sealed class WindowsAgentMachineIntegration : IAgentMachineIntegration
 
         using var process = Process.Start(start)
             ?? throw new InvalidOperationException("sc.exe could not be started.");
+        var stdout = process.StandardOutput.ReadToEnd();
+        var stderr = process.StandardError.ReadToEnd();
         process.WaitForExit();
-        if (process.ExitCode != 0)
+        output = (stdout + stderr).Trim();
+        if (process.ExitCode == 0)
         {
-            var output = process.StandardOutput.ReadToEnd() + process.StandardError.ReadToEnd();
-            if (process.ExitCode == 5)
-            {
-                throw new UnauthorizedAccessException(
-                    WindowsAdministratorPrivilege.RequiredMessage);
-            }
-
-            throw new InvalidOperationException(
-                $"sc.exe {arguments[0]} failed with exit code {process.ExitCode}. {output}".Trim());
+            return true;
         }
+
+        if (process.ExitCode == 5)
+        {
+            throw new UnauthorizedAccessException(WindowsAdministratorPrivilege.RequiredMessage);
+        }
+
+        output = $"sc.exe {arguments[0]} failed with exit code {process.ExitCode}. {output}".Trim();
+        return false;
     }
 }

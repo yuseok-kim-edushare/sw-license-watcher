@@ -20,6 +20,8 @@ public sealed class Worker(
     UserMessageDelivery userMessages,
     IHostApplicationLifetime applicationLifetime) : BackgroundService
 {
+    private bool _watchdogBundleAttempted;
+
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         var agentOptions = options.Value;
@@ -33,6 +35,7 @@ public sealed class Worker(
                 uninstallRegistryVersionWriter.TryUpdateDisplayVersion(ResolveInstalledVersion());
                 var snapshot = await CollectSnapshotAsync(agentOptions, stoppingToken);
                 await WriteHealthReportAsync(agentOptions, stoppingToken);
+                await ApplyBundledWatchdogUpdateAsync(agentOptions, stoppingToken);
                 logger.LogInformation(
                     "Collected inventory for {HostName} running {OperatingSystem}.",
                     snapshot.Pc.HostName,
@@ -137,6 +140,24 @@ public sealed class Worker(
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
             logger.LogError(ex, "Unable to publish the Worker health signal to {HealthFilePath}.", agentOptions.HealthFilePath);
+        }
+    }
+
+    private async Task ApplyBundledWatchdogUpdateAsync(WorkerAgentOptions agentOptions, CancellationToken cancellationToken)
+    {
+        if (_watchdogBundleAttempted)
+        {
+            return;
+        }
+
+        _watchdogBundleAttempted = true;
+        try
+        {
+            await BundledWatchdogUpdater.ApplyFromInstallAsync(agentOptions.HealthFilePath, cancellationToken);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            logger.LogError(ex, "Watchdog update from the bundled payload failed.");
         }
     }
 

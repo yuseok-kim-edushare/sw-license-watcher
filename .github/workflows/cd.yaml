@@ -375,16 +375,26 @@ jobs:
           Compress-Archive -Path $renamedStaging -DestinationPath $zipPath -Force
 
           $workerPublish = Join-Path "${{ github.workspace }}" "publish\agent-worker\win-x64"
-          if (!(Test-Path $workerPublish)) {
-            Write-Error "Worker publish output not found at: $workerPublish"
+          $watchdogPublish = Join-Path "${{ github.workspace }}" "publish\agent-watchdog\win-x64"
+          if (!(Test-Path $workerPublish) -or !(Test-Path $watchdogPublish)) {
+            Write-Error "Agent publish output not found under publish\agent-worker or publish\agent-watchdog."
             exit 1
           }
+          $agentUpdateStaging = Join-Path $env:RELEASE_ROOT "agent-update-staging"
+          if (Test-Path $agentUpdateStaging) {
+            Remove-Item -Path $agentUpdateStaging -Recurse -Force
+          }
+          New-Item -Path $agentUpdateStaging -ItemType Directory -Force | Out-Null
+          Copy-Item -Path (Join-Path $workerPublish "*") -Destination $agentUpdateStaging -Recurse -Force
+          $watchdogDest = Join-Path $agentUpdateStaging "watchdog-update"
+          New-Item -Path $watchdogDest -ItemType Directory -Force | Out-Null
+          Copy-Item -Path (Join-Path $watchdogPublish "*") -Destination $watchdogDest -Recurse -Force
           $workerZipName = "SwLicenseWatcher.Agent.Worker-$newVersionString.zip"
           $workerZipPath = Join-Path $env:RELEASE_ROOT $workerZipName
           if (Test-Path $workerZipPath) {
             Remove-Item -Path $workerZipPath -Force
           }
-          Compress-Archive -Path (Join-Path $workerPublish "*") -DestinationPath $workerZipPath -Force
+          Compress-Archive -Path (Join-Path $agentUpdateStaging "*") -DestinationPath $workerZipPath -Force
 
           $packagerStaging = Join-Path $env:RELEASE_ROOT "packager-staging"
           if (Test-Path $packagerStaging) {
@@ -427,9 +437,11 @@ jobs:
           [System.IO.File]::WriteAllText($sumsPath, $sums, $utf8NoBom)
 
           $packageUrl = "https://github.com/${{ github.repository }}/releases/download/$newVersionString/$workerZipName"
-          $releaseNotes += "`n`n### Worker self-update package`n`n"
+          $releaseNotes += "`n`n### Agent self-update package`n`n"
           $releaseNotes += "- Asset: $workerZipName`n"
+          $releaseNotes += "- Contents: Worker publish files at the zip root, plus watchdog-update/ beside the Worker executable`n"
           $releaseNotes += "- SHA-256: $workerSha`n"
+          $releaseNotes += "- Watchdog replaces Worker and keeps its appsettings. After that deploy is committed, Worker backs up Watchdog, replaces it, and starts it again.`n"
           $releaseNotes += "`nReady-to-paste Worker update pin (`/admin` 업데이트, ``PUT /api/updates/worker/manifest``, or ``POST /api/updates/worker/github``):`n`n"
           $releaseNotes += "``````json`n"
           $releaseNotes += "{`n"

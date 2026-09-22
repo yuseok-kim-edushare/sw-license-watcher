@@ -31,4 +31,22 @@ public class WindowsServiceRegistrationTests
         Assert.Equal(["failure", "SwLicenseWatcher.Agent.Watchdog", "reset=", "86400", "actions=", "restart/5000/restart/30000/restart/60000"], failure);
         Assert.Equal(["failureflag", "SwLicenseWatcher.Agent.Watchdog", "1"], WindowsServiceRegistration.FailureFlag("SwLicenseWatcher.Agent.Watchdog"));
     }
+
+    [Fact]
+    public void Failure_none_clears_restart_actions_before_file_replacement()
+    {
+        Assert.Equal(
+            ["failureflag", "SwLicenseWatcher.Agent.Watchdog", "0"],
+            WindowsServiceRegistration.FailureFlagOff("SwLicenseWatcher.Agent.Watchdog"));
+    }
+
+    [Theory]
+    [InlineData("        PID                : 0", false, 0)]
+    [InlineData("        PID                : 4821\r\n        FLAGS              :", true, 4821)]
+    [InlineData("SERVICE_NAME: demo", false, 0)]
+    public void Query_output_exposes_a_live_service_process_id(string output, bool found, int processId)
+    {
+        Assert.Equal(found, WindowsServiceProcessQuery.TryReadProcessId(output, out var parsed));
+        Assert.Equal(processId, parsed);
+    }
 }

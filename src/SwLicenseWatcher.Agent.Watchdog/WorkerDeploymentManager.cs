@@ -1,4 +1,5 @@
 using System.Runtime.Versioning;
+using System.Text;
 using Microsoft.Extensions.Options;
 using SwLicenseWatcher.Core;
 
@@ -62,6 +63,11 @@ public sealed class WorkerDeploymentManager(
                     cancellationToken);
                 await serviceControl.StartAsync(cancellationToken);
                 await healthMonitor.WaitForHealthAsync(version, startedAtUtc, healthTimeout, cancellationToken);
+                await File.WriteAllTextAsync(
+                    Path.Combine(_options.WorkerInstallDirectory, AgentUpdateLayout.UpdateCommittedFileName),
+                    version,
+                    new UTF8Encoding(encoderShouldEmitUTF8Identifier: false),
+                    cancellationToken);
                 logger.LogInformation("Worker service updated successfully to {Version}.", version);
             }
             finally

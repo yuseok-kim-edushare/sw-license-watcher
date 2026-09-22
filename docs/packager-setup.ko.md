@@ -111,7 +111,7 @@ IT 확인: `/admin`에서 해당 PC가 보이는지. 기본 수집 주기는 15�
 - `C:\ProgramData\SwLicenseWatcher\state\`의 ML-DSA 장치 키(`device-identity.bin`)와 서버 지정 이름(`assigned-host-name.json`)은 그대로 둡니다. 서버가 인증서를 돌려주면 로컬 신원 파일에 반영합니다. 키가 없던 예전 설치본이면 Worker가 기동 후 한 쌍을 만듭니다.
 - 새 설치본의 서버 주소·에이전트 키·현재 필수 설정은 덮어씁니다.
 
-Watchdog 자체 패치(Worker ZIP만 교체)는 이 설치기와 별개입니다. 회사 HTTPS에 Worker 패키지를 올리고 `/admin` **업데이트**에서 핀을 바꾸는 절차는 [company-deployment.md](company-deployment.md) 7절입니다.
+서비스가 스스로 받는 패치는 Watchdog가 Worker를 교체한 뒤 Worker가 Watchdog를 백업하고 교체합니다. 회사 HTTPS에 패키지를 올리고 `/admin` **업데이트**에서 핀을 바꾸는 절차는 [company-deployment.md](company-deployment.md) 7절입니다.
 
 ## 6. 제거
 

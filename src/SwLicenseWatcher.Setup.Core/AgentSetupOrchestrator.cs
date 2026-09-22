@@ -53,11 +53,13 @@ public sealed class AgentSetupOrchestrator
             ? SetupPaths.ResolveDomainName()
             : existing.DomainName;
 
-        _machine.StopService(SetupPaths.WatchdogServiceName);
-        _machine.StopService(SetupPaths.WorkerServiceName);
+        _machine.PrepareForFileReplacement(SetupPaths.WatchdogServiceName);
+        _machine.PrepareForFileReplacement(SetupPaths.WorkerServiceName);
 
-        CopyDirectory(PayloadLayout.GetWorkerDirectory(payloadDirectory), workerDirectory);
-        CopyDirectory(PayloadLayout.GetWatchdogDirectory(payloadDirectory), watchdogDirectory);
+        ReplaceDirectory(PayloadLayout.GetWorkerDirectory(payloadDirectory), workerDirectory);
+        ReplaceDirectory(PayloadLayout.GetWatchdogDirectory(payloadDirectory), watchdogDirectory);
+        StampInstalledVersion(workerDirectory, settings.Version);
+        StampInstalledVersion(watchdogDirectory, settings.Version);
 
         if (!File.Exists(SetupPaths.WorkerExe(_installRoot)))
         {
@@ -157,6 +159,92 @@ public sealed class AgentSetupOrchestrator
         {
             Directory.Delete(_stateRoot, recursive: true);
         }
+    }
+
+    private static void ReplaceDirectory(string source, string destination)
+    {
+        if (!Directory.Exists(source))
+        {
+            throw new DirectoryNotFoundException($"Install payload directory was not found: {source}");
+        }
+
+        var staging = destination + ".incoming";
+        var backup = destination + ".previous";
+        DeleteDirectoryIfExists(staging);
+        CopyDirectory(source, staging);
+        var movedAside = false;
+        try
+        {
+            if (Directory.Exists(destination))
+            {
+                DeleteDirectoryIfExists(backup);
+                MoveDirectory(destination, backup);
+                movedAside = true;
+            }
+
+            MoveDirectory(staging, destination);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            if (movedAside && !Directory.Exists(destination) && Directory.Exists(backup))
+            {
+                try
+                {
+                    MoveDirectory(backup, destination);
+                }
+                catch (Exception restore) when (restore is IOException or UnauthorizedAccessException)
+                {
+                    throw new IOException(
+                        $"Could not replace {destination}, and the previous files could not be restored from {backup}.",
+                        ex);
+                }
+            }
+
+            throw new IOException(
+                $"Could not replace {destination}. The service was still using those files.",
+                ex);
+        }
+
+        DeleteDirectoryIfExists(backup);
+    }
+
+    private static void MoveDirectory(string source, string destination)
+    {
+        const int attempts = 8;
+        for (var attempt = 1; ; attempt++)
+        {
+            try
+            {
+                Directory.Move(source, destination);
+                return;
+            }
+            catch (IOException) when (attempt < attempts)
+            {
+                Thread.Sleep(250);
+            }
+        }
+    }
+
+    private static void DeleteDirectoryIfExists(string path)
+    {
+        if (Directory.Exists(path))
+        {
+            Directory.Delete(path, recursive: true);
+        }
+    }
+
+    private static void StampInstalledVersion(string directory, string version)
+    {
+        var installed = version.Trim();
+        if (installed.Length == 0)
+        {
+            return;
+        }
+
+        File.WriteAllText(
+            Path.Combine(directory, PayloadLayout.VersionFileName),
+            installed,
+            new System.Text.UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
     }
 
     private static void CopyDirectory(string source, string destination)

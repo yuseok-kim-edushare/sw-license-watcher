@@ -34,6 +34,9 @@ public class AgentSetupOrchestratorTests
         Assert.Equal("worker dependency", File.ReadAllText(Path.Combine(
             SetupPaths.WorkerDirectory(installRoot),
             "other.dll")));
+        Assert.Equal("1.2.3", File.ReadAllText(Path.Combine(
+            SetupPaths.WatchdogDirectory(installRoot),
+            PayloadLayout.VersionFileName)));
         Assert.Equal("setup", File.ReadAllText(SetupPaths.InstalledSetupExe(installRoot)));
         using var workerSettings = JsonDocument.Parse(File.ReadAllText(
             Path.Combine(SetupPaths.WorkerDirectory(installRoot), "appsettings.json")));
@@ -65,7 +68,14 @@ public class AgentSetupOrchestratorTests
         Directory.CreateDirectory(watchdog);
         File.WriteAllText(Path.Combine(worker, PayloadLayout.WorkerExe), "worker-v2");
         File.WriteAllText(Path.Combine(watchdog, PayloadLayout.WatchdogExe), "watchdog-v2");
+        File.WriteAllText(Path.Combine(watchdog, PayloadLayout.VersionFileName), "9.9.9");
         Directory.CreateDirectory(SetupPaths.WorkerDirectory(installRoot));
+        Directory.CreateDirectory(SetupPaths.WatchdogDirectory(installRoot));
+        File.WriteAllText(SetupPaths.WatchdogExe(installRoot), "watchdog-v1");
+        File.WriteAllText(
+            Path.Combine(SetupPaths.WatchdogDirectory(installRoot), PayloadLayout.VersionFileName),
+            "1.0.0");
+        File.WriteAllText(Path.Combine(SetupPaths.WatchdogDirectory(installRoot), "stale.dll"), "old");
         Directory.CreateDirectory(Path.Combine(stateRoot, "state"));
         File.WriteAllText(
             Path.Combine(SetupPaths.WorkerDirectory(installRoot), "appsettings.json"),
@@ -93,6 +103,11 @@ public class AgentSetupOrchestratorTests
         sut.Install(ValidSettings(), payload, "ASSET-42", sourceExePath: null);
 
         Assert.Equal("worker-v2", File.ReadAllText(SetupPaths.WorkerExe(installRoot)));
+        Assert.Equal("watchdog-v2", File.ReadAllText(SetupPaths.WatchdogExe(installRoot)));
+        Assert.Equal("1.2.3", File.ReadAllText(Path.Combine(
+            SetupPaths.WatchdogDirectory(installRoot),
+            PayloadLayout.VersionFileName)));
+        Assert.False(File.Exists(Path.Combine(SetupPaths.WatchdogDirectory(installRoot), "stale.dll")));
         Assert.Equal("mldsa-identity", File.ReadAllText(SetupPaths.DeviceIdentityPath(stateRoot)));
         Assert.Equal(
             """{"assignedDeviceCode":"HOST-9"}""",
