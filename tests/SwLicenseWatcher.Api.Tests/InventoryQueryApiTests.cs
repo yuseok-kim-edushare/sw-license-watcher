@@ -6,6 +6,28 @@ namespace SwLicenseWatcher.Api.Tests;
 
 public class InventoryQueryApiTests
 {
+    [Fact]
+    public void SoftwareCsvRow_appends_device_codes_and_names()
+    {
+        var row = InventoryQueryApi.SoftwareCsvRow(new SoftwareAggregateAssets(
+            new SoftwareAggregate("Chrome", "120", "managed", 2, CompanyCount: 1, ByoCount: 1),
+            [new SoftwareAssetDevice("A001", "홍길동PC"), new SoftwareAssetDevice("A002", "PC-02")]));
+
+        Assert.Equal(
+            ["Chrome", "120", "managed", "2", "1", "1", "0", "A001; A002", "홍길동PC; PC-02"],
+            row);
+    }
+
+    [Fact]
+    public void SoftwareCsvRow_leaves_device_columns_empty_without_devices()
+    {
+        var row = InventoryQueryApi.SoftwareCsvRow(new SoftwareAggregateAssets(
+            new SoftwareAggregate("Chrome", null, "white", 0), []));
+
+        Assert.Equal(string.Empty, row[7]);
+        Assert.Equal(string.Empty, row[8]);
+    }
+
     [Theory]
     [InlineData(null)]
     [InlineData("")]

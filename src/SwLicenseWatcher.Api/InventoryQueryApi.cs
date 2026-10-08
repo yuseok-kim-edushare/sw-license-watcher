@@ -82,26 +82,18 @@ internal static class InventoryQueryApi
 
             var csv = QueryList.WantsCsv(format);
             var (normalizedSkip, normalizedTake) = QueryList.NormalizePaging(skip, take, csv);
-            var (totalCount, items) = await repository.ListSoftwareAsync(
-                normalizedSkip, normalizedTake, search, normalizedClassification, cancellationToken);
-
             if (csv)
             {
+                var (_, rows) = await repository.ListSoftwareWithAssetsAsync(
+                    normalizedSkip, normalizedTake, search, normalizedClassification, cancellationToken);
                 return InventoryCsv.File(
                     "software.csv",
-                    ["Name", "Version", "Classification", "DeviceCount", "CompanyCount", "ByoCount", "UnassignedCount"],
-                    items.Select(entry => new[]
-                    {
-                        entry.Name,
-                        entry.Version,
-                        entry.Classification,
-                        entry.DeviceCount.ToString(System.Globalization.CultureInfo.InvariantCulture),
-                        entry.CompanyCount.ToString(System.Globalization.CultureInfo.InvariantCulture),
-                        entry.ByoCount.ToString(System.Globalization.CultureInfo.InvariantCulture),
-                        entry.UnassignedCount.ToString(System.Globalization.CultureInfo.InvariantCulture)
-                    }));
+                    ["Name", "Version", "Classification", "DeviceCount", "CompanyCount", "ByoCount", "UnassignedCount", "DeviceCodes", "DeviceNames"],
+                    rows.Select(SoftwareCsvRow));
             }
 
+            var (totalCount, items) = await repository.ListSoftwareAsync(
+                normalizedSkip, normalizedTake, search, normalizedClassification, cancellationToken);
             return Results.Ok(new SoftwareAggregateListResponse(normalizedSkip, normalizedTake, totalCount, items));
         });
 
@@ -323,6 +315,19 @@ internal static class InventoryQueryApi
         entry?.Classification,
         entry?.LicenseSource,
         entry?.LicenseSourceOverride
+    ];
+
+    internal static string?[] SoftwareCsvRow(SoftwareAggregateAssets row) =>
+    [
+        row.Software.Name,
+        row.Software.Version,
+        row.Software.Classification,
+        row.Software.DeviceCount.ToString(System.Globalization.CultureInfo.InvariantCulture),
+        row.Software.CompanyCount.ToString(System.Globalization.CultureInfo.InvariantCulture),
+        row.Software.ByoCount.ToString(System.Globalization.CultureInfo.InvariantCulture),
+        row.Software.UnassignedCount.ToString(System.Globalization.CultureInfo.InvariantCulture),
+        string.Join("; ", row.Devices.Select(device => device.DeviceCode)),
+        string.Join("; ", row.Devices.Select(device => device.DeviceName))
     ];
 
     internal static bool TryNormalizeClassification(string? classification, out string? normalized, out string error)
