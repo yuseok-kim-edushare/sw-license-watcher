@@ -101,7 +101,10 @@ public class WorkerUpdateManagerTests : IDisposable
     {
         var watchdogOptions = CreateWatchdogOptions();
         Directory.CreateDirectory(watchdogOptions.WorkerInstallDirectory);
-        await File.WriteAllTextAsync(Path.Combine(watchdogOptions.WorkerInstallDirectory, ".version"), "  1.2.3  ");
+        await File.WriteAllTextAsync(
+            Path.Combine(watchdogOptions.WorkerInstallDirectory, ".version"),
+            "  1.2.3  ",
+            TestContext.Current.CancellationToken);
         var handler = new StaticHandler("unused"u8.ToArray());
         var manager = CreateManager(handler);
 
@@ -115,7 +118,10 @@ public class WorkerUpdateManagerTests : IDisposable
     {
         var watchdogOptions = CreateWatchdogOptions();
         Directory.CreateDirectory(watchdogOptions.WorkerInstallDirectory);
-        await File.WriteAllTextAsync(Path.Combine(watchdogOptions.WorkerInstallDirectory, ".version"), "1.0.0");
+        await File.WriteAllTextAsync(
+            Path.Combine(watchdogOptions.WorkerInstallDirectory, ".version"),
+            "1.0.0",
+            TestContext.Current.CancellationToken);
         var manager = CreateManager();
 
         var ex = await Assert.ThrowsAsync<InvalidOperationException>(
@@ -328,7 +334,10 @@ public class WorkerUpdateManagerTests : IDisposable
     {
         var watchdogOptions = CreateWatchdogOptions();
         Directory.CreateDirectory(watchdogOptions.WorkerInstallDirectory);
-        await File.WriteAllTextAsync(Path.Combine(watchdogOptions.WorkerInstallDirectory, ".version"), "1.2.3");
+        await File.WriteAllTextAsync(
+            Path.Combine(watchdogOptions.WorkerInstallDirectory, ".version"),
+            "1.2.3",
+            TestContext.Current.CancellationToken);
         var uninstallRegistry = new RecordingUninstallRegistryVersionWriter();
         var handler = new StaticHandler("unused"u8.ToArray());
         var manager = CreateManager(

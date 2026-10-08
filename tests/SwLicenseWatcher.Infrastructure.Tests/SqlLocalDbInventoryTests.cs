@@ -213,6 +213,78 @@ public sealed class SqlLocalDbInventoryTests(SqlLocalDbFixture fixture)
         Assert.Equal(8, count);
     }
 
+    [Fact]
+    public async Task ListSoftwareWithAssets_groups_pages_and_associates_distinct_devices()
+    {
+        fixture.EnsureAvailable();
+        var token = TestContext.Current.CancellationToken;
+        var prefix = Unique("sw");
+        var nameA = prefix + "-a";
+        var nameB = prefix + "-b";
+        var nullVersionPc = Unique("PC");
+        var emptyVersionPc = Unique("PC");
+        var duplicatePc = Unique("PC");
+        var trailingSpacePc = Unique("PC");
+        var assignedCode = Unique("ASSET");
+        const string assignedHost = "asset-host";
+        var collected = new DateTimeOffset(2026, 10, 8, 9, 0, 0, TimeSpan.Zero);
+
+        await fixture.Context.SaveSnapshotAsync(
+            Snapshot(nullVersionPc, collected, Software(nameA, null)),
+            token);
+        await fixture.Context.SaveSnapshotAsync(
+            Snapshot(emptyVersionPc, collected, Software(nameA, "")),
+            token);
+        await fixture.Context.SaveSnapshotAsync(
+            Snapshot(duplicatePc, collected, Software(nameB, "1.0"), Software(nameB, "1.0")),
+            token);
+        await fixture.Context.SaveSnapshotAsync(
+            Snapshot(trailingSpacePc, collected, Software(nameB, "1.0 ")),
+            token);
+        Assert.Equal(
+            DeviceProfileUpdateResult.Updated,
+            await fixture.Context.UpdateDeviceProfileAsync(
+                duplicatePc,
+                new DeviceProfileWriteRequest(assignedHost, AdminNotes: null, assignedCode),
+                token));
+
+        var all = await fixture.Context.ListSoftwareWithAssetsAsync(0, 10, prefix, classification: null, token);
+        Assert.Equal(3, all.TotalCount);
+        Assert.Equal(3, all.Items.Count);
+
+        var nullGroup = all.Items[0];
+        Assert.Equal(nameA, nullGroup.Software.Name);
+        Assert.Null(nullGroup.Software.Version);
+        Assert.Equal(SoftwarePolicyClassificationNames.Unclassified, nullGroup.Software.Classification);
+        Assert.Equal(1, nullGroup.Software.DeviceCount);
+        Assert.Equal([new SoftwareAssetDevice(nullVersionPc, "host-" + nullVersionPc)], nullGroup.Devices);
+
+        var emptyGroup = all.Items[1];
+        Assert.Equal(nameA, emptyGroup.Software.Name);
+        Assert.Equal(string.Empty, emptyGroup.Software.Version);
+        Assert.Equal(1, emptyGroup.Software.DeviceCount);
+        Assert.Equal([new SoftwareAssetDevice(emptyVersionPc, "host-" + emptyVersionPc)], emptyGroup.Devices);
+
+        var grouped = all.Items[2];
+        Assert.Equal(nameB, grouped.Software.Name);
+        Assert.Equal("1.0", grouped.Software.Version?.TrimEnd());
+        Assert.Equal(2, grouped.Software.DeviceCount);
+        Assert.Equal(
+            [
+                new SoftwareAssetDevice(assignedCode, assignedHost),
+                new SoftwareAssetDevice(trailingSpacePc, "host-" + trailingSpacePc)
+            ],
+            grouped.Devices);
+
+        var page = await fixture.Context.ListSoftwareWithAssetsAsync(1, 1, prefix, classification: null, token);
+        Assert.Equal(3, page.TotalCount);
+        var only = Assert.Single(page.Items);
+        Assert.Equal(nameA, only.Software.Name);
+        Assert.Equal(string.Empty, only.Software.Version);
+        Assert.Equal(1, only.Software.DeviceCount);
+        Assert.Equal([new SoftwareAssetDevice(emptyVersionPc, "host-" + emptyVersionPc)], only.Devices);
+    }
+
     private static string Unique(string prefix) => prefix + "-" + Guid.NewGuid().ToString("N")[..12];
 
     private static InventoryIngestionRequest Snapshot(
@@ -224,6 +296,6 @@ public sealed class SqlLocalDbInventoryTests(SqlLocalDbFixture fixture)
             software,
             collectedAt);
 
-    private static InstalledSoftwareEntry Software(string name, string version) =>
+    private static InstalledSoftwareEntry Software(string name, string? version) =>
         new(name, version, "Publisher", @"C:\Program Files\" + name, "HKLM Uninstall", "UninstallRegistry");
 }
