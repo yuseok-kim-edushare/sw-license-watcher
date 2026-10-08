@@ -28,7 +28,10 @@ public class BundledWatchdogUpdaterTests : IDisposable
     {
         var bundle = CreateBundle("1.2.3", "new");
         Directory.CreateDirectory(WatchdogDirectory());
-        await File.WriteAllTextAsync(Path.Combine(WatchdogDirectory(), ".version"), "1.2.3");
+        await File.WriteAllTextAsync(
+            Path.Combine(WatchdogDirectory(), ".version"),
+            "1.2.3",
+            TestContext.Current.CancellationToken);
         var services = new RecordingServices();
 
         await BundledWatchdogUpdater.ApplyIfPresentAsync(
@@ -47,12 +50,27 @@ public class BundledWatchdogUpdaterTests : IDisposable
     public async Task Apply_backs_up_the_watchdog_and_keeps_its_appsettings()
     {
         CreateBundle("1.2.3", "new-watchdog");
-        await File.WriteAllTextAsync(Path.Combine(CreateBundle("1.2.3", "new-watchdog"), "appsettings.json"), "package");
+        await File.WriteAllTextAsync(
+            Path.Combine(CreateBundle("1.2.3", "new-watchdog"), "appsettings.json"),
+            "package",
+            TestContext.Current.CancellationToken);
         Directory.CreateDirectory(WatchdogDirectory());
-        await File.WriteAllTextAsync(Path.Combine(WatchdogDirectory(), AgentUpdateLayout.WatchdogExeName), "old-watchdog");
-        await File.WriteAllTextAsync(Path.Combine(WatchdogDirectory(), "appsettings.json"), "installed");
-        await File.WriteAllTextAsync(Path.Combine(WatchdogDirectory(), "stale.dll"), "stale");
-        await File.WriteAllTextAsync(Path.Combine(WorkerDirectory(), AgentUpdateLayout.UpdateCommittedFileName), "1.2.3");
+        await File.WriteAllTextAsync(
+            Path.Combine(WatchdogDirectory(), AgentUpdateLayout.WatchdogExeName),
+            "old-watchdog",
+            TestContext.Current.CancellationToken);
+        await File.WriteAllTextAsync(
+            Path.Combine(WatchdogDirectory(), "appsettings.json"),
+            "installed",
+            TestContext.Current.CancellationToken);
+        await File.WriteAllTextAsync(
+            Path.Combine(WatchdogDirectory(), "stale.dll"),
+            "stale",
+            TestContext.Current.CancellationToken);
+        await File.WriteAllTextAsync(
+            Path.Combine(WorkerDirectory(), AgentUpdateLayout.UpdateCommittedFileName),
+            "1.2.3",
+            TestContext.Current.CancellationToken);
         var services = new RecordingServices();
 
         await BundledWatchdogUpdater.ApplyIfPresentAsync(
@@ -64,11 +82,11 @@ public class BundledWatchdogUpdaterTests : IDisposable
             CancellationToken.None);
 
         Assert.Equal(["stop", "start"], services.Calls);
-        Assert.Equal("new-watchdog", await File.ReadAllTextAsync(Path.Combine(WatchdogDirectory(), AgentUpdateLayout.WatchdogExeName)));
-        Assert.Equal("installed", await File.ReadAllTextAsync(Path.Combine(WatchdogDirectory(), "appsettings.json")));
-        Assert.Equal("1.2.3", (await File.ReadAllTextAsync(Path.Combine(WatchdogDirectory(), ".version"))).Trim());
+        Assert.Equal("new-watchdog", await File.ReadAllTextAsync(Path.Combine(WatchdogDirectory(), AgentUpdateLayout.WatchdogExeName), TestContext.Current.CancellationToken));
+        Assert.Equal("installed", await File.ReadAllTextAsync(Path.Combine(WatchdogDirectory(), "appsettings.json"), TestContext.Current.CancellationToken));
+        Assert.Equal("1.2.3", (await File.ReadAllTextAsync(Path.Combine(WatchdogDirectory(), ".version"), TestContext.Current.CancellationToken)).Trim());
         Assert.False(File.Exists(Path.Combine(WatchdogDirectory(), "stale.dll")));
-        Assert.Equal("old-watchdog", await File.ReadAllTextAsync(Path.Combine(BackupDirectory(), AgentUpdateLayout.WatchdogExeName)));
+        Assert.Equal("old-watchdog", await File.ReadAllTextAsync(Path.Combine(BackupDirectory(), AgentUpdateLayout.WatchdogExeName), TestContext.Current.CancellationToken));
         Assert.False(Directory.Exists(Path.Combine(WorkerDirectory(), AgentUpdateLayout.WatchdogPayloadDirectoryName)));
     }
 
@@ -77,8 +95,14 @@ public class BundledWatchdogUpdaterTests : IDisposable
     {
         CreateBundle("1.2.3", "new-watchdog");
         Directory.CreateDirectory(WatchdogDirectory());
-        await File.WriteAllTextAsync(Path.Combine(WatchdogDirectory(), AgentUpdateLayout.WatchdogExeName), "old-watchdog");
-        await File.WriteAllTextAsync(Path.Combine(WorkerDirectory(), AgentUpdateLayout.UpdateCommittedFileName), "1.2.3");
+        await File.WriteAllTextAsync(
+            Path.Combine(WatchdogDirectory(), AgentUpdateLayout.WatchdogExeName),
+            "old-watchdog",
+            TestContext.Current.CancellationToken);
+        await File.WriteAllTextAsync(
+            Path.Combine(WorkerDirectory(), AgentUpdateLayout.UpdateCommittedFileName),
+            "1.2.3",
+            TestContext.Current.CancellationToken);
 
         var ex = await Assert.ThrowsAsync<InvalidOperationException>(() =>
             BundledWatchdogUpdater.ApplyIfPresentAsync(
@@ -90,7 +114,7 @@ public class BundledWatchdogUpdaterTests : IDisposable
                 CancellationToken.None));
 
         Assert.Equal("start failed", ex.Message);
-        Assert.Equal("old-watchdog", await File.ReadAllTextAsync(Path.Combine(WatchdogDirectory(), AgentUpdateLayout.WatchdogExeName)));
+        Assert.Equal("old-watchdog", await File.ReadAllTextAsync(Path.Combine(WatchdogDirectory(), AgentUpdateLayout.WatchdogExeName), TestContext.Current.CancellationToken));
         Assert.True(Directory.Exists(Path.Combine(WorkerDirectory(), AgentUpdateLayout.WatchdogPayloadDirectoryName)));
     }
 
@@ -99,13 +123,21 @@ public class BundledWatchdogUpdaterTests : IDisposable
     {
         CreateBundle("1.2.3", "new-watchdog");
         Directory.CreateDirectory(WatchdogDirectory());
-        await File.WriteAllTextAsync(Path.Combine(WatchdogDirectory(), AgentUpdateLayout.WatchdogExeName), "old-watchdog");
+        await File.WriteAllTextAsync(
+            Path.Combine(WatchdogDirectory(), AgentUpdateLayout.WatchdogExeName),
+            "old-watchdog",
+            TestContext.Current.CancellationToken);
         var started = DateTime.UtcNow;
-        var write = Task.Run(async () =>
-        {
-            await Task.Delay(300);
-            await File.WriteAllTextAsync(Path.Combine(WorkerDirectory(), AgentUpdateLayout.UpdateCommittedFileName), "1.2.3");
-        });
+        var write = Task.Run(
+            async () =>
+            {
+                await Task.Delay(300, TestContext.Current.CancellationToken);
+                await File.WriteAllTextAsync(
+                    Path.Combine(WorkerDirectory(), AgentUpdateLayout.UpdateCommittedFileName),
+                    "1.2.3",
+                    TestContext.Current.CancellationToken);
+            },
+            TestContext.Current.CancellationToken);
 
         await BundledWatchdogUpdater.ApplyIfPresentAsync(
             WorkerDirectory(),
@@ -117,7 +149,7 @@ public class BundledWatchdogUpdaterTests : IDisposable
         await write;
 
         Assert.True(DateTime.UtcNow - started < TimeSpan.FromSeconds(5));
-        Assert.Equal("new-watchdog", await File.ReadAllTextAsync(Path.Combine(WatchdogDirectory(), AgentUpdateLayout.WatchdogExeName)));
+        Assert.Equal("new-watchdog", await File.ReadAllTextAsync(Path.Combine(WatchdogDirectory(), AgentUpdateLayout.WatchdogExeName), TestContext.Current.CancellationToken));
     }
 
     public void Dispose()

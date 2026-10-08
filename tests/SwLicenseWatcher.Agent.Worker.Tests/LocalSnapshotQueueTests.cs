@@ -73,7 +73,7 @@ public class LocalSnapshotQueueTests : IDisposable
     {
         Directory.CreateDirectory(_queueDirectory);
         var corruptPath = Path.Combine(_queueDirectory, "corrupt.snapshot");
-        await File.WriteAllTextAsync(corruptPath, "not-a-snapshot");
+        await File.WriteAllTextAsync(corruptPath, "not-a-snapshot", TestContext.Current.CancellationToken);
 
         var delivered = await CreateQueue().FlushAsync(CreateApiClient(new RecordingHandler(HttpStatusCode.Accepted)), CancellationToken.None);
 
@@ -87,7 +87,7 @@ public class LocalSnapshotQueueTests : IDisposable
     {
         Directory.CreateDirectory(_queueDirectory);
         var path = Path.Combine(_queueDirectory, "protected.snapshot");
-        await File.WriteAllTextAsync(path, "ciphertext");
+        await File.WriteAllTextAsync(path, "ciphertext", TestContext.Current.CancellationToken);
         var queue = CreateQueue(protector: new ThrowingProtector());
 
         var delivered = await queue.FlushAsync(CreateApiClient(new RecordingHandler(HttpStatusCode.Accepted)), CancellationToken.None);
@@ -111,9 +111,9 @@ public class LocalSnapshotQueueTests : IDisposable
     {
         Directory.CreateDirectory(_queueDirectory);
         var oldest = Path.Combine(_queueDirectory, "0001.snapshot");
-        await File.WriteAllTextAsync(oldest, "stale-1");
-        await File.WriteAllTextAsync(Path.Combine(_queueDirectory, "0002.snapshot"), "stale-2");
-        await File.WriteAllTextAsync(Path.Combine(_queueDirectory, "0003.snapshot"), "stale-3");
+        await File.WriteAllTextAsync(oldest, "stale-1", TestContext.Current.CancellationToken);
+        await File.WriteAllTextAsync(Path.Combine(_queueDirectory, "0002.snapshot"), "stale-2", TestContext.Current.CancellationToken);
+        await File.WriteAllTextAsync(Path.Combine(_queueDirectory, "0003.snapshot"), "stale-3", TestContext.Current.CancellationToken);
 
         await CreateQueue(maxQueuedSnapshots: 2).FlushAsync(
             CreateApiClient(new RecordingHandler(HttpStatusCode.Accepted)),
@@ -129,9 +129,9 @@ public class LocalSnapshotQueueTests : IDisposable
     {
         Directory.CreateDirectory(_queueDirectory);
         var oldest = Path.Combine(_queueDirectory, "0001.snapshot");
-        await File.WriteAllBytesAsync(oldest, new byte[1000]);
-        await File.WriteAllBytesAsync(Path.Combine(_queueDirectory, "0002.snapshot"), new byte[1000]);
-        await File.WriteAllBytesAsync(Path.Combine(_queueDirectory, "0003.snapshot"), new byte[1000]);
+        await File.WriteAllBytesAsync(oldest, new byte[1000], TestContext.Current.CancellationToken);
+        await File.WriteAllBytesAsync(Path.Combine(_queueDirectory, "0002.snapshot"), new byte[1000], TestContext.Current.CancellationToken);
+        await File.WriteAllBytesAsync(Path.Combine(_queueDirectory, "0003.snapshot"), new byte[1000], TestContext.Current.CancellationToken);
 
         await CreateQueue(maxQueueBytes: 1500).FlushAsync(
             CreateApiClient(new RecordingHandler(HttpStatusCode.Accepted)),

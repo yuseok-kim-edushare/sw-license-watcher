@@ -24,7 +24,7 @@ public class WorkerUpdatePackageStoreTests : IDisposable
         await store.SavePackageAsync("v1.2.3", payload, CancellationToken.None);
 
         Assert.True(store.TryGetPackagePath("1.2.3", out var path));
-        Assert.Equal("worker-zip", await File.ReadAllTextAsync(path));
+        Assert.Equal("worker-zip", await File.ReadAllTextAsync(path, TestContext.Current.CancellationToken));
         Assert.False(store.TryGetPackagePath("../evil", out _));
         Assert.False(store.TryGetPackagePath("missing", out _));
     }
@@ -131,7 +131,10 @@ public class GitHubWorkerUpdateImporterTests : IDisposable
         var sha = Convert.ToHexString(SHA256.HashData(zip)).ToLowerInvariant();
         var handler = new GitHubHandler(zip, $"{sha}  SwLicenseWatcher.Agent.Worker-1.2.3.zip\n");
         Directory.CreateDirectory(_root);
-        await File.WriteAllBytesAsync(Path.Combine(_root, "SwLicenseWatcher.Agent.Worker-1.2.3.zip"), zip);
+        await File.WriteAllBytesAsync(
+            Path.Combine(_root, "SwLicenseWatcher.Agent.Worker-1.2.3.zip"),
+            zip,
+            TestContext.Current.CancellationToken);
         var importer = CreateImporter(handler, new MemoryPinStore());
 
         var source = await importer.GetSourceAsync(CancellationToken.None);

@@ -174,7 +174,7 @@ public class WorkerUpdateManagerTests : IDisposable
         var path = Path.Combine(_root, "package.bin");
         Directory.CreateDirectory(_root);
         var payload = "worker-package"u8.ToArray();
-        await File.WriteAllBytesAsync(path, payload);
+        await File.WriteAllBytesAsync(path, payload, TestContext.Current.CancellationToken);
 
         await new UpdatePackageVerifier().VerifyHashAsync(
             path,
@@ -187,7 +187,7 @@ public class WorkerUpdateManagerTests : IDisposable
     {
         var path = Path.Combine(_root, "package.bin");
         Directory.CreateDirectory(_root);
-        await File.WriteAllBytesAsync(path, "worker-package"u8.ToArray());
+        await File.WriteAllBytesAsync(path, "worker-package"u8.ToArray(), TestContext.Current.CancellationToken);
 
         await Assert.ThrowsAsync<CryptographicException>(
             () => new UpdatePackageVerifier().VerifyHashAsync(path, ValidSha256, CancellationToken.None));
@@ -226,15 +226,18 @@ public class WorkerUpdateManagerTests : IDisposable
         var archivePath = Path.Combine(_root, "safe.zip");
         var destination = Path.Combine(_root, "extracted");
         Directory.CreateDirectory(_root);
-        await File.WriteAllBytesAsync(archivePath, CreateZip(
-            ("payload/", Array.Empty<byte>()),
-            ("payload/readme.txt", "hello"u8.ToArray()),
-            ("payload/nested/data.bin", "data"u8.ToArray())));
+        await File.WriteAllBytesAsync(
+            archivePath,
+            CreateZip(
+                ("payload/", Array.Empty<byte>()),
+                ("payload/readme.txt", "hello"u8.ToArray()),
+                ("payload/nested/data.bin", "data"u8.ToArray())),
+            TestContext.Current.CancellationToken);
 
         await CreateExtractor().ExtractAsync(archivePath, destination, CancellationToken.None);
 
-        Assert.Equal("hello", await File.ReadAllTextAsync(Path.Combine(destination, "payload", "readme.txt")));
-        Assert.Equal("data", await File.ReadAllTextAsync(Path.Combine(destination, "payload", "nested", "data.bin")));
+        Assert.Equal("hello", await File.ReadAllTextAsync(Path.Combine(destination, "payload", "readme.txt"), TestContext.Current.CancellationToken));
+        Assert.Equal("data", await File.ReadAllTextAsync(Path.Combine(destination, "payload", "nested", "data.bin"), TestContext.Current.CancellationToken));
     }
 
     [Theory]
@@ -245,7 +248,7 @@ public class WorkerUpdateManagerTests : IDisposable
         var archivePath = Path.Combine(_root, "slip.zip");
         var destination = Path.Combine(_root, "extracted");
         Directory.CreateDirectory(_root);
-        await File.WriteAllBytesAsync(archivePath, CreateZip((entryName, "pwned"u8.ToArray())));
+        await File.WriteAllBytesAsync(archivePath, CreateZip((entryName, "pwned"u8.ToArray())), TestContext.Current.CancellationToken);
 
         var ex = await Assert.ThrowsAsync<InvalidDataException>(
             () => CreateExtractor().ExtractAsync(archivePath, destination, CancellationToken.None));
@@ -261,7 +264,7 @@ public class WorkerUpdateManagerTests : IDisposable
         var destination = Path.Combine(_root, "extracted");
         var absoluteTarget = Path.Combine(_root, "outside", "evil.txt");
         Directory.CreateDirectory(_root);
-        await File.WriteAllBytesAsync(archivePath, CreateZip((absoluteTarget, "pwned"u8.ToArray())));
+        await File.WriteAllBytesAsync(archivePath, CreateZip((absoluteTarget, "pwned"u8.ToArray())), TestContext.Current.CancellationToken);
 
         var ex = await Assert.ThrowsAsync<InvalidDataException>(
             () => CreateExtractor().ExtractAsync(archivePath, destination, CancellationToken.None));
@@ -357,7 +360,7 @@ public class WorkerUpdateManagerTests : IDisposable
         var archivePath = Path.Combine(_root, "large.zip");
         var destination = Path.Combine(_root, "extracted");
         Directory.CreateDirectory(_root);
-        await File.WriteAllBytesAsync(archivePath, CreateZip(("payload.bin", new byte[64])));
+        await File.WriteAllBytesAsync(archivePath, CreateZip(("payload.bin", new byte[64])), TestContext.Current.CancellationToken);
 
         var ex = await Assert.ThrowsAsync<InvalidDataException>(
             () => CreateExtractor(options => options.MaxExtractedBytes = 32)
