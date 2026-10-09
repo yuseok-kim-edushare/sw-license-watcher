@@ -15,6 +15,8 @@
 
   <!-- Non-AOT flavour (IIS publish, test references) gets its own bin/obj. See NonAotFlavour.props. -->
   <Import Project="..\..\NonAotFlavour.props" Condition="'$(PublishAot)' != 'true'" />
+  <!-- Keep non-trim-safe SqlClient assemblies whole during Native AOT. -->
+  <Import Project="..\..\ThirdPartyTrimExceptions.props" />
 
   <ItemGroup>
     <PackageReference Include="Microsoft.Extensions.Hosting.WindowsServices" />

@@ -10,6 +10,7 @@
 
   <!-- Non-AOT flavour (test references) gets its own bin/obj. See NonAotFlavour.props. -->
   <Import Project="..\..\NonAotFlavour.props" Condition="'$(PublishAot)' != 'true'" />
+  <Import Project="..\..\ThirdPartyTrimExceptions.props" />
 
   <ItemGroup>
     <PackageReference Include="Microsoft.Extensions.Hosting" />

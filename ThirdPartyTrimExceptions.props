@@ -1,0 +1,45 @@
+<Project>
+  <!--
+    These packages are not marked trimmable. Native AOT would trim reflection
+    and diagnostics members out of them. Root the assemblies (TrimMode=copy).
+    Native AOT passes that to ilc as a full-generate root. Framework assemblies
+    that declare IsTrimmable stay on the normal trim.
+
+    Analysis still runs. Collapse each rooted assembly to the IL2104 / IL3053
+    summary and suppress those two codes, so CI does not list warnings for
+    assemblies we have chosen to keep whole. Other assemblies stay on
+    individual warnings, so a first-party IL2026 still reaches CI.
+    Do not add those codes to NoWarn; that would hide them everywhere.
+  -->
+  <PropertyGroup>
+    <TrimmerSingleWarn Condition="'$(TrimmerSingleWarn)' == ''">false</TrimmerSingleWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ThirdPartyTrimException Include="BouncyCastle.Cryptography" />
+    <ThirdPartyTrimException Include="Microsoft.Data.SqlClient" />
+    <!-- EventSource warnings are compiled into this satellite, not the main SqlClient assembly. -->
+    <ThirdPartyTrimException Include="Microsoft.Data.SqlClient.Internal.Logging" />
+    <ThirdPartyTrimException Include="Microsoft.Data.SqlClient.Extensions.Abstractions" />
+    <ThirdPartyTrimException Include="Microsoft.SqlServer.Server" />
+    <ThirdPartyTrimException Include="System.Configuration.ConfigurationManager" />
+  </ItemGroup>
+
+  <Target Name="RootThirdPartyTrimExceptions" BeforeTargets="PrepareForILLink">
+    <JoinItems Left="@(ManagedAssemblyToLink)" LeftKey="Filename" LeftMetadata="*"
+               Right="@(ThirdPartyTrimException)" RightKey="Identity"
+               ItemSpecToUse="Left">
+      <Output TaskParameter="JoinResult" ItemName="_ThirdPartyTrimExceptionAssembly" />
+    </JoinItems>
+    <ItemGroup>
+      <_ThirdPartyTrimExceptionAssembly>
+        <TrimMode>copy</TrimMode>
+        <TrimmerSingleWarn>true</TrimmerSingleWarn>
+      </_ThirdPartyTrimExceptionAssembly>
+      <ManagedAssemblyToLink Remove="@(_ThirdPartyTrimExceptionAssembly)" />
+      <ManagedAssemblyToLink Include="@(_ThirdPartyTrimExceptionAssembly)" />
+      <IlcArg Include="--nowarn:IL2104" />
+      <IlcArg Include="--nowarn:IL3053" />
+    </ItemGroup>
+  </Target>
+</Project>

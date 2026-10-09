@@ -13,6 +13,7 @@
   </PropertyGroup>
 
   <Import Project="..\..\NonAotFlavour.props" Condition="'$(PublishAot)' != 'true'" />
+  <Import Project="..\..\ThirdPartyTrimExceptions.props" />
 
   <ItemGroup>
     <ProjectReference Include="..\SwLicenseWatcher.Setup.Core\SwLicenseWatcher.Setup.Core.csproj" GlobalPropertiesToRemove="PublishAot;PublishTrimmed" />
