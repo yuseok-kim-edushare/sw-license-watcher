@@ -561,13 +561,71 @@ jobs:
           path: ${{ runner.temp }}/il-warnings-*.txt
           if-no-files-found: ignore
 
+  relational-db:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_ROOT_PASSWORD: swlw
+          MYSQL_DATABASE: swlw
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -pswlw --silent"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=20
+      mariadb:
+        image: mariadb:11.8
+        env:
+          MARIADB_ROOT_PASSWORD: swlw
+          MARIADB_DATABASE: swlw
+        ports:
+          - 3307:3306
+        options: >-
+          --health-cmd="healthcheck.sh --connect --innodb_initialized"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=20
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: swlw
+          POSTGRES_DB: swlw
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U postgres -d swlw"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=20
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: 10.0.x
+          dotnet-quality: ga
+
+      - name: Test MySQL, MariaDB, and PostgreSQL
+        env:
+          SWLW_MYSQL_CONNECTION: Server=127.0.0.1;Port=3306;Database=swlw;User ID=root;Password=swlw;SslMode=None;AllowPublicKeyRetrieval=True
+          SWLW_MARIADB_CONNECTION: Server=127.0.0.1;Port=3307;Database=swlw;User ID=root;Password=swlw;SslMode=None;AllowPublicKeyRetrieval=True
+          SWLW_POSTGRES_CONNECTION: Host=127.0.0.1;Port=5432;Database=swlw;Username=postgres;Password=swlw
+        run: dotnet test tests/SwLicenseWatcher.Infrastructure.Tests/SwLicenseWatcher.Infrastructure.Tests.csproj -c Release --filter Category=RelationalIntegration
+
   trigger-auto-merge:
     runs-on: ubuntu-latest
-    needs: [build-test, aot-publish]
+    needs: [build-test, aot-publish, relational-db]
     if: |
       github.event_name == 'pull_request' &&
       needs.build-test.result == 'success' &&
       needs.aot-publish.result == 'success' &&
+      needs.relational-db.result == 'success' &&
       github.actor == 'dependabot[bot]'
     permissions:
       actions: write

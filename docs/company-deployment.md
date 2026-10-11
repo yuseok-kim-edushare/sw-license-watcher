@@ -6,11 +6,11 @@
 
 ```
 회사 PC (클라이언트)                       회사 서버 (여기만 API)
-┌──────────────────────────┐              ┌─────────────────────────┐
-│ Worker   수집·전송        │  HTTPS      │ ASP.NET Core API        │
-│ Watchdog 자체 패치        │  Bearer ──► │ SQL Server              │
-│ appsettings.json         │              │ appsettings.json        │
-└──────────────────────────┘              └─────────────────────────┘
+┌──────────────────────────┐              ┌──────────────────────────────────┐
+│ Worker   수집·전송        │  HTTPS      │ ASP.NET Core API                 │
+│ Watchdog 자체 패치        │  Bearer ──► │ SQL Server / MySQL / PostgreSQL  │
+│ appsettings.json         │              │ appsettings.json                 │
+└──────────────────────────┘              └──────────────────────────────────┘
 ```
 
 ```
@@ -86,8 +86,11 @@ API는 서버에서만 호스팅합니다. PC 에이전트 설치 대상이 아�
 | `Security:Jwt:RequiredScope` | Authority가 있을 때 scope 또는 role 중 하나 | `scp`/`scope`에 이 값이 있어야 함. Entra에 `admin` 같은 scope를 둔다 |
 | `Security:Jwt:RequiredRole` | Authority가 있을 때 scope 또는 role 중 하나 | `roles`(또는 `RoleClaimType`)에 이 값이 있어야 함. Scope를 쓰면 비워도 된다 |
 | `Security:Jwt:ClockSkew` | | 기본 5분 |
-| `Storage:SqlServer:ConnectionString` | 예 | `TrustServerCertificate=False` 권장 |
-| `Storage:SqlServer:SchemaName` 및 테이블/컬럼 | 예 | 기본 예시는 `inventory.company_pc`, `inventory.company_stale_heartbeat_notification`, `inventory.company_pc_uninstall_request`, `inventory.company_pc_sw_license`, `inventory.company_worker_update_pin` 등. 정책 테이블에는 `default_license_source` 컬럼이 있습니다. 식별자는 영문·숫자·밑줄만 |
+| `Storage:Provider` | | `SqlServer`(기본), `MySql`(MariaDB 포함), `PostgreSql`. 선택한 섹션만 연결 문자열이 필요합니다 |
+| `Storage:SqlServer:ConnectionString` | Provider가 SqlServer일 때 예 | `TrustServerCertificate=False` 권장 |
+| `Storage:MySql:ConnectionString` | Provider가 MySql일 때 예 | MySQL 8.0 또는 MariaDB 10.11 이상. database를 연결 문자열에 넣습니다. `SchemaName`은 무시되고 시각은 UTC `DATETIME(6)`입니다. `AllowUserVariables`는 스키마 적용 때 API가 켭니다 |
+| `Storage:PostgreSql:ConnectionString` | Provider가 PostgreSql일 때 예 | PostgreSQL 14 이상. `SchemaName`(기본 `inventory`) 아래에 테이블을 만듭니다 |
+| `Storage:<Provider>:SchemaName` 및 테이블/컬럼 | 예 | 세 섹션의 테이블 맵 모양은 같습니다. 기본 예시는 `inventory.company_pc` 등입니다. 식별자는 영문·숫자·밑줄만이며, SQL Server는 128자, MySQL은 64자, PostgreSQL은 63자까지입니다. MySQL/PostgreSQL 스키마는 API(`POST /api/schema/sql` 또는 백그라운드 적용)가 넣습니다. `Apply-DbSchema.ps1`는 SQL Server 전용입니다 |
 | `Database:ApplySchemaInBackground` | | 기본 `true`. 기동 후 백그라운드에서 없는 테이블/컬럼을 `CREATE`/`ALTER TABLE ADD`. 실패 시 재시도 |
 | `Database:ApplySchemaOnStartup` | | 기본 `false`. `true`면 요청을 받기 전에 같은 DDL을 적용하고, 실패하면 기동하지 않음 |
 | `Updates:Worker:PackageUrl` | 예 | 기동 시드용 절대 HTTPS URI. 살아 있는 핀은 DB이며 `/admin` **업데이트** 또는 `PUT /api/updates/worker/manifest`로 바꿈. GitHub에서 가져오면 캐시된 패키지 URL로 바뀜 |

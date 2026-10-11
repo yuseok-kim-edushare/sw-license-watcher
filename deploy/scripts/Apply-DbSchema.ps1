@@ -2,6 +2,8 @@
 <#
 .SYNOPSIS
     Applies the SwLicenseWatcher SQL Server schema DDL.
+    MySQL/MariaDB and PostgreSQL schemas are applied by the API
+    (Database:ApplySchemaInBackground or POST /api/schema/sql), not by this script.
 
 .DESCRIPTION
     Loads idempotent DDL either from a running API (GET /api/schema/sql with an

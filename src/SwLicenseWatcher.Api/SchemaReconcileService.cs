@@ -1,11 +1,11 @@
 using Microsoft.Extensions.Options;
 using SwLicenseWatcher.Core;
-using SwLicenseWatcher.Infrastructure.SqlServer;
+using SwLicenseWatcher.Infrastructure.Relational;
 
 namespace SwLicenseWatcher.Api;
 
 public sealed class SchemaReconcileService(
-    SqlServerSchemaApplicator applicator,
+    RelationalSchemaApplicator applicator,
     IOptions<DatabaseOptions> database,
     ILogger<SchemaReconcileService> logger) : BackgroundService
 {

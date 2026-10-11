@@ -14,7 +14,8 @@ public sealed record DesignArchitecture(
 public sealed record DesignSqlServer(
     bool HasConnectionStringConfigured,
     string SchemaName,
-    string SchemaScript);
+    string SchemaScript,
+    string Provider);
 
 public sealed record DesignCounts(int SnapshotCount, int HeartbeatCount);
 

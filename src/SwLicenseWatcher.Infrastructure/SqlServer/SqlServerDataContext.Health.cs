@@ -1,18 +1,18 @@
 using System.Collections.Concurrent;
 using System.Data;
-using Microsoft.Data.SqlClient;
+using System.Data.Common;
 using SwLicenseWatcher.Application;
 using SwLicenseWatcher.Core;
 
-namespace SwLicenseWatcher.Infrastructure.SqlServer;
+namespace SwLicenseWatcher.Infrastructure.Relational;
 
-internal sealed partial class SqlServerDataContext
+public sealed partial class RelationalDataContext
 {
     public async Task ProbeAsync(CancellationToken cancellationToken)
     {
-        await using var connection = new SqlConnection(options.ConnectionString);
+        await using var connection = CreateConnection();
         await connection.OpenAsync(cancellationToken);
-        await using var command = new SqlCommand("SELECT 1", connection);
+        await using var command = CreateCommand(connection, null, "SELECT 1");
         await command.ExecuteScalarAsync(cancellationToken);
     }
 

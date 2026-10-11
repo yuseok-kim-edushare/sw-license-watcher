@@ -11,23 +11,31 @@ internal static class ApiServiceCollectionExtensions
         this IServiceCollection services,
         IConfiguration configuration)
     {
-        services.AddOptions<SqlServerStorageOptions>()
-            .Bind(configuration.GetSection("Storage:SqlServer"))
+        services.AddOptions<StorageProviderOptions>()
+            .Bind(configuration.GetSection("Storage"))
             .Validate(
-                options => !string.IsNullOrWhiteSpace(options.ConnectionString),
-                "Storage:SqlServer:ConnectionString is required.")
-            .Validate(options =>
+                options => StorageProviders.TryParse(options.Provider, out _),
+                "Storage:Provider must be SqlServer, MySql, MariaDB, or PostgreSql.")
+            .ValidateOnStart();
+
+        services.AddSingleton<IConfigureOptions<SqlServerStorageOptions>, ActiveStorageOptionsConfigurator>();
+        services.AddOptions<SqlServerStorageOptions>()
+            .Validate<IOptions<StorageProviderOptions>>(
+                (storage, providerOptions) => !string.IsNullOrWhiteSpace(storage.ConnectionString),
+                "The active storage connection string is required (Storage:SqlServer, Storage:MySql, or Storage:PostgreSql).")
+            .Validate<IOptions<StorageProviderOptions>>((storage, providerOptions) =>
             {
                 try
                 {
-                    SqlIdentifierValidator.Validate(options);
+                    var provider = StorageProviders.Parse(providerOptions.Value.Provider);
+                    SqlIdentifierValidator.Validate(storage, StorageProviders.IdentifierMaxLength(provider));
                     return true;
                 }
                 catch (ArgumentException)
                 {
                     return false;
                 }
-            }, "All SQL identifiers must use letters, digits, and underscores, start with a letter or underscore, and be at most 128 characters.")
+            }, "All SQL identifiers must use letters, digits, and underscores, start with a letter or underscore, and fit the active engine's identifier length.")
             .ValidateOnStart();
 
         services.AddOptions<DatabaseOptions>()
@@ -166,5 +174,16 @@ internal static class ApiServiceCollectionExtensions
         });
         services.AddSingleton<IJwtAccessTokenAuthenticator, JwtAccessTokenAuthenticator>();
         return services;
+    }
+}
+
+internal sealed class ActiveStorageOptionsConfigurator(
+    IConfiguration configuration,
+    IOptions<StorageProviderOptions> provider) : IConfigureOptions<SqlServerStorageOptions>
+{
+    public void Configure(SqlServerStorageOptions options)
+    {
+        var sectionName = StorageProviders.SectionName(StorageProviders.Parse(provider.Value.Provider));
+        configuration.GetSection("Storage:" + sectionName).Bind(options);
     }
 }

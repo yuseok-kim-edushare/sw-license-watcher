@@ -1,11 +1,11 @@
 using System.Data;
-using Microsoft.Data.SqlClient;
+using System.Data.Common;
 using SwLicenseWatcher.Application;
 using SwLicenseWatcher.Core;
 
-namespace SwLicenseWatcher.Infrastructure.SqlServer;
+namespace SwLicenseWatcher.Infrastructure.Relational;
 
-internal sealed partial class SqlServerDataContext
+public sealed partial class RelationalDataContext
 {
     public async Task<EnqueuedUserMessage?> EnqueueUserMessageAsync(
         string deviceCode,
@@ -13,9 +13,9 @@ internal sealed partial class SqlServerDataContext
         string body,
         CancellationToken cancellationToken)
     {
-        await using var connection = new SqlConnection(options.ConnectionString);
+        await using var connection = CreateConnection();
         await connection.OpenAsync(cancellationToken);
-        await using var transaction = (SqlTransaction)await connection.BeginTransactionAsync(IsolationLevel.ReadCommitted, cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(IsolationLevel.ReadCommitted, cancellationToken);
 
         var pcId = await FindPcIdAsync(connection, transaction, deviceCode, cancellationToken);
         if (pcId is null)
@@ -26,16 +26,16 @@ internal sealed partial class SqlServerDataContext
 
         var aliases = await ReadDeviceAliasesAsync(connection, transaction, pcId.Value, cancellationToken);
         var createdAtUtc = DateTimeOffset.UtcNow;
-        await using var insert = new SqlCommand(BuildInsertUserMessageSql(), connection, transaction);
-        insert.Parameters.AddRange(
-        [
-            new("@pcId", pcId.Value),
-            new("@title", title),
-            new("@body", body),
-            new("@status", UserMessageGrant.Pending),
-            new("@createdAt", createdAtUtc)
-        ]);
-        var id = Convert.ToInt64(await insert.ExecuteScalarAsync(cancellationToken));
+        var id = await ExecuteInsertReturningIdAsync(
+            connection,
+            transaction,
+            BuildInsertUserMessageSql(),
+            cancellationToken,
+            ("@pcId", pcId.Value),
+            ("@title", title),
+            ("@body", body),
+            ("@status", UserMessageGrant.Pending),
+            ("@createdAt", createdAtUtc));
         await transaction.CommitAsync(cancellationToken);
         return new EnqueuedUserMessage(new AgentUserMessageCommand(id, title, body), aliases);
     }
@@ -45,19 +45,32 @@ internal sealed partial class SqlServerDataContext
         string body,
         CancellationToken cancellationToken)
     {
-        await using var connection = new SqlConnection(options.ConnectionString);
+        await using var connection = CreateConnection();
         await connection.OpenAsync(cancellationToken);
-        await using var transaction = (SqlTransaction)await connection.BeginTransactionAsync(IsolationLevel.ReadCommitted, cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(IsolationLevel.ReadCommitted, cancellationToken);
 
         var createdAtUtc = DateTimeOffset.UtcNow;
-        await using var insert = new SqlCommand(BuildBroadcastUserMessagesSql(), connection, transaction);
-        insert.Parameters.AddRange(
-        [
-            new("@title", title),
-            new("@body", body),
-            new("@status", UserMessageGrant.Pending),
-            new("@createdAt", createdAtUtc)
-        ]);
+        var items = dialect.Provider == StorageProvider.MySql
+            ? await BroadcastUserMessagesPerPcAsync(connection, transaction, title, body, createdAtUtc, cancellationToken)
+            : await ReadBroadcastUserMessagesAsync(connection, transaction, title, body, createdAtUtc, cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+        return items;
+    }
+
+    private async Task<List<EnqueuedUserMessage>> ReadBroadcastUserMessagesAsync(
+        DbConnection connection,
+        DbTransaction transaction,
+        string title,
+        string body,
+        DateTimeOffset createdAtUtc,
+        CancellationToken cancellationToken)
+    {
+        await using var insert = CreateCommand(connection, transaction, BuildBroadcastUserMessagesSql());
+        Bind(insert,
+            ("@title", title),
+            ("@body", body),
+            ("@status", UserMessageGrant.Pending),
+            ("@createdAt", createdAtUtc));
         await using var reader = await insert.ExecuteReaderAsync(cancellationToken);
         var items = new List<EnqueuedUserMessage>();
         var table = options.UserMessageTable;
@@ -72,8 +85,54 @@ internal sealed partial class SqlServerDataContext
             items.Add(new EnqueuedUserMessage(new AgentUserMessageCommand(id, title, body), aliases));
         }
 
-        await reader.DisposeAsync();
-        await transaction.CommitAsync(cancellationToken);
+        return items;
+    }
+
+    private async Task<List<EnqueuedUserMessage>> BroadcastUserMessagesPerPcAsync(
+        DbConnection connection,
+        DbTransaction transaction,
+        string title,
+        string body,
+        DateTimeOffset createdAtUtc,
+        CancellationToken cancellationToken)
+    {
+        var pc = options.PcTable;
+        var sql = $"""
+            SELECT {Name(pc.PrimaryKeyColumn)}, {Name(pc.DeviceCodeColumn)}, {Name(pc.AssignedDeviceCodeColumn)}, {Name(pc.DeviceIdColumn)}
+            FROM {Name(options.SchemaName, pc.TableName)};
+            """;
+        var targets = new List<(long PcId, string DeviceCode, string? AssignedDeviceCode, string? DeviceId)>();
+        await using (var command = CreateCommand(connection, transaction, sql))
+        await using (var reader = await command.ExecuteReaderAsync(cancellationToken))
+        {
+            while (await reader.ReadAsync(cancellationToken))
+            {
+                targets.Add((
+                    reader.GetInt64(reader.GetOrdinal(pc.PrimaryKeyColumn)),
+                    reader.GetString(reader.GetOrdinal(pc.DeviceCodeColumn)),
+                    ReadNullableString(reader, pc.AssignedDeviceCodeColumn),
+                    ReadNullableString(reader, pc.DeviceIdColumn)));
+            }
+        }
+
+        var items = new List<EnqueuedUserMessage>(targets.Count);
+        foreach (var target in targets)
+        {
+            var id = await ExecuteInsertReturningIdAsync(
+                connection,
+                transaction,
+                BuildInsertUserMessageSql(),
+                cancellationToken,
+                ("@pcId", target.PcId),
+                ("@title", title),
+                ("@body", body),
+                ("@status", UserMessageGrant.Pending),
+                ("@createdAt", createdAtUtc));
+            items.Add(new EnqueuedUserMessage(
+                new AgentUserMessageCommand(id, title, body),
+                ReadAliases(target.DeviceCode, target.AssignedDeviceCode, target.DeviceId)));
+        }
+
         return items;
     }
 
@@ -82,15 +141,14 @@ internal sealed partial class SqlServerDataContext
         int take,
         CancellationToken cancellationToken)
     {
-        await using var connection = new SqlConnection(options.ConnectionString);
+        await using var connection = CreateConnection();
         await connection.OpenAsync(cancellationToken);
-        await using var command = new SqlCommand(BuildListPendingUserMessagesSql(), connection);
-        command.Parameters.AddRange(
-        [
-            new("@deviceCode", deviceCode),
-            new("@status", UserMessageGrant.Pending),
-            new("@take", take)
-        ]);
+        await using var command = CreateCommand(connection, null, BuildListPendingUserMessagesSql());
+        Bind(command,
+            ("@deviceCode", deviceCode),
+            ("@status", UserMessageGrant.Pending),
+            ("@take", take)
+        );
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         var table = options.UserMessageTable;
         var items = new List<AgentUserMessageCommand>();
@@ -118,36 +176,57 @@ internal sealed partial class SqlServerDataContext
         string deviceCode,
         CancellationToken cancellationToken)
     {
-        await using var connection = new SqlConnection(options.ConnectionString);
+        await using var connection = CreateConnection();
         await connection.OpenAsync(cancellationToken);
-        await using var command = new SqlCommand(BuildConsumeUserMessageSql(), connection);
-        command.Parameters.AddRange(
-        [
-            new("@id", id),
-            new("@deviceCode", deviceCode),
-            new("@pending", UserMessageGrant.Pending),
-            new("@consumed", UserMessageGrant.Consumed),
-            new("@consumedAt", DateTimeOffset.UtcNow)
-        ]);
+        await using var command = CreateCommand(connection, null, BuildConsumeUserMessageSql());
+        Bind(command,
+            ("@id", id),
+            ("@deviceCode", deviceCode),
+            ("@pending", UserMessageGrant.Pending),
+            ("@consumed", UserMessageGrant.Consumed),
+            ("@consumedAt", DateTimeOffset.UtcNow)
+        );
         return await command.ExecuteNonQueryAsync(cancellationToken) > 0;
     }
 
     internal string BuildInsertUserMessageSql()
     {
         var table = options.UserMessageTable;
-        return $"""
-            INSERT INTO {Name(options.SchemaName, table.TableName)}
-            ({Name(table.PcForeignKeyColumn)}, {Name(table.TitleColumn)}, {Name(table.BodyColumn)},
-             {Name(table.StatusColumn)}, {Name(table.CreatedAtUtcColumn)})
-            OUTPUT INSERTED.{Name(table.PrimaryKeyColumn)}
-            VALUES (@pcId, @title, @body, @status, @createdAt);
-            """;
+        return InsertReturningId(
+            Name(options.SchemaName, table.TableName),
+            $"{Name(table.PcForeignKeyColumn)}, {Name(table.TitleColumn)}, {Name(table.BodyColumn)}, {Name(table.StatusColumn)}, {Name(table.CreatedAtUtcColumn)}",
+            "@pcId, @title, @body, @status, @createdAt",
+            table.PrimaryKeyColumn);
     }
 
     internal string BuildBroadcastUserMessagesSql()
     {
         var table = options.UserMessageTable;
         var pc = options.PcTable;
+        if (dialect.Provider == StorageProvider.PostgreSql)
+        {
+            return $"""
+                WITH inserted AS (
+                    INSERT INTO {Name(options.SchemaName, table.TableName)}
+                        ({Name(table.PcForeignKeyColumn)}, {Name(table.TitleColumn)}, {Name(table.BodyColumn)},
+                         {Name(table.StatusColumn)}, {Name(table.CreatedAtUtcColumn)})
+                    SELECT p.{Name(pc.PrimaryKeyColumn)}, @title, @body, @status, @createdAt
+                    FROM {Name(options.SchemaName, pc.TableName)} AS p
+                    RETURNING {Name(table.PrimaryKeyColumn)}, {Name(table.PcForeignKeyColumn)}
+                )
+                SELECT inserted.{Name(table.PrimaryKeyColumn)}, p.{Name(pc.DeviceCodeColumn)},
+                       p.{Name(pc.AssignedDeviceCodeColumn)}, p.{Name(pc.DeviceIdColumn)}
+                FROM inserted
+                INNER JOIN {Name(options.SchemaName, pc.TableName)} AS p
+                    ON p.{Name(pc.PrimaryKeyColumn)} = inserted.{Name(table.PcForeignKeyColumn)};
+                """;
+        }
+
+        if (dialect.Provider == StorageProvider.MySql)
+        {
+            return BuildInsertUserMessageSql();
+        }
+
         return $"""
             MERGE {Name(options.SchemaName, table.TableName)} AS target
             USING {Name(options.SchemaName, pc.TableName)} AS p
@@ -166,13 +245,13 @@ internal sealed partial class SqlServerDataContext
         var table = options.UserMessageTable;
         var pc = options.PcTable;
         return $"""
-            SELECT TOP (@take) m.{Name(table.PrimaryKeyColumn)}, m.{Name(table.TitleColumn)}, m.{Name(table.BodyColumn)}
+            SELECT {TakePrefix("@take")} m.{Name(table.PrimaryKeyColumn)}, m.{Name(table.TitleColumn)}, m.{Name(table.BodyColumn)}
             FROM {Name(options.SchemaName, table.TableName)} AS m
             INNER JOIN {Name(options.SchemaName, pc.TableName)} AS p
                 ON p.{Name(pc.PrimaryKeyColumn)} = m.{Name(table.PcForeignKeyColumn)}
             WHERE ({PcLookupPredicate("p")})
               AND m.{Name(table.StatusColumn)} = @status
-            ORDER BY m.{Name(table.CreatedAtUtcColumn)}, m.{Name(table.PrimaryKeyColumn)};
+            ORDER BY m.{Name(table.CreatedAtUtcColumn)}, m.{Name(table.PrimaryKeyColumn)}{TakeSuffix("@take")};
             """;
     }
 
@@ -180,25 +259,53 @@ internal sealed partial class SqlServerDataContext
     {
         var table = options.UserMessageTable;
         var pc = options.PcTable;
-        return $"""
-            UPDATE m
-            SET {Name(table.StatusColumn)} = @consumed,
+        var assignments = $"""
+            {Name(table.StatusColumn)} = @consumed,
                 {Name(table.ConsumedAtUtcColumn)} = @consumedAt
-            FROM {Name(options.SchemaName, table.TableName)} AS m
-            INNER JOIN {Name(options.SchemaName, pc.TableName)} AS p
-                ON p.{Name(pc.PrimaryKeyColumn)} = m.{Name(table.PcForeignKeyColumn)}
-            WHERE m.{Name(table.PrimaryKeyColumn)} = @id
+            """;
+        var filter = $"""
+            m.{Name(table.PrimaryKeyColumn)} = @id
               AND ({PcLookupPredicate("p")})
               AND (
                     m.{Name(table.StatusColumn)} = @pending
                  OR m.{Name(table.StatusColumn)} = @consumed
-              );
+              )
+            """;
+        if (dialect.Provider == StorageProvider.PostgreSql)
+        {
+            return $"""
+                UPDATE {Name(options.SchemaName, table.TableName)} AS m
+                SET {assignments}
+                FROM {Name(options.SchemaName, pc.TableName)} AS p
+                WHERE p.{Name(pc.PrimaryKeyColumn)} = m.{Name(table.PcForeignKeyColumn)}
+                  AND {filter};
+                """;
+        }
+
+        if (dialect.Provider == StorageProvider.MySql)
+        {
+            return $"""
+                UPDATE {Name(options.SchemaName, table.TableName)} AS m
+                INNER JOIN {Name(options.SchemaName, pc.TableName)} AS p
+                    ON p.{Name(pc.PrimaryKeyColumn)} = m.{Name(table.PcForeignKeyColumn)}
+                SET {assignments}
+                WHERE {filter};
+                """;
+        }
+
+        return $"""
+            UPDATE m
+            SET {assignments}
+            FROM {Name(options.SchemaName, table.TableName)} AS m
+            INNER JOIN {Name(options.SchemaName, pc.TableName)} AS p
+                ON p.{Name(pc.PrimaryKeyColumn)} = m.{Name(table.PcForeignKeyColumn)}
+            WHERE {filter};
             """;
     }
 
     private async Task<IReadOnlyList<string>> ReadDeviceAliasesAsync(
-        SqlConnection connection,
-        SqlTransaction transaction,
+        DbConnection connection,
+        DbTransaction transaction,
         long pcId,
         CancellationToken cancellationToken)
     {
@@ -208,8 +315,8 @@ internal sealed partial class SqlServerDataContext
             FROM {Name(options.SchemaName, pc.TableName)}
             WHERE {Name(pc.PrimaryKeyColumn)} = @pcId;
             """;
-        await using var command = new SqlCommand(sql, connection, transaction);
-        command.Parameters.Add(new SqlParameter("@pcId", pcId));
+        await using var command = CreateCommand(connection, transaction, sql);
+        Bind(command, ("@pcId", pcId));
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         if (!await reader.ReadAsync(cancellationToken))
         {

@@ -1,9 +1,10 @@
 using SwLicenseWatcher.Application;
+using SwLicenseWatcher.Infrastructure.Relational;
 using SwLicenseWatcher.Core;
 
 namespace SwLicenseWatcher.Infrastructure.SqlServer;
 
-internal sealed class SqlServerSoftwareQueryRepository(SqlServerDataContext context) : ISoftwareQuery
+internal sealed class SqlServerSoftwareQueryRepository(RelationalDataContext context) : ISoftwareQuery
 {
     public Task<(int TotalCount, List<SoftwareAggregate> Items)> ListSoftwareAsync(
         int skip,

@@ -1,7 +1,8 @@
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
+using SwLicenseWatcher.Api;
 using SwLicenseWatcher.Core;
-using SwLicenseWatcher.Infrastructure.SqlServer;
+using SwLicenseWatcher.Infrastructure.Relational;
 
 namespace SwLicenseWatcher.Api.Tests;
 
@@ -10,14 +11,15 @@ public class SchemaReconcileServiceTests
     [Fact]
     public async Task TryApplyAsync_returns_false_when_sql_is_unreachable()
     {
-        var applicator = new SqlServerSchemaApplicator(
+        var applicator = new RelationalSchemaApplicator(
             new SqlServerStorageOptions
             {
                 ConnectionString = "Server=127.0.0.1,1;Database=missing;User ID=sa;Password=invalid;Connect Timeout=1;TrustServerCertificate=True"
             },
             Options.Create(new DatabaseOptions()),
             new SqlServerSchemaScriptBuilder(),
-            NullLogger<SqlServerSchemaApplicator>.Instance);
+            RelationalDialects.Create(StorageProvider.SqlServer),
+            NullLogger<RelationalSchemaApplicator>.Instance);
         var sut = new SchemaReconcileService(
             applicator,
             Options.Create(new DatabaseOptions()),
@@ -31,11 +33,12 @@ public class SchemaReconcileServiceTests
     [Fact]
     public async Task ExecuteAsync_exits_when_background_apply_is_disabled()
     {
-        var applicator = new SqlServerSchemaApplicator(
+        var applicator = new RelationalSchemaApplicator(
             new SqlServerStorageOptions { ConnectionString = "Server=(local);Database=missing;" },
             Options.Create(new DatabaseOptions { ApplySchemaInBackground = false }),
             new SqlServerSchemaScriptBuilder(),
-            NullLogger<SqlServerSchemaApplicator>.Instance);
+            RelationalDialects.Create(StorageProvider.SqlServer),
+            NullLogger<RelationalSchemaApplicator>.Instance);
         var sut = new SchemaReconcileService(
             applicator,
             Options.Create(new DatabaseOptions { ApplySchemaInBackground = false }),

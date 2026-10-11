@@ -9,6 +9,8 @@
 
   <ItemGroup>
     <PackageReference Include="Microsoft.Data.SqlClient" />
+    <PackageReference Include="MySqlConnector" />
+    <PackageReference Include="Npgsql" />
     <ProjectReference Include="..\SwLicenseWatcher.Application\SwLicenseWatcher.Application.csproj" />
     <ProjectReference Include="..\SwLicenseWatcher.Core\SwLicenseWatcher.Core.csproj" />
   </ItemGroup>

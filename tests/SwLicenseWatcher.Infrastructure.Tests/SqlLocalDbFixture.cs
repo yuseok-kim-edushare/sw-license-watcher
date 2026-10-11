@@ -2,7 +2,7 @@ using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using SwLicenseWatcher.Core;
-using SwLicenseWatcher.Infrastructure.SqlServer;
+using SwLicenseWatcher.Infrastructure.Relational;
 
 namespace SwLicenseWatcher.Infrastructure.Tests;
 
@@ -21,7 +21,7 @@ public sealed class SqlLocalDbFixture : IAsyncLifetime
 
     public string? SkipReason { get; private set; }
 
-    internal SqlServerDataContext Context { get; private set; } = null!;
+    internal RelationalDataContext Context { get; private set; } = null!;
 
     public SqlServerStorageOptions Storage { get; private set; } = null!;
 
@@ -58,14 +58,15 @@ public sealed class SqlLocalDbFixture : IAsyncLifetime
             InitialCatalog = _databaseName
         };
         Storage = CompanySqlStorage.Create(database.ConnectionString);
-        var applicator = new SqlServerSchemaApplicator(
+        var applicator = new RelationalSchemaApplicator(
             Storage,
             Options.Create(new DatabaseOptions { ApplySchemaOnStartup = false }),
             new SqlServerSchemaScriptBuilder(),
-            NullLogger<SqlServerSchemaApplicator>.Instance);
+            RelationalDialects.Create(StorageProvider.SqlServer),
+            NullLogger<RelationalSchemaApplicator>.Instance);
         await applicator.ApplyAsync(CancellationToken.None);
         await applicator.ApplyAsync(CancellationToken.None);
-        Context = new SqlServerDataContext(Storage);
+        Context = new RelationalDataContext(Storage);
     }
 
     public async ValueTask DisposeAsync()

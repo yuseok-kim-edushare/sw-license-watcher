@@ -18,6 +18,8 @@
   <ItemGroup>
     <ThirdPartyTrimException Include="BouncyCastle.Cryptography" />
     <ThirdPartyTrimException Include="Microsoft.Data.SqlClient" />
+    <ThirdPartyTrimException Include="MySqlConnector" />
+    <ThirdPartyTrimException Include="Npgsql" />
     <!-- EventSource warnings are compiled into this satellite, not the main SqlClient assembly. -->
     <ThirdPartyTrimException Include="Microsoft.Data.SqlClient.Internal.Logging" />
     <ThirdPartyTrimException Include="Microsoft.Data.SqlClient.Extensions.Abstractions" />

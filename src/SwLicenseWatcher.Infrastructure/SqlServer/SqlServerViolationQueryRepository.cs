@@ -1,9 +1,10 @@
 using SwLicenseWatcher.Application;
+using SwLicenseWatcher.Infrastructure.Relational;
 using SwLicenseWatcher.Core;
 
 namespace SwLicenseWatcher.Infrastructure.SqlServer;
 
-internal sealed class SqlServerViolationQueryRepository(SqlServerDataContext context) : IViolationQuery
+internal sealed class SqlServerViolationQueryRepository(RelationalDataContext context) : IViolationQuery
 {
     public Task<(int TotalCount, List<SoftwareViolationEntry> Items)> ListViolationsAsync(
         int skip,

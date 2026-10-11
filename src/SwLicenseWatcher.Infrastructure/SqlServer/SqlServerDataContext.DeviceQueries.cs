@@ -1,12 +1,12 @@
 using System.Collections.Concurrent;
 using System.Data;
-using Microsoft.Data.SqlClient;
+using System.Data.Common;
 using SwLicenseWatcher.Application;
 using SwLicenseWatcher.Core;
 
-namespace SwLicenseWatcher.Infrastructure.SqlServer;
+namespace SwLicenseWatcher.Infrastructure.Relational;
 
-internal sealed partial class SqlServerDataContext
+public sealed partial class RelationalDataContext
 {
     public async Task<(int TotalCount, List<DeviceSummary> Items)> ListDevicesAsync(
         int skip,
@@ -15,7 +15,7 @@ internal sealed partial class SqlServerDataContext
         int? staleAfterHours,
         CancellationToken cancellationToken)
     {
-        await using var connection = new SqlConnection(options.ConnectionString);
+        await using var connection = CreateConnection();
         await connection.OpenAsync(cancellationToken);
         var table = options.PcTable;
         DateTimeOffset? staleCutoff = staleAfterHours is int hours
@@ -35,13 +35,13 @@ internal sealed partial class SqlServerDataContext
                 OR {Name(table.LastHeartbeatUtcColumn)} IS NULL
                 OR {Name(table.LastHeartbeatUtcColumn)} < @staleCutoff)
             ORDER BY {DisplayHostNameSql()}, {Name(table.DeviceCodeColumn)}
-            OFFSET @skip ROWS FETCH NEXT @take ROWS ONLY;
+            {Pagination};
             """;
-        await using var command = new SqlCommand(sql, connection);
-        command.Parameters.Add(new SqlParameter("@search", DbValue(ToContainsPattern(search))));
-        command.Parameters.Add(new SqlParameter("@staleCutoff", DbValue(staleCutoff)));
-        command.Parameters.Add(new SqlParameter("@skip", skip));
-        command.Parameters.Add(new SqlParameter("@take", take));
+        await using var command = CreateCommand(connection, null, sql);
+        Bind(command, ("@search", DbValue(ToContainsPattern(search))));
+        Bind(command, ("@staleCutoff", DbValue(staleCutoff)));
+        Bind(command, ("@skip", skip));
+        Bind(command, ("@take", take));
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         var items = new List<DeviceSummary>();
         var totalCount = 0;
@@ -49,7 +49,7 @@ internal sealed partial class SqlServerDataContext
         {
             if (items.Count == 0)
             {
-                totalCount = reader.GetInt32(reader.GetOrdinal("total_count"));
+                totalCount = ReadInt32(reader, "total_count");
             }
 
             var storedCode = reader.GetString(reader.GetOrdinal(table.DeviceCodeColumn));
@@ -76,7 +76,7 @@ internal sealed partial class SqlServerDataContext
         string? classification,
         CancellationToken cancellationToken)
     {
-        await using var connection = new SqlConnection(options.ConnectionString);
+        await using var connection = CreateConnection();
         await connection.OpenAsync(cancellationToken);
         var table = options.PcTable;
         var sql = $"""
@@ -88,8 +88,8 @@ internal sealed partial class SqlServerDataContext
             FROM {Name(options.SchemaName, table.TableName)}
             WHERE {PcLookupPredicate()};
             """;
-        await using var command = new SqlCommand(sql, connection);
-        command.Parameters.Add(new SqlParameter("@deviceCode", deviceCode));
+        await using var command = CreateCommand(connection, null, sql);
+        Bind(command, ("@deviceCode", deviceCode));
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         if (!await reader.ReadAsync(cancellationToken))
         {
@@ -125,7 +125,7 @@ internal sealed partial class SqlServerDataContext
         string? deviceId,
         CancellationToken cancellationToken)
     {
-        await using var connection = new SqlConnection(options.ConnectionString);
+        await using var connection = CreateConnection();
         await connection.OpenAsync(cancellationToken);
         var table = options.PcTable;
         var sql = $"""
@@ -136,9 +136,9 @@ internal sealed partial class SqlServerDataContext
             WHERE {PcLookupPredicate()}
                OR (@deviceId IS NOT NULL AND {Name(table.DeviceIdColumn)} = @deviceId);
             """;
-        await using var command = new SqlCommand(sql, connection);
-        command.Parameters.Add(new SqlParameter("@deviceCode", deviceCode));
-        command.Parameters.Add(new SqlParameter("@deviceId", DbValue(NullIfWhiteSpace(deviceId))));
+        await using var command = CreateCommand(connection, null, sql);
+        Bind(command, ("@deviceCode", deviceCode));
+        Bind(command, ("@deviceId", DbValue(NullIfWhiteSpace(deviceId))));
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         if (!await reader.ReadAsync(cancellationToken))
         {
@@ -159,7 +159,7 @@ internal sealed partial class SqlServerDataContext
         string? deviceId,
         CancellationToken cancellationToken)
     {
-        await using var connection = new SqlConnection(options.ConnectionString);
+        await using var connection = CreateConnection();
         await connection.OpenAsync(cancellationToken);
         var table = options.PcTable;
         var sql = $"""
@@ -170,9 +170,9 @@ internal sealed partial class SqlServerDataContext
             WHERE {PcLookupPredicate()}
                OR (@deviceId IS NOT NULL AND {Name(table.DeviceIdColumn)} = @deviceId);
             """;
-        await using var command = new SqlCommand(sql, connection);
-        command.Parameters.Add(new SqlParameter("@deviceCode", deviceCode));
-        command.Parameters.Add(new SqlParameter("@deviceId", DbValue(NullIfWhiteSpace(deviceId))));
+        await using var command = CreateCommand(connection, null, sql);
+        Bind(command, ("@deviceCode", deviceCode));
+        Bind(command, ("@deviceId", DbValue(NullIfWhiteSpace(deviceId))));
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         if (!await reader.ReadAsync(cancellationToken))
         {
@@ -194,7 +194,7 @@ internal sealed partial class SqlServerDataContext
         DeviceProfileWriteRequest request,
         CancellationToken cancellationToken)
     {
-        await using var connection = new SqlConnection(options.ConnectionString);
+        await using var connection = CreateConnection();
         await connection.OpenAsync(cancellationToken);
         var table = options.PcTable;
         var assignedCode = NullIfWhiteSpace(request.AssignedDeviceCode);
@@ -207,9 +207,9 @@ internal sealed partial class SqlServerDataContext
                     OR {Name(table.AssignedDeviceCodeColumn)} = @assignedDeviceCode)
                   AND NOT ({PcLookupPredicate()});
                 """;
-            await using var conflictCommand = new SqlCommand(conflict, connection);
-            conflictCommand.Parameters.Add(new SqlParameter("@assignedDeviceCode", assignedCode));
-            conflictCommand.Parameters.Add(new SqlParameter("@deviceCode", deviceCode));
+            await using var conflictCommand = CreateCommand(connection, null, conflict);
+            Bind(conflictCommand, ("@assignedDeviceCode", assignedCode));
+            Bind(conflictCommand, ("@deviceCode", deviceCode));
             if (await conflictCommand.ExecuteScalarAsync(cancellationToken) is not null and not DBNull)
             {
                 return DeviceProfileUpdateResult.Conflict;
@@ -223,11 +223,11 @@ internal sealed partial class SqlServerDataContext
                 {Name(table.AssignedDeviceCodeColumn)} = @assignedDeviceCode
             WHERE {PcLookupPredicate()};
             """;
-        await using var command = new SqlCommand(sql, connection);
-        command.Parameters.Add(new SqlParameter("@deviceCode", deviceCode));
-        command.Parameters.Add(new SqlParameter("@assignedHostName", DbValue(NullIfWhiteSpace(request.AssignedHostName))));
-        command.Parameters.Add(new SqlParameter("@adminNotes", DbValue(NullIfWhiteSpace(request.AdminNotes))));
-        command.Parameters.Add(new SqlParameter("@assignedDeviceCode", DbValue(assignedCode)));
+        await using var command = CreateCommand(connection, null, sql);
+        Bind(command, ("@deviceCode", deviceCode));
+        Bind(command, ("@assignedHostName", DbValue(NullIfWhiteSpace(request.AssignedHostName))));
+        Bind(command, ("@adminNotes", DbValue(NullIfWhiteSpace(request.AdminNotes))));
+        Bind(command, ("@assignedDeviceCode", DbValue(assignedCode)));
         return await command.ExecuteNonQueryAsync(cancellationToken) > 0
             ? DeviceProfileUpdateResult.Updated
             : DeviceProfileUpdateResult.NotFound;
@@ -241,7 +241,7 @@ internal sealed partial class SqlServerDataContext
         string issuedDeviceId,
         CancellationToken cancellationToken)
     {
-        await using var connection = new SqlConnection(options.ConnectionString);
+        await using var connection = CreateConnection();
         await connection.OpenAsync(cancellationToken);
         var table = options.PcTable;
         var sql = $"""
@@ -252,12 +252,12 @@ internal sealed partial class SqlServerDataContext
             WHERE ({PcLookupPredicate()} OR (@deviceId IS NOT NULL AND {Name(table.DeviceIdColumn)} = @deviceId))
               AND {Name(table.DeviceIdColumn)} IS NULL;
             """;
-        await using var command = new SqlCommand(sql, connection);
-        command.Parameters.Add(new SqlParameter("@deviceCode", deviceCode));
-        command.Parameters.Add(new SqlParameter("@deviceId", DbValue(NullIfWhiteSpace(deviceId))));
-        command.Parameters.Add(new SqlParameter("@issuedDeviceId", issuedDeviceId));
-        command.Parameters.Add(new SqlParameter("@devicePublicKey", devicePublicKey));
-        command.Parameters.Add(new SqlParameter("@deviceCertificate", deviceCertificate));
+        await using var command = CreateCommand(connection, null, sql);
+        Bind(command, ("@deviceCode", deviceCode));
+        Bind(command, ("@deviceId", DbValue(NullIfWhiteSpace(deviceId))));
+        Bind(command, ("@issuedDeviceId", issuedDeviceId));
+        Bind(command, ("@devicePublicKey", devicePublicKey));
+        Bind(command, ("@deviceCertificate", deviceCertificate));
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
 

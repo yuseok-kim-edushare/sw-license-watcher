@@ -1,12 +1,12 @@
 using System.Collections.Concurrent;
 using System.Data;
-using Microsoft.Data.SqlClient;
+using System.Data.Common;
 using SwLicenseWatcher.Application;
 using SwLicenseWatcher.Core;
 
-namespace SwLicenseWatcher.Infrastructure.SqlServer;
+namespace SwLicenseWatcher.Infrastructure.Relational;
 
-internal sealed partial class SqlServerDataContext
+public sealed partial class RelationalDataContext
 {
     public async Task<(int TotalCount, List<SoftwareAggregate> Items)> ListSoftwareAsync(
         int skip,
@@ -15,7 +15,7 @@ internal sealed partial class SqlServerDataContext
         string? classification,
         CancellationToken cancellationToken)
     {
-        await using var connection = new SqlConnection(options.ConnectionString);
+        await using var connection = CreateConnection();
         await connection.OpenAsync(cancellationToken);
         var software = options.InstalledSoftwareTable;
         var sql = $"""
@@ -25,17 +25,17 @@ internal sealed partial class SqlServerDataContext
                 {Name(software.ClassificationColumn)},
                 COUNT(DISTINCT {Name(software.PcForeignKeyColumn)}) AS device_count
             FROM {Name(options.SchemaName, software.TableName)}
-            WHERE (@search IS NULL OR {Name(software.DisplayNameColumn)} LIKE @search)
+            WHERE (@search IS NULL OR {Name(software.DisplayNameColumn)} LIKE @search{LikeEscape})
               AND (@classification IS NULL OR {Name(software.ClassificationColumn)} = @classification)
             GROUP BY {Name(software.DisplayNameColumn)}, {Name(software.DisplayVersionColumn)}, {Name(software.ClassificationColumn)}
             ORDER BY {Name(software.DisplayNameColumn)}, {Name(software.DisplayVersionColumn)}, {Name(software.ClassificationColumn)}
-            OFFSET @skip ROWS FETCH NEXT @take ROWS ONLY;
+            {Pagination};
             """;
-        await using var command = new SqlCommand(sql, connection);
-        command.Parameters.Add(new SqlParameter("@search", DbValue(ToContainsPattern(search))));
-        command.Parameters.Add(new SqlParameter("@classification", DbValue(classification)));
-        command.Parameters.Add(new SqlParameter("@skip", skip));
-        command.Parameters.Add(new SqlParameter("@take", take));
+        await using var command = CreateCommand(connection, null, sql);
+        Bind(command, ("@search", DbValue(ToContainsPattern(search))));
+        Bind(command, ("@classification", DbValue(classification)));
+        Bind(command, ("@skip", skip));
+        Bind(command, ("@take", take));
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         var items = new List<SoftwareAggregate>();
         var totalCount = 0;
@@ -43,7 +43,7 @@ internal sealed partial class SqlServerDataContext
         {
             if (items.Count == 0)
             {
-                totalCount = reader.GetInt32(reader.GetOrdinal("total_count"));
+                totalCount = ReadInt32(reader, "total_count");
             }
 
             items.Add(new SoftwareAggregate(
@@ -69,7 +69,7 @@ internal sealed partial class SqlServerDataContext
         string? classification,
         CancellationToken cancellationToken)
     {
-        await using var connection = new SqlConnection(options.ConnectionString);
+        await using var connection = CreateConnection();
         await connection.OpenAsync(cancellationToken);
         var software = options.InstalledSoftwareTable;
         var pc = options.PcTable;
@@ -93,13 +93,13 @@ internal sealed partial class SqlServerDataContext
             WHERE s.{Name(software.DisplayNameColumn)} = @name
               AND (@classification IS NULL OR s.{Name(software.ClassificationColumn)} = @classification)
             ORDER BY {DisplayHostNameSql("p")}, p.{Name(pc.DeviceCodeColumn)}
-            OFFSET @skip ROWS FETCH NEXT @take ROWS ONLY;
+            {Pagination};
             """;
-        await using var command = new SqlCommand(sql, connection);
-        command.Parameters.Add(new SqlParameter("@name", name));
-        command.Parameters.Add(new SqlParameter("@classification", DbValue(classification)));
-        command.Parameters.Add(new SqlParameter("@skip", skip));
-        command.Parameters.Add(new SqlParameter("@take", take));
+        await using var command = CreateCommand(connection, null, sql);
+        Bind(command, ("@name", name));
+        Bind(command, ("@classification", DbValue(classification)));
+        Bind(command, ("@skip", skip));
+        Bind(command, ("@take", take));
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         var items = new List<SoftwareDevice>();
         var totalCount = 0;
@@ -107,7 +107,7 @@ internal sealed partial class SqlServerDataContext
         {
             if (items.Count == 0)
             {
-                totalCount = reader.GetInt32(reader.GetOrdinal("total_count"));
+                totalCount = ReadInt32(reader, "total_count");
             }
 
             var storedClassification = ReadClassification(reader, software.ClassificationColumn);
@@ -147,7 +147,7 @@ internal sealed partial class SqlServerDataContext
         string? classification,
         CancellationToken cancellationToken)
     {
-        await using var connection = new SqlConnection(options.ConnectionString);
+        await using var connection = CreateConnection();
         await connection.OpenAsync(cancellationToken);
         var software = options.InstalledSoftwareTable;
         var pc = options.PcTable;
@@ -163,11 +163,11 @@ internal sealed partial class SqlServerDataContext
                     {name}, {version}, {classificationColumn},
                     COUNT(DISTINCT {Name(software.PcForeignKeyColumn)}) AS device_count
                 FROM {Name(options.SchemaName, software.TableName)}
-                WHERE (@search IS NULL OR {name} LIKE @search)
+                WHERE (@search IS NULL OR {name} LIKE @search{LikeEscape})
                   AND (@classification IS NULL OR {classificationColumn} = @classification)
                 GROUP BY {name}, {version}, {classificationColumn}
                 ORDER BY {name}, {version}, {classificationColumn}
-                OFFSET @skip ROWS FETCH NEXT @take ROWS ONLY
+                {Pagination}
             )
             SELECT page.total_count, page.row_index,
                 page.{name}, page.{version}, page.{classificationColumn}, page.device_count,
@@ -184,15 +184,15 @@ internal sealed partial class SqlServerDataContext
                   AND (s.{version} = page.{version} OR (s.{version} IS NULL AND page.{version} IS NULL))
                   AND (s.{classificationColumn} = page.{classificationColumn}
                        OR (s.{classificationColumn} IS NULL AND page.{classificationColumn} IS NULL))
-                  AND (@search IS NULL OR s.{name} LIKE @search)
+                  AND (@search IS NULL OR s.{name} LIKE @search{LikeEscape})
             ) AS d
             ORDER BY page.row_index, d.device_name, d.device_code;
             """;
-        await using var command = new SqlCommand(sql, connection);
-        command.Parameters.Add(new SqlParameter("@search", DbValue(ToContainsPattern(search))));
-        command.Parameters.Add(new SqlParameter("@classification", DbValue(classification)));
-        command.Parameters.Add(new SqlParameter("@skip", skip));
-        command.Parameters.Add(new SqlParameter("@take", take));
+        await using var command = CreateCommand(connection, null, sql);
+        Bind(command, ("@search", DbValue(ToContainsPattern(search))));
+        Bind(command, ("@classification", DbValue(classification)));
+        Bind(command, ("@skip", skip));
+        Bind(command, ("@take", take));
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         var aggregates = new List<SoftwareAggregate>();
         var devices = new List<List<SoftwareAssetDevice>>();
@@ -208,7 +208,7 @@ internal sealed partial class SqlServerDataContext
             {
                 if (aggregates.Count == 0)
                 {
-                    totalCount = reader.GetInt32(reader.GetOrdinal("total_count"));
+                    totalCount = ReadInt32(reader, "total_count");
                 }
 
                 currentRow = rowIndex;
@@ -238,7 +238,7 @@ internal sealed partial class SqlServerDataContext
     }
 
     private async Task<List<SoftwareAggregate>> FillSoftwareLicenseCountsAsync(
-        SqlConnection connection,
+        DbConnection connection,
         List<SoftwareAggregate> items,
         CancellationToken cancellationToken)
     {
@@ -255,13 +255,13 @@ internal sealed partial class SqlServerDataContext
         var policies = await ListEnabledPoliciesAsync(connection, transaction: null, cancellationToken);
         var software = options.InstalledSoftwareTable;
         var license = options.SoftwareLicenseTable;
-        var parameters = new List<SqlParameter>();
+        var parameters = new List<(string Name, object? Value)>();
         var nameParams = new List<string>();
         for (var i = 0; i < managedNames.Count; i++)
         {
             var parameterName = "@name" + i.ToString(System.Globalization.CultureInfo.InvariantCulture);
             nameParams.Add(parameterName);
-            parameters.Add(new SqlParameter(parameterName, managedNames[i]));
+            parameters.Add((parameterName, managedNames[i]));
         }
 
         var sql = $"""
@@ -272,13 +272,13 @@ internal sealed partial class SqlServerDataContext
             LEFT JOIN {Name(options.SchemaName, license.TableName)} AS l
                 ON l.{Name(license.PcForeignKeyColumn)} = s.{Name(software.PcForeignKeyColumn)}
                AND l.{Name(license.SoftwareNameColumn)} = s.{Name(software.DisplayNameColumn)}
-            WHERE s.{Name(software.ClassificationColumn)} = N'{SoftwarePolicyClassificationNames.Managed}'
+            WHERE s.{Name(software.ClassificationColumn)} = {Lit(SoftwarePolicyClassificationNames.Managed)}
               AND s.{Name(software.DisplayNameColumn)} IN ({string.Join(", ", nameParams)});
             """;
         var counts = new Dictionary<(string Name, string? Version), (int Company, int Byo, int Unassigned)>(
             SoftwareAggregateKeyComparer.Instance);
-        await using var command = new SqlCommand(sql, connection);
-        command.Parameters.AddRange(parameters.ToArray());
+        await using var command = CreateCommand(connection, null, sql);
+        Bind(command, parameters.ToArray());
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         while (await reader.ReadAsync(cancellationToken))
         {
@@ -320,8 +320,8 @@ internal sealed partial class SqlServerDataContext
     }
 
     private async Task<Dictionary<string, string>> ReadLicenseAssignmentsAsync(
-        SqlConnection connection,
-        SqlTransaction? transaction,
+        DbConnection connection,
+        DbTransaction? transaction,
         long pcId,
         CancellationToken cancellationToken)
     {
@@ -332,7 +332,7 @@ internal sealed partial class SqlServerDataContext
             WHERE {Name(license.PcForeignKeyColumn)} = @pcId;
             """;
         await using var command = CreateCommand(connection, transaction, sql);
-        command.Parameters.Add(new SqlParameter("@pcId", pcId));
+        Bind(command, ("@pcId", pcId));
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         var assignments = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         while (await reader.ReadAsync(cancellationToken))

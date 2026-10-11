@@ -2,6 +2,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using SwLicenseWatcher.Application;
 using SwLicenseWatcher.Core;
+using SwLicenseWatcher.Infrastructure.Relational;
 using SwLicenseWatcher.Infrastructure.SqlServer;
 
 namespace SwLicenseWatcher.Infrastructure;
@@ -11,9 +12,15 @@ public static class DependencyInjection
     public static IServiceCollection AddSwLicenseWatcherInfrastructure(this IServiceCollection services)
     {
         services.AddSingleton(sp => sp.GetRequiredService<IOptions<SqlServerStorageOptions>>().Value);
-        services.AddSingleton<SqlServerSchemaScriptBuilder>();
-        services.AddSingleton<SqlServerSchemaApplicator>();
-        services.AddSingleton<SqlServerDataContext>();
+        services.AddSingleton<IRelationalDialect>(sp =>
+            RelationalDialects.Create(sp.GetRequiredService<IOptions<StorageProviderOptions>>().Value.Provider));
+        services.AddSingleton<ISchemaScriptBuilder>(sp =>
+            SchemaScriptBuilders.Create(StorageProviders.Parse(
+                sp.GetRequiredService<IOptions<StorageProviderOptions>>().Value.Provider)));
+        services.AddSingleton<RelationalSchemaApplicator>();
+        services.AddSingleton(sp => new RelationalDataContext(
+            sp.GetRequiredService<SqlServerStorageOptions>(),
+            sp.GetRequiredService<IRelationalDialect>()));
 
         services.AddSingleton<SqlServerHealthRepository>();
         services.AddSingleton<IHealthProbe>(sp => sp.GetRequiredService<SqlServerHealthRepository>());

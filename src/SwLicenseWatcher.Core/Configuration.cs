@@ -210,6 +210,76 @@ public sealed class GitHubUpdateOptions
         !string.IsNullOrWhiteSpace(Owner) && !string.IsNullOrWhiteSpace(Repository);
 }
 
+public enum StorageProvider
+{
+    SqlServer,
+    MySql,
+    PostgreSql
+}
+
+public static class StorageProviders
+{
+    public static bool TryParse(string? value, out StorageProvider provider)
+    {
+        if (string.IsNullOrWhiteSpace(value) ||
+            value.Equals("SqlServer", StringComparison.OrdinalIgnoreCase))
+        {
+            provider = StorageProvider.SqlServer;
+            return true;
+        }
+
+        if (value.Equals("MySql", StringComparison.OrdinalIgnoreCase) ||
+            value.Equals("MariaDB", StringComparison.OrdinalIgnoreCase))
+        {
+            provider = StorageProvider.MySql;
+            return true;
+        }
+
+        if (value.Equals("PostgreSql", StringComparison.OrdinalIgnoreCase) ||
+            value.Equals("Postgres", StringComparison.OrdinalIgnoreCase) ||
+            value.Equals("PgSql", StringComparison.OrdinalIgnoreCase))
+        {
+            provider = StorageProvider.PostgreSql;
+            return true;
+        }
+
+        provider = StorageProvider.SqlServer;
+        return false;
+    }
+
+    public static StorageProvider Parse(string? value) =>
+        TryParse(value, out var provider)
+            ? provider
+            : throw new InvalidOperationException(
+                "Storage:Provider must be SqlServer, MySql, MariaDB, or PostgreSql.");
+
+    public static string SectionName(StorageProvider provider) => provider switch
+    {
+        StorageProvider.MySql => "MySql",
+        StorageProvider.PostgreSql => "PostgreSql",
+        _ => "SqlServer"
+    };
+
+    public static int IdentifierMaxLength(StorageProvider provider) => provider switch
+    {
+        StorageProvider.MySql => SqlIdentifierValidator.MySqlMaxLength,
+        StorageProvider.PostgreSql => SqlIdentifierValidator.PostgreSqlMaxLength,
+        _ => SqlIdentifierValidator.SqlServerMaxLength
+    };
+
+    public static string EngineName(StorageProvider provider) => provider switch
+    {
+        StorageProvider.MySql => "MySQL",
+        StorageProvider.PostgreSql => "PostgreSQL",
+        _ => "SQL Server"
+    };
+}
+
+public sealed class StorageProviderOptions
+{
+    public string Provider { get; set; } = "SqlServer";
+}
+
 public sealed class DatabaseOptions
 {
     public bool ApplySchemaOnStartup { get; set; }

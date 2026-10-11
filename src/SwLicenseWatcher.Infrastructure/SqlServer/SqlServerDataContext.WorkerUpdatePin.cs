@@ -1,19 +1,19 @@
 using System.Collections.Concurrent;
 using System.Data;
-using Microsoft.Data.SqlClient;
+using System.Data.Common;
 using SwLicenseWatcher.Application;
 using SwLicenseWatcher.Core;
 
-namespace SwLicenseWatcher.Infrastructure.SqlServer;
+namespace SwLicenseWatcher.Infrastructure.Relational;
 
-internal sealed partial class SqlServerDataContext
+public sealed partial class RelationalDataContext
 {
     public async Task<UpdateManifest?> GetWorkerUpdatePinAsync(string targetServiceName, CancellationToken cancellationToken)
     {
-        await using var connection = new SqlConnection(options.ConnectionString);
+        await using var connection = CreateConnection();
         await connection.OpenAsync(cancellationToken);
-        await using var command = new SqlCommand(BuildGetWorkerUpdatePinSql(), connection);
-        command.Parameters.Add(new SqlParameter("@targetServiceName", targetServiceName));
+        await using var command = CreateCommand(connection, null, BuildGetWorkerUpdatePinSql());
+        Bind(command, ("@targetServiceName", targetServiceName));
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         if (!await reader.ReadAsync(cancellationToken))
         {
@@ -25,10 +25,18 @@ internal sealed partial class SqlServerDataContext
 
     public async Task<UpdateManifest> UpsertWorkerUpdatePinAsync(UpdateManifest pin, CancellationToken cancellationToken)
     {
-        await using var connection = new SqlConnection(options.ConnectionString);
+        await using var connection = CreateConnection();
         await connection.OpenAsync(cancellationToken);
-        await using var command = new SqlCommand(BuildUpsertWorkerUpdatePinSql(), connection);
-        AddWorkerUpdatePinParameters(command, pin, DateTimeOffset.UtcNow);
+        var updatedAt = DateTimeOffset.UtcNow;
+        await using var command = CreateCommand(connection, null, BuildUpsertWorkerUpdatePinSql());
+        AddWorkerUpdatePinParameters(command, pin, updatedAt);
+        if (!dialect.DmlReturnsRows)
+        {
+            await command.ExecuteNonQueryAsync(cancellationToken);
+            return await GetWorkerUpdatePinAsync(pin.TargetServiceName, cancellationToken)
+                ?? throw new InvalidOperationException("The Worker update pin upsert did not return a row.");
+        }
+
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         if (!await reader.ReadAsync(cancellationToken))
         {
@@ -40,9 +48,9 @@ internal sealed partial class SqlServerDataContext
 
     public async Task<bool> SeedWorkerUpdatePinIfEmptyAsync(UpdateManifest pin, CancellationToken cancellationToken)
     {
-        await using var connection = new SqlConnection(options.ConnectionString);
+        await using var connection = CreateConnection();
         await connection.OpenAsync(cancellationToken);
-        await using var command = new SqlCommand(BuildSeedWorkerUpdatePinSql(), connection);
+        await using var command = CreateCommand(connection, null, BuildSeedWorkerUpdatePinSql());
         AddWorkerUpdatePinParameters(command, pin, DateTimeOffset.UtcNow);
         var inserted = await command.ExecuteNonQueryAsync(cancellationToken);
         return inserted > 0;
@@ -62,6 +70,43 @@ internal sealed partial class SqlServerDataContext
     {
         var table = options.WorkerUpdatePinTable;
         var qualified = Name(options.SchemaName, table.TableName);
+        var columns = $"""
+            {Name(table.TargetServiceNameColumn)}, {Name(table.VersionColumn)}, {Name(table.PackageUrlColumn)},
+            {Name(table.Sha256Column)}, {Name(table.RequireAuthenticodeColumn)}, {Name(table.RollbackAfterMinutesColumn)},
+            {Name(table.UpdatedAtUtcColumn)}
+            """;
+        var values = "@targetServiceName, @version, @packageUrl, @sha256, @requireAuthenticode, @rollbackAfterMinutes, @updatedAt";
+        if (dialect.Provider == StorageProvider.PostgreSql)
+        {
+            return $"""
+                INSERT INTO {qualified} ({columns})
+                VALUES ({values})
+                ON CONFLICT ({Name(table.TargetServiceNameColumn)}) DO UPDATE SET
+                    {Name(table.VersionColumn)} = EXCLUDED.{Name(table.VersionColumn)},
+                    {Name(table.PackageUrlColumn)} = EXCLUDED.{Name(table.PackageUrlColumn)},
+                    {Name(table.Sha256Column)} = EXCLUDED.{Name(table.Sha256Column)},
+                    {Name(table.RequireAuthenticodeColumn)} = EXCLUDED.{Name(table.RequireAuthenticodeColumn)},
+                    {Name(table.RollbackAfterMinutesColumn)} = EXCLUDED.{Name(table.RollbackAfterMinutesColumn)},
+                    {Name(table.UpdatedAtUtcColumn)} = EXCLUDED.{Name(table.UpdatedAtUtcColumn)}
+                RETURNING {WorkerUpdatePinSelectList()};
+                """;
+        }
+
+        if (dialect.Provider == StorageProvider.MySql)
+        {
+            return $"""
+                INSERT INTO {qualified} ({columns})
+                VALUES ({values})
+                ON DUPLICATE KEY UPDATE
+                    {Name(table.VersionColumn)} = VALUES({table.VersionColumn}),
+                    {Name(table.PackageUrlColumn)} = VALUES({table.PackageUrlColumn}),
+                    {Name(table.Sha256Column)} = VALUES({table.Sha256Column}),
+                    {Name(table.RequireAuthenticodeColumn)} = VALUES({table.RequireAuthenticodeColumn}),
+                    {Name(table.RollbackAfterMinutesColumn)} = VALUES({table.RollbackAfterMinutesColumn}),
+                    {Name(table.UpdatedAtUtcColumn)} = VALUES({table.UpdatedAtUtcColumn});
+                """;
+        }
+
         return $"""
             MERGE {qualified} AS target
             USING (SELECT @targetServiceName AS {Name(table.TargetServiceNameColumn)}) AS source
@@ -74,10 +119,8 @@ internal sealed partial class SqlServerDataContext
                     {Name(table.RollbackAfterMinutesColumn)} = @rollbackAfterMinutes,
                     {Name(table.UpdatedAtUtcColumn)} = @updatedAt
             WHEN NOT MATCHED THEN
-                INSERT ({Name(table.TargetServiceNameColumn)}, {Name(table.VersionColumn)}, {Name(table.PackageUrlColumn)},
-                    {Name(table.Sha256Column)}, {Name(table.RequireAuthenticodeColumn)}, {Name(table.RollbackAfterMinutesColumn)},
-                    {Name(table.UpdatedAtUtcColumn)})
-                VALUES (@targetServiceName, @version, @packageUrl, @sha256, @requireAuthenticode, @rollbackAfterMinutes, @updatedAt)
+                INSERT ({columns})
+                VALUES ({values})
             OUTPUT {WorkerUpdatePinSelectList("INSERTED")};
             """;
     }
@@ -85,15 +128,30 @@ internal sealed partial class SqlServerDataContext
     internal string BuildSeedWorkerUpdatePinSql()
     {
         var table = options.WorkerUpdatePinTable;
+        var qualified = Name(options.SchemaName, table.TableName);
+        var columns = $"""
+            {Name(table.TargetServiceNameColumn)}, {Name(table.VersionColumn)}, {Name(table.PackageUrlColumn)},
+            {Name(table.Sha256Column)}, {Name(table.RequireAuthenticodeColumn)}, {Name(table.RollbackAfterMinutesColumn)},
+            {Name(table.UpdatedAtUtcColumn)}
+            """;
+        if (dialect.Provider != StorageProvider.SqlServer)
+        {
+            return $"""
+                INSERT INTO {qualified} ({columns})
+                SELECT @targetServiceName, @version, @packageUrl, @sha256, @requireAuthenticode, @rollbackAfterMinutes, @updatedAt
+                WHERE NOT EXISTS (
+                    SELECT 1 FROM {qualified}
+                    WHERE {Name(table.TargetServiceNameColumn)} = @targetServiceName);
+                """;
+        }
+
         return $"""
             IF NOT EXISTS (
-                SELECT 1 FROM {Name(options.SchemaName, table.TableName)}
+                SELECT 1 FROM {qualified}
                 WHERE {Name(table.TargetServiceNameColumn)} = @targetServiceName)
             BEGIN
-                INSERT INTO {Name(options.SchemaName, table.TableName)}
-                ({Name(table.TargetServiceNameColumn)}, {Name(table.VersionColumn)}, {Name(table.PackageUrlColumn)},
-                 {Name(table.Sha256Column)}, {Name(table.RequireAuthenticodeColumn)}, {Name(table.RollbackAfterMinutesColumn)},
-                 {Name(table.UpdatedAtUtcColumn)})
+                INSERT INTO {qualified}
+                ({columns})
                 VALUES (@targetServiceName, @version, @packageUrl, @sha256, @requireAuthenticode, @rollbackAfterMinutes, @updatedAt);
             END;
             """;
@@ -114,7 +172,7 @@ internal sealed partial class SqlServerDataContext
         ]);
     }
 
-    private UpdateManifest ReadWorkerUpdatePin(SqlDataReader reader)
+    private UpdateManifest ReadWorkerUpdatePin(DbDataReader reader)
     {
         var table = options.WorkerUpdatePinTable;
         return new UpdateManifest(
@@ -126,15 +184,15 @@ internal sealed partial class SqlServerDataContext
             reader.GetInt32(reader.GetOrdinal(table.RollbackAfterMinutesColumn)));
     }
 
-    private static void AddWorkerUpdatePinParameters(SqlCommand command, UpdateManifest pin, DateTimeOffset updatedAt)
+    private void AddWorkerUpdatePinParameters(DbCommand command, UpdateManifest pin, DateTimeOffset updatedAt)
     {
-        command.Parameters.Add(new SqlParameter("@targetServiceName", Truncate(pin.TargetServiceName, 128)!));
-        command.Parameters.Add(new SqlParameter("@version", Truncate(pin.Version, 32)!));
-        command.Parameters.Add(new SqlParameter("@packageUrl", Truncate(pin.PackageUrl, 2048)!));
-        command.Parameters.Add(new SqlParameter("@sha256", Truncate(pin.Sha256, 64)!));
-        command.Parameters.Add(new SqlParameter("@requireAuthenticode", pin.RequireAuthenticode));
-        command.Parameters.Add(new SqlParameter("@rollbackAfterMinutes", pin.RollbackAfterMinutes));
-        command.Parameters.Add(new SqlParameter("@updatedAt", updatedAt));
+        Bind(command, ("@targetServiceName", Truncate(pin.TargetServiceName, 128)!));
+        Bind(command, ("@version", Truncate(pin.Version, 32)!));
+        Bind(command, ("@packageUrl", Truncate(pin.PackageUrl, 2048)!));
+        Bind(command, ("@sha256", Truncate(pin.Sha256, 64)!));
+        Bind(command, ("@requireAuthenticode", pin.RequireAuthenticode));
+        Bind(command, ("@rollbackAfterMinutes", pin.RollbackAfterMinutes));
+        Bind(command, ("@updatedAt", updatedAt));
     }
 
 }

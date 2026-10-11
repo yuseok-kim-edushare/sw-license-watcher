@@ -1,6 +1,6 @@
 using Microsoft.Extensions.Options;
 using SwLicenseWatcher.Core;
-using SwLicenseWatcher.Infrastructure.SqlServer;
+using SwLicenseWatcher.Infrastructure.Relational;
 
 namespace SwLicenseWatcher.Api;
 
@@ -11,7 +11,7 @@ internal static class DesignEndpoints
         endpoints.MapGet("/", () => Results.Redirect("/api/design"));
         endpoints.MapGet("/api/schema", (
             IOptions<DatabaseOptions> database,
-            SqlServerSchemaApplicator applicator) =>
+            RelationalSchemaApplicator applicator) =>
         {
             var last = applicator.Last;
             return Results.Ok(new SchemaStatusResponse(
@@ -25,10 +25,10 @@ internal static class DesignEndpoints
         });
         endpoints.MapGet("/api/schema/sql", (
             IOptions<SqlServerStorageOptions> options,
-            SqlServerSchemaScriptBuilder schemaBuilder) =>
+            ISchemaScriptBuilder schemaBuilder) =>
             Results.Text(schemaBuilder.Build(options.Value), "text/plain"));
         endpoints.MapPost("/api/schema/sql", async (
-            SqlServerSchemaApplicator applicator,
+            RelationalSchemaApplicator applicator,
             CancellationToken cancellationToken) =>
         {
             try
@@ -50,8 +50,9 @@ internal static class DesignEndpoints
         });
         endpoints.MapGet("/api/design", async (
             IOptions<SqlServerStorageOptions> sqlOptions,
+            IOptions<StorageProviderOptions> providerOptions,
             WorkerUpdatePinService workerPin,
-            SqlServerSchemaScriptBuilder schemaBuilder,
+            ISchemaScriptBuilder schemaBuilder,
             InventoryMemoryStore store,
             CancellationToken cancellationToken) =>
             Results.Ok(new DesignResponse(
@@ -63,7 +64,8 @@ internal static class DesignEndpoints
                 new DesignSqlServer(
                     HasConnectionStringConfigured: !string.IsNullOrWhiteSpace(sqlOptions.Value.ConnectionString),
                     SchemaName: sqlOptions.Value.SchemaName,
-                    SchemaScript: schemaBuilder.Build(sqlOptions.Value)),
+                    SchemaScript: schemaBuilder.Build(sqlOptions.Value),
+                    Provider: StorageProviders.Parse(providerOptions.Value.Provider).ToString()),
                 new DesignCounts(store.SnapshotCount, store.HeartbeatCount),
                 await workerPin.GetEffectiveAsync(cancellationToken))));
 

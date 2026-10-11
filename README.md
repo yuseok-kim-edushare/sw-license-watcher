@@ -1,6 +1,6 @@
 # sw-license-watcher
 
-.NET 10 기반의 기업용 소프트웨어 라이선스 감시 서비스입니다. 로컬 PC 에이전트는 **Watchdog + Worker**의 투 프로세스 Windows Service 구조를 사용하고, 서버는 **ASP.NET Core API**와 SQL Server로 소프트웨어 수집과 업데이트 메타데이터를 제공합니다.
+.NET 10 기반의 기업용 소프트웨어 라이선스 감시 서비스입니다. 로컬 PC 에이전트는 **Watchdog + Worker**의 투 프로세스 Windows Service 구조를 사용하고, 서버는 **ASP.NET Core API**와 관계형 DB로 소프트웨어 수집과 업데이트 메타데이터를 제공합니다. 기본 엔진은 SQL Server이고, MySQL/MariaDB와 PostgreSQL도 같은 API로 쓸 수 있습니다.
 
 ## 구현된 핵심 요구사항
 
@@ -16,10 +16,10 @@
   - 수집 API: `/api/inventory/snapshots`, `/api/agents/heartbeats`
   - 사용자 알림: 관리자가 `/admin`에서 명시적으로 보낸 제목·본문만. Worker는 `GET /api/agents/events` SSE로 받고, 끊기면 heartbeat/snapshot 응답의 `UserMessageCommand`로 보조 전달. Session 0 서비스가 장치 ML-DSA-87 키로 서명한 페이로드만 `toast/SwLicenseWatcher.Agent.Toast.exe`가 받아 사용자 세션에서 OS 표준 Toast를 표시
   - 조회 API: `/api/inventory/devices`, `/api/inventory/software` (JSON 및 `?format=csv`, `?classification=` 필터)
-  - SQL Server 트랜잭션 기반 PC UPSERT 및 설치 소프트웨어 교체 저장(정책 매칭 분류 포함)
+  - 트랜잭션 기반 PC UPSERT 및 설치 소프트웨어 교체 저장(정책 매칭 분류 포함). `Storage:Provider`는 `SqlServer`(기본), `MySql`(MariaDB 포함), `PostgreSql`
   - 현장 설치 시 자산코드는 임시값(기본 컴퓨터 이름)이고, 관리자가 서버에서 바꿀 수 있다. 기기의 고윳값은 서버 CA가 발급하는 **ML-DSA-87**(FIPS 204 최상위, NIST Level 5) 사설 인증서다. 서명·검증은 44/65보다 느리다.
   - Bearer 토큰 인증(에이전트/관리자 역할 분리). 관리자 API는 선택적으로 OAuth 2 Resource Server JWT도 허용. 원격 요청 HTTPS 강제, 수집 POST 본문 크기 제한(스냅샷 8 MiB, 하트비트 64 KiB)
-  - 헬스체크: `/health`(인증 제외)는 SQL Server에 `SELECT 1`로 연결을 확인하고, 실패 시 503과 일반화된 사유만 반환
+  - 헬스체크: `/health`(인증 제외)는 활성 DB에 `SELECT 1`로 연결을 확인하고, 실패 시 503과 일반화된 사유만 반환
   - 설계/스키마 API: `/api/design`, `/api/schema`, `GET`/`POST` `/api/schema/sql`. 기동 후 백그라운드에서 없는 테이블/컬럼을 맞춤
   - 업데이트: `/api/updates/worker/manifest`, GitHub Release 가져오기 `/api/updates/worker/github`, 캐시된 Worker ZIP `GET /api/updates/worker/package/{version}` (토큰 없음. 0.1.x 클라이언트가 이 주소로 파일을 받음)
   - 소프트웨어 정책 CRUD: `/api/policies` (목록은 페이징·검색·분류 필터·CSV)
@@ -33,7 +33,7 @@
   - 스냅샷에서 해당 PC에 없던 블랙리스트 위반이 새로 적발되면 PC·소프트웨어·정책 패턴 알림(기존 위반은 재알림하지 않음)
   - heartbeat가 설정된 시간(기본 24시간) 이상 두절된 PC는 PC당 1회만 알림(복구 후 다시 두절되면 재알림)
   - 알림 전송 실패는 로그만 남기고 스냅샷/heartbeat 저장에는 영향을 주지 않음
-- **SQL Server 스키마 커스터마이징**
+- **서버 DB 스키마 커스터마이징**
   - PC entity / PC installed software / software policy(white|managed|black) / software violation 테이블 이름과 컬럼 이름 모두 `appsettings.json`에서 변경 가능
 - **수집 방식 안전장치**
   - `Win32_Product` / WMI 미사용
@@ -55,7 +55,7 @@
 - `/src/SwLicenseWatcher.Core`: 에이전트·API·Admin이 공유하는 요청/응답 계약과 옵션, 검증·정책 매칭·수집 등 공통 기능
 - `/src/SwLicenseWatcher.Crypto`: BouncyCastle ML-DSA-87 사설 기기 인증서(서버 CA 발급, 클라이언트 키 생성). 44/65보다 느린 최상위 파라미터
 - `/src/SwLicenseWatcher.Application`: 저장 기술과 분리된 애플리케이션 결정 로직 및 snapshot, heartbeat, 조회, 정책, 위반, 제거 요청, 업데이트 핀별 persistence port
-- `/src/SwLicenseWatcher.Infrastructure`: Application port의 SQL Server 구현, 데이터 컨텍스트, 스키마 적용 및 DI 등록
+- `/src/SwLicenseWatcher.Infrastructure`: Application port의 관계형 DB 구현(SQL Server, MySQL/MariaDB, PostgreSQL), 데이터 컨텍스트, 스키마 적용 및 DI 등록
 - `/src/SwLicenseWatcher.Api`: 인증·HTTP endpoint·호스팅을 구성하고 Application/Infrastructure를 조립하는 ASP.NET Core API
 - `/src/SwLicenseWatcher.Admin`: 기능별 Devices/Software/Policies/Violations/Uninstall/Updates 컴포넌트와 공통 drawer·pagination으로 구성된 `/admin` Blazor WebAssembly (API `wwwroot/admin`으로 publish)
 - `/src/SwLicenseWatcher.Agent.Worker`: inventory 수집 Windows Service. 사용자 Toast 헬퍼를 `toast/`에 같이 publish
@@ -79,7 +79,7 @@
 
 ## CI/CD
 
-- **CI (`ci.yaml`)**: `main` 대상 push/PR에서 `windows-latest`로 솔루션 Restore/Build/Test를 검증합니다. `build-test`는 SQL Server LocalDB를 기동한 뒤 회사 스키마 매핑으로 스냅샷·정책·위반·heartbeat 통합 테스트를 돌립니다(로컬에 LocalDB가 없으면 해당 테스트는 skip, CI에서는 실패). 이와 병행해 win-x64 Native AOT publish를 수행합니다. AOT 스모크는 의도적으로 DB 없이 `/health` 503을 확인합니다. IL trim/AOT 경고는 자체 코드(SwLicenseWatcher.*)에서 발생하면 실패하고, `Microsoft.Data.SqlClient` 등 서드파티 어셈블리 경고는 요약만 보고합니다. 산출된 native 실행 파일을 smoke-run합니다. Dependabot PR이 두 job을 모두 통과하면 auto-merge 워크플로우를 트리거합니다.
+- **CI (`ci.yaml`)**: `main` 대상 push/PR에서 `windows-latest`로 솔루션 Restore/Build/Test를 검증합니다. `build-test`는 SQL Server LocalDB를 기동한 뒤 회사 스키마 매핑으로 스냅샷·정책·위반·heartbeat 통합 테스트를 돌립니다(로컬에 LocalDB가 없으면 해당 테스트는 skip, CI에서는 실패). `relational-db`는 Ubuntu에서 MySQL 8.4, MariaDB 11.8, PostgreSQL 16으로 같은 통합 시나리오를 돌립니다. 연결 환경 변수가 없으면 해당 테스트는 skip입니다. 이와 병행해 win-x64 Native AOT publish를 수행합니다. AOT 스모크는 의도적으로 DB 없이 `/health` 503을 확인합니다. IL trim/AOT 경고는 자체 코드(SwLicenseWatcher.*)에서 발생하면 실패하고, `Microsoft.Data.SqlClient` 등 서드파티 어셈블리 경고는 요약만 보고합니다. 산출된 native 실행 파일을 smoke-run합니다. Dependabot PR이 build-test, aot-publish, relational-db를 모두 통과하면 auto-merge 워크플로우를 트리거합니다.
 - **CD (`cd.yaml`)**: `main`에서 CI가 성공하면 다음 릴리스 버전을 먼저 계산합니다(최신 `x.y.z` 태그 patch+1). 커밋 메시지 `Update Version To x.y.z`(대소문자·공백 무시, 선택적 `v`)가 있으면 그 버전으로 재정의하고, Actions에서 CD를 `workflow_dispatch`로 돌릴 때 `version` 입력을 넣어도 됩니다. 그 버전으로 `Agent.Watchdog`/`Agent.Worker` Native AOT와 API Native AOT(Kestrel)·IIS in-process, Setup 런처 AOT, Setup/Packager WinForms self-contained를 publish하고, 에이전트 폴더에 `.version`을 씁니다. GitHub 시크릿 `SIGNING_CERTIFICATE_PFX_BASE64`·`SIGNING_CERTIFICATE_PASSWORD`(선택 `SIGNING_TIMESTAMP_URL`)가 있으면 EXE/DLL에 Authenticode 서명을 합니다. Release 자산은 전체 구성 `SwLicenseWatcher-{version}.zip`(API·에이전트·Packager·Setup), Worker·Watchdog 자체 패치용 `SwLicenseWatcher.Agent.Worker-{version}.zip`, API 없이 더 작은 IT용 `SwLicenseWatcher.Packager-{version}.zip`, `SHA256SUMS.txt`입니다. OAuth 2 Resource Server(JWT) 관리자 인증은 0.2.0부터입니다.
 
 Release ZIP 구조:
@@ -102,7 +102,7 @@ SHA256SUMS.txt                                위 ZIP의 SHA-256
 
 ## 커스터마이징 포인트
 
-서버 테이블/컬럼 매핑은 `/src/SwLicenseWatcher.Api/appsettings.json`의 `Storage:SqlServer`에서 바꿀 수 있습니다.
+서버 테이블/컬럼 매핑은 `/src/SwLicenseWatcher.Api/appsettings.json`의 활성 섹션에서 바꿉니다. `Storage:Provider`가 비어 있거나 `SqlServer`이면 `Storage:SqlServer`입니다. `MySql`(MariaDB도 이 값)은 `Storage:MySql`, `PostgreSql`은 `Storage:PostgreSql`이며 섹션 모양은 같습니다. MySQL/MariaDB는 연결 문자열의 database에 테이블을 만들고 `SchemaName`은 쓰지 않습니다. 시각은 UTC로 저장합니다. 최소 버전은 MySQL 8.0, MariaDB 10.11, PostgreSQL 14입니다. MySQL/MariaDB와 PostgreSQL 스키마는 API가 적용합니다. [Apply-DbSchema.ps1](deploy/scripts/Apply-DbSchema.ps1)는 SQL Server 전용입니다.
 
 예:
 
@@ -195,7 +195,7 @@ Watchdog__ApiToken=<agent-token>
 
 수집 POST 본문은 경로별로 상한을 둡니다. 스냅샷(`/api/inventory/snapshots`)은 8 MiB, 하트비트(`/api/agents/heartbeats`)는 64 KiB입니다. Native AOT slim builder는 MVC `RequestSizeLimit`를 쓰지 않으므로, 인증 미들웨어가 `IHttpMaxRequestBodySizeFeature`로 적용합니다. 한도를 넘기면 413입니다.
 
-스키마 DDL은 idempotent입니다. 없는 테이블은 `IF OBJECT_ID`로 만들고, 없는 컬럼은 `IF COL_LENGTH`로 `ALTER TABLE ... ADD` 합니다. API는 기동 후 백그라운드에서 이 스크립트를 SQL Server에 적용합니다(기본 `Database:ApplySchemaInBackground=true`). 연결이 안 되면 30초마다 재시도하고, 성공하면 그 프로세스에서는 멈춥니다. 기동을 막지 않으므로 SQL이 늦게 떠도 API는 뜹니다.
+스키마 DDL은 idempotent입니다. SQL Server는 없는 테이블을 `IF OBJECT_ID`로 만들고, 없는 컬럼을 `IF COL_LENGTH`로 `ALTER TABLE ... ADD` 합니다. MySQL/MariaDB는 `CREATE TABLE IF NOT EXISTS`와 `information_schema` 확인 후 컬럼을 더하고, PostgreSQL은 `CREATE SCHEMA IF NOT EXISTS`와 `ADD COLUMN IF NOT EXISTS`를 씁니다. API는 기동 후 백그라운드에서 활성 엔진에 이 스크립트를 적용합니다(기본 `Database:ApplySchemaInBackground=true`). 연결이 안 되면 30초마다 재시도하고, 성공하면 그 프로세스에서는 멈춥니다. 기동을 막지 않으므로 SQL이 늦게 떠도 API는 뜹니다.
 
 즉시 적용하려면 관리자 토큰으로 `POST /api/schema/sql`을 호출합니다. 적용 상태는 `GET /api/schema`입니다. `GET /api/schema/sql`은 같은 DDL을 `text/plain`으로만 내려 줍니다(미리보기·[Apply-DbSchema.ps1](deploy/scripts/Apply-DbSchema.ps1)용). DBA가 직접 적용하려면 스크립트에 로컬 `.sql`을 넘기면 됩니다.
 
@@ -328,9 +328,9 @@ API 실행 후:
 
 - `GET /api/design`: 전체 설계 요약
 - `GET /api/schema`: 스키마 자동 적용 상태(백그라운드/기동 시 적용 여부, 마지막 성공·오류)
-- `GET /api/schema/sql`: 현재 설정 기준 SQL Server DDL (`text/plain`)
-- `POST /api/schema/sql`: 같은 DDL을 SQL Server에 즉시 적용
-- `GET /health`: SQL Server 연결 확인(인증 불필요). 실패 시 503
+- `GET /api/schema/sql`: 현재 설정 기준 활성 엔진 DDL (`text/plain`)
+- `POST /api/schema/sql`: 같은 DDL을 활성 DB에 즉시 적용
+- `GET /health`: 활성 DB 연결 확인(인증 불필요). 실패 시 503
 - `GET /api/inventory/devices`: 수집된 PC 목록 (페이징·검색·stale heartbeat 필터)
 - `GET /api/inventory/software`: 소프트웨어별 설치 PC 수 집계 (`?classification=`으로 분류 필터)
 

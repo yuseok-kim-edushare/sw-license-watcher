@@ -3,7 +3,15 @@ using System.Text;
 
 namespace SwLicenseWatcher.Core;
 
-public sealed class SqlServerSchemaScriptBuilder
+public interface ISchemaScriptBuilder
+{
+    string Build(SqlServerStorageOptions options);
+
+    IReadOnlyList<string> BuildBatches(SqlServerStorageOptions options) =>
+        SqlScriptBatchSplitter.Split(Build(options));
+}
+
+public sealed class SqlServerSchemaScriptBuilder : ISchemaScriptBuilder
 {
     public string Build(SqlServerStorageOptions options)
     {
@@ -239,13 +247,24 @@ public sealed class SqlServerSchemaScriptBuilder
 
 public static class SqlIdentifierValidator
 {
-    public static bool IsValid(string? identifier) =>
+    public const int SqlServerMaxLength = 128;
+
+    public const int MySqlMaxLength = 64;
+
+    public const int PostgreSqlMaxLength = 63;
+
+    public static bool IsValid(string? identifier) => IsValid(identifier, SqlServerMaxLength);
+
+    public static bool IsValid(string? identifier, int maxLength) =>
         !string.IsNullOrWhiteSpace(identifier) &&
-        identifier.Length <= 128 &&
+        identifier.Length <= maxLength &&
         (char.IsAsciiLetter(identifier[0]) || identifier[0] == '_') &&
         identifier.All(character => char.IsAsciiLetterOrDigit(character) || character == '_');
 
-    public static void Validate(SqlServerStorageOptions options)
+    public static void Validate(SqlServerStorageOptions options) =>
+        Validate(options, SqlServerMaxLength);
+
+    public static void Validate(SqlServerStorageOptions options, int maxLength)
     {
         var identifiers = new[]
         {
@@ -293,9 +312,10 @@ public static class SqlIdentifierValidator
             options.UserMessageTable.CreatedAtUtcColumn, options.UserMessageTable.ConsumedAtUtcColumn
         };
 
-        if (identifiers.Any(identifier => !IsValid(identifier)))
+        if (identifiers.Any(identifier => !IsValid(identifier, maxLength)))
         {
-            throw new ArgumentException("SQL identifiers must start with a letter or underscore and contain only ASCII letters, digits, or underscores (maximum 128 characters).");
+            throw new ArgumentException(
+                $"SQL identifiers must start with a letter or underscore and contain only ASCII letters, digits, or underscores (maximum {maxLength} characters).");
         }
     }
 }

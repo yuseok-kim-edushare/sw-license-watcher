@@ -1,9 +1,10 @@
 using SwLicenseWatcher.Application;
+using SwLicenseWatcher.Infrastructure.Relational;
 using SwLicenseWatcher.Core;
 
 namespace SwLicenseWatcher.Infrastructure.SqlServer;
 
-internal sealed class SqlServerHeartbeatRepository(SqlServerDataContext context) : IHeartbeatRepository
+internal sealed class SqlServerHeartbeatRepository(RelationalDataContext context) : IHeartbeatRepository
 {
     public Task SaveHeartbeatAsync(AgentHeartbeat heartbeat, CancellationToken cancellationToken) =>
         context.SaveHeartbeatAsync(heartbeat, cancellationToken);

@@ -1,11 +1,11 @@
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
-using SwLicenseWatcher.Infrastructure.SqlServer;
+using SwLicenseWatcher.Infrastructure.Relational;
 using SwLicenseWatcher.Core;
 
 namespace SwLicenseWatcher.Infrastructure.Tests;
 
-public class SqlServerSchemaApplicatorTests
+public class RelationalSchemaApplicatorTests
 {
     [Fact]
     public async Task ApplyIfEnabledAsync_does_nothing_when_disabled()
@@ -61,10 +61,11 @@ public class SqlServerSchemaApplicatorTests
         Assert.NotNull(ex.InnerException);
     }
 
-    private static SqlServerSchemaApplicator CreateApplicator(SqlServerStorageOptions storage, bool applyOnStartup) =>
+    private static RelationalSchemaApplicator CreateApplicator(SqlServerStorageOptions storage, bool applyOnStartup) =>
         new(
             storage,
             Options.Create(new DatabaseOptions { ApplySchemaOnStartup = applyOnStartup }),
             new SqlServerSchemaScriptBuilder(),
-            NullLogger<SqlServerSchemaApplicator>.Instance);
+            RelationalDialects.Create(StorageProvider.SqlServer),
+            NullLogger<RelationalSchemaApplicator>.Instance);
 }

@@ -1,9 +1,10 @@
 using SwLicenseWatcher.Application;
+using SwLicenseWatcher.Infrastructure.Relational;
 using SwLicenseWatcher.Core;
 
 namespace SwLicenseWatcher.Infrastructure.SqlServer;
 
-internal sealed class SqlServerDeviceQueryRepository(SqlServerDataContext context) : IDeviceQuery
+internal sealed class SqlServerDeviceQueryRepository(RelationalDataContext context) : IDeviceQuery
 {
     public Task<(int TotalCount, List<DeviceSummary> Items)> ListDevicesAsync(
         int skip,

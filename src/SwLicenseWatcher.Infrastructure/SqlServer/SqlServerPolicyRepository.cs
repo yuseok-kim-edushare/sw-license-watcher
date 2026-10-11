@@ -1,9 +1,10 @@
 using SwLicenseWatcher.Application;
+using SwLicenseWatcher.Infrastructure.Relational;
 using SwLicenseWatcher.Core;
 
 namespace SwLicenseWatcher.Infrastructure.SqlServer;
 
-internal sealed class SqlServerPolicyRepository(SqlServerDataContext context) : IPolicyStore
+internal sealed class SqlServerPolicyRepository(RelationalDataContext context) : IPolicyStore
 {
     public Task<(int TotalCount, List<SoftwarePolicyEntry> Items)> ListPoliciesAsync(
         int skip, int take, string? search, string? classification, CancellationToken cancellationToken) =>

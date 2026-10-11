@@ -1,18 +1,18 @@
 using System.Collections.Concurrent;
 using System.Data;
-using Microsoft.Data.SqlClient;
+using System.Data.Common;
 using SwLicenseWatcher.Application;
 using SwLicenseWatcher.Core;
 
-namespace SwLicenseWatcher.Infrastructure.SqlServer;
+namespace SwLicenseWatcher.Infrastructure.Relational;
 
-internal sealed partial class SqlServerDataContext
+public sealed partial class RelationalDataContext
 {
     public async Task<SnapshotSaveResult> SaveSnapshotAsync(InventoryIngestionRequest snapshot, CancellationToken cancellationToken)
     {
-        await using var connection = new SqlConnection(options.ConnectionString);
+        await using var connection = CreateConnection();
         await connection.OpenAsync(cancellationToken);
-        await using var transaction = (SqlTransaction)await connection.BeginTransactionAsync(IsolationLevel.Serializable, cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(IsolationLevel.Serializable, cancellationToken);
 
         if (await IsStaleSnapshotAsync(connection, transaction, snapshot, cancellationToken))
         {
@@ -25,7 +25,7 @@ internal sealed partial class SqlServerDataContext
         var software = options.InstalledSoftwareTable;
         await ExecuteAsync(connection, transaction,
             BuildDeleteInstalledSoftwareSql(),
-            [new("@pcId", pcId)], cancellationToken);
+            [("@pcId", pcId)], cancellationToken);
 
         var policies = await ListEnabledPoliciesAsync(connection, transaction, cancellationToken);
         var matches = SoftwarePolicyMatcher.MatchAll(snapshot.InstalledSoftware, policies);
@@ -41,11 +41,11 @@ internal sealed partial class SqlServerDataContext
                 """;
             await ExecuteAsync(connection, transaction, sql,
             [
-                new("@pcId", pcId), new("@name", Truncate(entry.Name.Trim(), 256)), new("@version", DbValue(Truncate(entry.Version, 64))),
-                new("@publisher", DbValue(Truncate(entry.Publisher?.Trim(), 256))), new("@location", DbValue(Truncate(entry.InstallLocation, 512))),
-                new("@scope", Truncate(entry.DiscoveryScope, 256)), new("@source", Truncate(entry.DiscoverySource, 64)),
-                new("@classification", Truncate(match.StoredClassification, 32)!),
-                new("@collectedAt", snapshot.CollectedAtUtc)
+                ("@pcId", pcId), ("@name", Truncate(entry.Name.Trim(), 256)), ("@version", DbValue(Truncate(entry.Version, 64))),
+                ("@publisher", DbValue(Truncate(entry.Publisher?.Trim(), 256))), ("@location", DbValue(Truncate(entry.InstallLocation, 512))),
+                ("@scope", Truncate(entry.DiscoveryScope, 256)), ("@source", Truncate(entry.DiscoverySource, 64)),
+                ("@classification", Truncate(match.StoredClassification, 32)!),
+                ("@collectedAt", snapshot.CollectedAtUtc)
             ], cancellationToken);
         }
 
@@ -56,8 +56,8 @@ internal sealed partial class SqlServerDataContext
     }
 
     private async Task<IReadOnlyList<NewBlacklistViolation>> SyncViolationsAsync(
-        SqlConnection connection,
-        SqlTransaction transaction,
+        DbConnection connection,
+        DbTransaction transaction,
         long pcId,
         InventoryIngestionRequest snapshot,
         IReadOnlyList<SoftwarePolicyMatch> matches,
@@ -79,15 +79,15 @@ internal sealed partial class SqlServerDataContext
             WHERE {Name(table.PcForeignKeyColumn)} = @pcId
               AND {Name(table.LastSeenAtUtcColumn)} < @collectedAt;
             """,
-            [new("@pcId", pcId), new("@collectedAt", snapshot.CollectedAtUtc)],
+            [("@pcId", pcId), ("@collectedAt", snapshot.CollectedAtUtc)],
             cancellationToken);
 
         return newlyDetected;
     }
 
     private async Task<List<string>> ReadViolationSoftwareNamesAsync(
-        SqlConnection connection,
-        SqlTransaction transaction,
+        DbConnection connection,
+        DbTransaction transaction,
         long pcId,
         CancellationToken cancellationToken)
     {
@@ -97,8 +97,8 @@ internal sealed partial class SqlServerDataContext
             FROM {Name(options.SchemaName, violation.TableName)}
             WHERE {Name(violation.PcForeignKeyColumn)} = @pcId;
             """;
-        await using var command = new SqlCommand(sql, connection, transaction);
-        command.Parameters.Add(new SqlParameter("@pcId", pcId));
+        await using var command = CreateCommand(connection, transaction, sql);
+        Bind(command, ("@pcId", pcId));
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         var names = new List<string>();
         while (await reader.ReadAsync(cancellationToken))
@@ -110,8 +110,8 @@ internal sealed partial class SqlServerDataContext
     }
 
     private async Task UpsertViolationAsync(
-        SqlConnection connection,
-        SqlTransaction transaction,
+        DbConnection connection,
+        DbTransaction transaction,
         long pcId,
         InstalledSoftwareEntry software,
         SoftwarePolicyEntry policy,
@@ -119,7 +119,16 @@ internal sealed partial class SqlServerDataContext
         CancellationToken cancellationToken)
     {
         var violation = options.SoftwareViolationTable;
-        var sql = $"""
+        var parameters = new (string Name, object? Value)[]
+        {
+            ("@pcId", pcId),
+            ("@policyId", policy.Id),
+            ("@name", Truncate(software.Name.Trim(), 256)),
+            ("@version", DbValue(Truncate(software.Version, 64))),
+            ("@publisher", DbValue(Truncate(software.Publisher?.Trim(), 256))),
+            ("@collectedAt", collectedAt)
+        };
+        var update = $"""
             UPDATE {Name(options.SchemaName, violation.TableName)}
             SET {Name(violation.PolicyForeignKeyColumn)} = @policyId,
                 {Name(violation.DisplayVersionColumn)} = @version,
@@ -127,24 +136,27 @@ internal sealed partial class SqlServerDataContext
                 {Name(violation.LastSeenAtUtcColumn)} = @collectedAt
             WHERE {Name(violation.PcForeignKeyColumn)} = @pcId
               AND {Name(violation.DisplayNameColumn)} = @name;
-            IF @@ROWCOUNT = 0
-            BEGIN
-                INSERT INTO {Name(options.SchemaName, violation.TableName)}
-                ({Name(violation.PcForeignKeyColumn)}, {Name(violation.PolicyForeignKeyColumn)}, {Name(violation.DisplayNameColumn)},
-                 {Name(violation.DisplayVersionColumn)}, {Name(violation.PublisherColumn)},
-                 {Name(violation.DetectedAtUtcColumn)}, {Name(violation.LastSeenAtUtcColumn)})
-                VALUES (@pcId, @policyId, @name, @version, @publisher, @collectedAt, @collectedAt);
-            END;
             """;
-        await ExecuteAsync(connection, transaction, sql,
-        [
-            new("@pcId", pcId),
-            new("@policyId", policy.Id),
-            new("@name", Truncate(software.Name.Trim(), 256)),
-            new("@version", DbValue(Truncate(software.Version, 64))),
-            new("@publisher", DbValue(Truncate(software.Publisher?.Trim(), 256))),
-            new("@collectedAt", collectedAt)
-        ], cancellationToken);
+        if (await ExecuteAsync(connection, transaction, update, parameters, cancellationToken) > 0)
+        {
+            return;
+        }
+
+        var insert = $"""
+            INSERT INTO {Name(options.SchemaName, violation.TableName)}
+            ({Name(violation.PcForeignKeyColumn)}, {Name(violation.PolicyForeignKeyColumn)}, {Name(violation.DisplayNameColumn)},
+             {Name(violation.DisplayVersionColumn)}, {Name(violation.PublisherColumn)},
+             {Name(violation.DetectedAtUtcColumn)}, {Name(violation.LastSeenAtUtcColumn)})
+            VALUES (@pcId, @policyId, @name, @version, @publisher, @collectedAt, @collectedAt);
+            """;
+        try
+        {
+            await ExecuteAsync(connection, transaction, insert, parameters, cancellationToken);
+        }
+        catch (DbException ex) when (dialect.IsUniqueViolation(ex))
+        {
+            await ExecuteAsync(connection, transaction, update, parameters, cancellationToken);
+        }
     }
 
     internal string BuildDeleteInstalledSoftwareSql()
@@ -154,21 +166,21 @@ internal sealed partial class SqlServerDataContext
     }
 
     private async Task<bool> IsStaleSnapshotAsync(
-        SqlConnection connection,
-        SqlTransaction transaction,
+        DbConnection connection,
+        DbTransaction transaction,
         InventoryIngestionRequest snapshot,
         CancellationToken cancellationToken)
     {
         var table = options.PcTable;
         var sql = $"""
             SELECT {Name(table.LastInventoryUtcColumn)}
-            FROM {Name(options.SchemaName, table.TableName)} WITH (UPDLOCK, HOLDLOCK)
-            WHERE {Name(table.DeviceCodeColumn)} = @deviceCode;
+            FROM {Name(options.SchemaName, table.TableName)}{LockFrom}
+            WHERE {Name(table.DeviceCodeColumn)} = @deviceCode{LockSuffix};
             """;
-        await using var command = new SqlCommand(sql, connection, transaction);
-        command.Parameters.Add(new SqlParameter("@deviceCode", snapshot.Pc.DeviceCode));
+        await using var command = CreateCommand(connection, transaction, sql);
+        Bind(command, ("@deviceCode", snapshot.Pc.DeviceCode));
         var stored = await command.ExecuteScalarAsync(cancellationToken);
-        return stored is DateTimeOffset lastInventoryUtc && lastInventoryUtc >= snapshot.CollectedAtUtc;
+        return stored is not null and not DBNull && CoerceDateTimeOffset(stored) >= snapshot.CollectedAtUtc;
     }
 
 }

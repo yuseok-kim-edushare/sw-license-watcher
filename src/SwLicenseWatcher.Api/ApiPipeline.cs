@@ -1,7 +1,7 @@
 using Microsoft.AspNetCore.Http.Features;
 using Microsoft.Extensions.Options;
 using SwLicenseWatcher.Core;
-using SwLicenseWatcher.Infrastructure.SqlServer;
+using SwLicenseWatcher.Infrastructure.Relational;
 
 namespace SwLicenseWatcher.Api;
 
@@ -17,7 +17,7 @@ internal static class ApiPipeline
 
     internal static async Task InitializeApiAsync(this WebApplication app)
     {
-        await app.Services.GetRequiredService<SqlServerSchemaApplicator>()
+        await app.Services.GetRequiredService<RelationalSchemaApplicator>()
             .ApplyIfEnabledAsync(CancellationToken.None);
         await app.Services.GetRequiredService<WorkerUpdatePinService>()
             .SeedIfEmptyAsync(CancellationToken.None);

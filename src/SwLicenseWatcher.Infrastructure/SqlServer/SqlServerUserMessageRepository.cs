@@ -1,9 +1,10 @@
 using SwLicenseWatcher.Application;
+using SwLicenseWatcher.Infrastructure.Relational;
 using SwLicenseWatcher.Core;
 
 namespace SwLicenseWatcher.Infrastructure.SqlServer;
 
-internal sealed class SqlServerUserMessageRepository(SqlServerDataContext context) : IUserMessageStore
+internal sealed class SqlServerUserMessageRepository(RelationalDataContext context) : IUserMessageStore
 {
     public Task<EnqueuedUserMessage?> EnqueueAsync(
         string deviceCode, string title, string body, CancellationToken cancellationToken) =>

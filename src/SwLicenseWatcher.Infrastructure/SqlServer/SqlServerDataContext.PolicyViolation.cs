@@ -1,12 +1,12 @@
 using System.Collections.Concurrent;
 using System.Data;
-using Microsoft.Data.SqlClient;
+using System.Data.Common;
 using SwLicenseWatcher.Application;
 using SwLicenseWatcher.Core;
 
-namespace SwLicenseWatcher.Infrastructure.SqlServer;
+namespace SwLicenseWatcher.Infrastructure.Relational;
 
-internal sealed partial class SqlServerDataContext
+public sealed partial class RelationalDataContext
 {
     public async Task<(int TotalCount, List<SoftwarePolicyEntry> Items)> ListPoliciesAsync(
         int skip,
@@ -15,13 +15,13 @@ internal sealed partial class SqlServerDataContext
         string? classification,
         CancellationToken cancellationToken)
     {
-        await using var connection = new SqlConnection(options.ConnectionString);
+        await using var connection = CreateConnection();
         await connection.OpenAsync(cancellationToken);
-        await using var command = new SqlCommand(BuildListPoliciesSql(), connection);
-        command.Parameters.Add(new SqlParameter("@search", DbValue(ToContainsPattern(search))));
-        command.Parameters.Add(new SqlParameter("@classification", DbValue(classification)));
-        command.Parameters.Add(new SqlParameter("@skip", skip));
-        command.Parameters.Add(new SqlParameter("@take", take));
+        await using var command = CreateCommand(connection, null, BuildListPoliciesSql());
+        Bind(command, ("@search", DbValue(ToContainsPattern(search))));
+        Bind(command, ("@classification", DbValue(classification)));
+        Bind(command, ("@skip", skip));
+        Bind(command, ("@take", take));
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         var items = new List<SoftwarePolicyEntry>();
         var totalCount = 0;
@@ -35,7 +35,7 @@ internal sealed partial class SqlServerDataContext
 
             if (items.Count == 0)
             {
-                totalCount = reader.GetInt32(reader.GetOrdinal("total_count"));
+                totalCount = ReadInt32(reader, "total_count");
             }
 
             items.Add(policy);
@@ -46,23 +46,23 @@ internal sealed partial class SqlServerDataContext
 
     public async Task<SoftwarePolicyEntry?> GetPolicyAsync(long id, CancellationToken cancellationToken)
     {
-        await using var connection = new SqlConnection(options.ConnectionString);
+        await using var connection = CreateConnection();
         await connection.OpenAsync(cancellationToken);
         return await GetPolicyAsync(connection, transaction: null, id, cancellationToken);
     }
 
     public async Task<SoftwarePolicyEntry> CreatePolicyAsync(SoftwarePolicyWriteRequest request, CancellationToken cancellationToken)
     {
-        await using var connection = new SqlConnection(options.ConnectionString);
+        await using var connection = CreateConnection();
         await connection.OpenAsync(cancellationToken);
         return await InsertPolicyAsync(connection, transaction: null, request, cancellationToken);
     }
 
     public async Task<SoftwarePolicyEntry?> UpdatePolicyAsync(long id, SoftwarePolicyWriteRequest request, CancellationToken cancellationToken)
     {
-        await using var connection = new SqlConnection(options.ConnectionString);
+        await using var connection = CreateConnection();
         await connection.OpenAsync(cancellationToken);
-        await using var transaction = (SqlTransaction)await connection.BeginTransactionAsync(cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
 
         var existing = await GetPolicyAsync(connection, transaction, id, cancellationToken);
         if (existing is null)
@@ -84,12 +84,12 @@ internal sealed partial class SqlServerDataContext
 
     public async Task<bool> DeletePolicyAsync(long id, CancellationToken cancellationToken)
     {
-        await using var connection = new SqlConnection(options.ConnectionString);
+        await using var connection = CreateConnection();
         await connection.OpenAsync(cancellationToken);
         var table = options.SoftwarePolicyTable;
         var sql = $"DELETE FROM {Name(options.SchemaName, table.TableName)} WHERE {Name(table.PrimaryKeyColumn)} = @id;";
-        await using var command = new SqlCommand(sql, connection);
-        command.Parameters.Add(new SqlParameter("@id", id));
+        await using var command = CreateCommand(connection, null, sql);
+        Bind(command, ("@id", id));
         return await command.ExecuteNonQueryAsync(cancellationToken) > 0;
     }
 
@@ -108,9 +108,9 @@ internal sealed partial class SqlServerDataContext
     {
         ArgumentNullException.ThrowIfNull(items);
 
-        await using var connection = new SqlConnection(options.ConnectionString);
+        await using var connection = CreateConnection();
         await connection.OpenAsync(cancellationToken);
-        await using var transaction = (SqlTransaction)await connection.BeginTransactionAsync(cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
         var saved = new List<SoftwarePolicyEntry>(items.Count);
         try
         {
@@ -132,8 +132,8 @@ internal sealed partial class SqlServerDataContext
     }
 
     private async Task<SoftwarePolicyEntry> UpsertSoftwareClassificationInTransactionAsync(
-        SqlConnection connection,
-        SqlTransaction transaction,
+        DbConnection connection,
+        DbTransaction transaction,
         string productName,
         SoftwareClassificationWriteRequest request,
         CancellationToken cancellationToken)
@@ -175,9 +175,9 @@ internal sealed partial class SqlServerDataContext
         string? licenseSource,
         CancellationToken cancellationToken)
     {
-        await using var connection = new SqlConnection(options.ConnectionString);
+        await using var connection = CreateConnection();
         await connection.OpenAsync(cancellationToken);
-        await using var transaction = (SqlTransaction)await connection.BeginTransactionAsync(cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
 
         var pcId = await FindPcIdAsync(connection, transaction, deviceCode, cancellationToken);
         if (pcId is null)
@@ -193,7 +193,7 @@ internal sealed partial class SqlServerDataContext
                 connection,
                 transaction,
                 BuildDeleteSoftwareLicenseSql(),
-                [new("@pcId", pcId.Value), new("@name", name)],
+                [("@pcId", pcId.Value), ("@name", name)],
                 cancellationToken);
         }
         else
@@ -203,10 +203,10 @@ internal sealed partial class SqlServerDataContext
                 transaction,
                 BuildUpsertSoftwareLicenseSql(),
                 [
-                    new("@pcId", pcId.Value),
-                    new("@name", name),
-                    new("@licenseSource", licenseSource),
-                    new("@updatedAt", DateTimeOffset.UtcNow)
+                    ("@pcId", pcId.Value),
+                    ("@name", name),
+                    ("@licenseSource", licenseSource),
+                    ("@updatedAt", DateTimeOffset.UtcNow)
                 ],
                 cancellationToken);
         }
@@ -222,13 +222,13 @@ internal sealed partial class SqlServerDataContext
         DateTimeOffset? since,
         CancellationToken cancellationToken)
     {
-        await using var connection = new SqlConnection(options.ConnectionString);
+        await using var connection = CreateConnection();
         await connection.OpenAsync(cancellationToken);
-        await using var command = new SqlCommand(BuildListViolationsSql(), connection);
-        command.Parameters.Add(new SqlParameter("@search", DbValue(ToContainsPattern(search))));
-        command.Parameters.Add(new SqlParameter("@since", DbValue(since)));
-        command.Parameters.Add(new SqlParameter("@skip", skip));
-        command.Parameters.Add(new SqlParameter("@take", take));
+        await using var command = CreateCommand(connection, null, BuildListViolationsSql());
+        Bind(command, ("@search", DbValue(ToContainsPattern(search))));
+        Bind(command, ("@since", DbValue(since)));
+        Bind(command, ("@skip", skip));
+        Bind(command, ("@take", take));
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         var items = new List<SoftwareViolationEntry>();
         var totalCount = 0;
@@ -241,7 +241,7 @@ internal sealed partial class SqlServerDataContext
 
             if (items.Count == 0)
             {
-                totalCount = reader.GetInt32(reader.GetOrdinal("total_count"));
+                totalCount = ReadInt32(reader, "total_count");
             }
 
             items.Add(new SoftwareViolationEntry(
@@ -254,23 +254,23 @@ internal sealed partial class SqlServerDataContext
                 reader.GetInt64(reader.GetOrdinal("policyId")),
                 reader.GetString(reader.GetOrdinal("policyProductName")),
                 classification,
-                reader.GetFieldValue<DateTimeOffset>(reader.GetOrdinal("detectedAtUtc")),
-                reader.GetFieldValue<DateTimeOffset>(reader.GetOrdinal("lastSeenAtUtc"))));
+                ReadDateTimeOffset(reader, reader.GetOrdinal("detectedAtUtc")),
+                ReadDateTimeOffset(reader, reader.GetOrdinal("lastSeenAtUtc"))));
         }
 
         return (totalCount, items);
     }
 
     private async Task DeleteViolationsForPolicyAsync(
-        SqlConnection connection,
-        SqlTransaction transaction,
+        DbConnection connection,
+        DbTransaction transaction,
         long policyId,
         CancellationToken cancellationToken)
     {
         var violation = options.SoftwareViolationTable;
         await ExecuteAsync(connection, transaction,
             $"DELETE FROM {Name(options.SchemaName, violation.TableName)} WHERE {Name(violation.PolicyForeignKeyColumn)} = @policyId;",
-            [new("@policyId", policyId)],
+            [("@policyId", policyId)],
             cancellationToken);
     }
 
@@ -287,14 +287,14 @@ internal sealed partial class SqlServerDataContext
     }
 
     private async Task<List<SoftwarePolicyEntry>> ListEnabledPoliciesAsync(
-        SqlConnection connection,
-        SqlTransaction? transaction,
+        DbConnection connection,
+        DbTransaction? transaction,
         CancellationToken cancellationToken) =>
         await ListPoliciesAsync(connection, transaction, enabledOnly: true, cancellationToken);
 
     private async Task<List<SoftwarePolicyEntry>> ListPoliciesAsync(
-        SqlConnection connection,
-        SqlTransaction? transaction,
+        DbConnection connection,
+        DbTransaction? transaction,
         bool enabledOnly,
         CancellationToken cancellationToken)
     {
@@ -302,12 +302,12 @@ internal sealed partial class SqlServerDataContext
         var sql = $"""
             SELECT {PolicySelectList()}
             FROM {Name(options.SchemaName, table.TableName)}
-            {(enabledOnly ? $"WHERE {Name(table.EnabledColumn)} = 1" : string.Empty)}
+            {(enabledOnly ? $"WHERE {Name(table.EnabledColumn)} = {TrueSql}" : string.Empty)}
             ORDER BY {Name(table.ProductNameColumn)}, {Name(table.PrimaryKeyColumn)};
             """;
         await using var command = transaction is null
-            ? new SqlCommand(sql, connection)
-            : new SqlCommand(sql, connection, transaction);
+            ? CreateCommand(connection, null, sql)
+            : CreateCommand(connection, transaction, sql);
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         var policies = new List<SoftwarePolicyEntry>();
         while (await reader.ReadAsync(cancellationToken))
@@ -323,8 +323,8 @@ internal sealed partial class SqlServerDataContext
     }
 
     private async Task<SoftwarePolicyEntry?> GetPolicyAsync(
-        SqlConnection connection,
-        SqlTransaction? transaction,
+        DbConnection connection,
+        DbTransaction? transaction,
         long id,
         CancellationToken cancellationToken)
     {
@@ -335,46 +335,78 @@ internal sealed partial class SqlServerDataContext
             WHERE {Name(table.PrimaryKeyColumn)} = @id;
             """;
         await using var command = transaction is null
-            ? new SqlCommand(sql, connection)
-            : new SqlCommand(sql, connection, transaction);
-        command.Parameters.Add(new SqlParameter("@id", id));
+            ? CreateCommand(connection, null, sql)
+            : CreateCommand(connection, transaction, sql);
+        Bind(command, ("@id", id));
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         return await reader.ReadAsync(cancellationToken) ? ReadPolicy(reader) : null;
     }
 
     private async Task<SoftwarePolicyEntry> InsertPolicyAsync(
-        SqlConnection connection,
-        SqlTransaction? transaction,
+        DbConnection connection,
+        DbTransaction? transaction,
         SoftwarePolicyWriteRequest request,
         CancellationToken cancellationToken)
     {
         var updatedAt = DateTimeOffset.UtcNow;
-        await using var command = CreateCommand(connection, transaction, BuildInsertPolicySql());
-        AddPolicyWriteParameters(command, request, updatedAt);
-        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
-        if (!await reader.ReadAsync(cancellationToken))
+        await using (var command = CreateCommand(connection, transaction, BuildInsertPolicySql()))
+        {
+            AddPolicyWriteParameters(command, request, updatedAt);
+            if (dialect.DmlReturnsRows)
+            {
+                await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+                if (!await reader.ReadAsync(cancellationToken))
+                {
+                    throw new InvalidOperationException("The software policy insert did not return a row.");
+                }
+
+                return ReadPolicy(reader) ?? throw new InvalidOperationException("The software policy insert returned an invalid classification.");
+            }
+
+            await command.ExecuteNonQueryAsync(cancellationToken);
+        }
+
+        var table = options.SoftwarePolicyTable;
+        var sql = $"""
+            SELECT {PolicySelectList()}
+            FROM {Name(options.SchemaName, table.TableName)}
+            WHERE {Name(table.PrimaryKeyColumn)} = LAST_INSERT_ID();
+            """;
+        await using var inserted = CreateCommand(connection, transaction, sql);
+        await using var insertedReader = await inserted.ExecuteReaderAsync(cancellationToken);
+        if (!await insertedReader.ReadAsync(cancellationToken))
         {
             throw new InvalidOperationException("The software policy insert did not return a row.");
         }
 
-        return ReadPolicy(reader) ?? throw new InvalidOperationException("The software policy insert returned an invalid classification.");
+        return ReadPolicy(insertedReader) ?? throw new InvalidOperationException("The software policy insert returned an invalid classification.");
     }
 
     private async Task<SoftwarePolicyEntry?> UpdatePolicyRowAsync(
-        SqlConnection connection,
-        SqlTransaction transaction,
+        DbConnection connection,
+        DbTransaction transaction,
         long id,
         SoftwarePolicyEntry existing,
         SoftwarePolicyWriteRequest request,
         CancellationToken cancellationToken)
     {
         var updatedAt = DateTimeOffset.UtcNow;
-        await using var command = new SqlCommand(BuildUpdatePolicySql(), connection, transaction);
-        command.Parameters.Add(new SqlParameter("@id", id));
+        await using var command = CreateCommand(connection, transaction, BuildUpdatePolicySql());
+        Bind(command, ("@id", id));
         AddPolicyWriteParameters(command, request, updatedAt);
         SoftwarePolicyEntry? updated;
-        await using (var reader = await command.ExecuteReaderAsync(cancellationToken))
+        if (!dialect.DmlReturnsRows)
         {
+            if (await command.ExecuteNonQueryAsync(cancellationToken) == 0)
+            {
+                return null;
+            }
+
+            updated = await GetPolicyAsync(connection, transaction, id, cancellationToken);
+        }
+        else
+        {
+            await using var reader = await command.ExecuteReaderAsync(cancellationToken);
             if (!await reader.ReadAsync(cancellationToken))
             {
                 return null;
@@ -397,20 +429,20 @@ internal sealed partial class SqlServerDataContext
     }
 
     private async Task<SoftwarePolicyEntry?> FindEnabledExactNamePolicyAsync(
-        SqlConnection connection,
-        SqlTransaction transaction,
+        DbConnection connection,
+        DbTransaction transaction,
         string productName,
         CancellationToken cancellationToken)
     {
-        await using var command = new SqlCommand(BuildFindEnabledExactNamePolicySql(), connection, transaction);
-        command.Parameters.Add(new SqlParameter("@productName", productName));
+        await using var command = CreateCommand(connection, transaction, BuildFindEnabledExactNamePolicySql());
+        Bind(command, ("@productName", productName));
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         return await reader.ReadAsync(cancellationToken) ? ReadPolicy(reader) : null;
     }
 
     private async Task RecolorInstalledSoftwareAsync(
-        SqlConnection connection,
-        SqlTransaction transaction,
+        DbConnection connection,
+        DbTransaction transaction,
         string productName,
         CancellationToken cancellationToken)
     {
@@ -424,9 +456,9 @@ internal sealed partial class SqlServerDataContext
             WHERE {Name(software.DisplayNameColumn)} = @name;
             """;
         var rows = new List<(long Id, InstalledSoftwareEntry Entry)>();
-        await using (var command = new SqlCommand(sql, connection, transaction))
+        await using (var command = CreateCommand(connection, transaction, sql))
         {
-            command.Parameters.Add(new SqlParameter("@name", productName));
+            Bind(command, ("@name", productName));
             await using var reader = await command.ExecuteReaderAsync(cancellationToken);
             while (await reader.ReadAsync(cancellationToken))
             {
@@ -449,7 +481,7 @@ internal sealed partial class SqlServerDataContext
                 connection,
                 transaction,
                 BuildUpdateInstalledClassificationSql(),
-                [new("@id", id), new("@classification", Truncate(match.StoredClassification, 32)!)],
+                [("@id", id), ("@classification", Truncate(match.StoredClassification, 32)!)],
                 cancellationToken);
         }
     }
@@ -457,20 +489,25 @@ internal sealed partial class SqlServerDataContext
     internal string BuildInsertPolicySql()
     {
         var table = options.SoftwarePolicyTable;
-        return $"""
+        var insert = $"""
             INSERT INTO {Name(options.SchemaName, table.TableName)}
             ({Name(table.ClassificationColumn)}, {Name(table.ProductNameColumn)}, {Name(table.PublisherColumn)},
              {Name(table.VersionPatternColumn)}, {Name(table.NotesColumn)}, {Name(table.EnabledColumn)},
              {Name(table.UpdatedAtUtcColumn)}, {Name(table.DefaultLicenseSourceColumn)})
-            OUTPUT {PolicySelectList("INSERTED")}
-            VALUES (@classification, @productName, @publisher, @versionPattern, @notes, @enabled, @updatedAt, @defaultLicenseSource);
             """;
+        var values = "VALUES (@classification, @productName, @publisher, @versionPattern, @notes, @enabled, @updatedAt, @defaultLicenseSource)";
+        return dialect.Provider switch
+        {
+            StorageProvider.PostgreSql => $"{insert}\n{values}\nRETURNING {PolicySelectList()};",
+            StorageProvider.MySql => $"{insert}\n{values};",
+            _ => $"{insert}\nOUTPUT {PolicySelectList("INSERTED")}\n{values};"
+        };
     }
 
     internal string BuildUpdatePolicySql()
     {
         var table = options.SoftwarePolicyTable;
-        return $"""
+        var update = $"""
             UPDATE {Name(options.SchemaName, table.TableName)}
             SET {Name(table.ClassificationColumn)} = @classification,
                 {Name(table.ProductNameColumn)} = @productName,
@@ -480,9 +517,14 @@ internal sealed partial class SqlServerDataContext
                 {Name(table.EnabledColumn)} = @enabled,
                 {Name(table.UpdatedAtUtcColumn)} = @updatedAt,
                 {Name(table.DefaultLicenseSourceColumn)} = @defaultLicenseSource
-            OUTPUT {PolicySelectList("INSERTED")}
-            WHERE {Name(table.PrimaryKeyColumn)} = @id;
             """;
+        var where = $"WHERE {Name(table.PrimaryKeyColumn)} = @id";
+        return dialect.Provider switch
+        {
+            StorageProvider.PostgreSql => $"{update}\n{where}\nRETURNING {PolicySelectList()};",
+            StorageProvider.MySql => $"{update}\n{where};",
+            _ => $"{update}\nOUTPUT {PolicySelectList("INSERTED")}\n{where};"
+        };
     }
 
     internal string BuildFindEnabledExactNamePolicySql()
@@ -491,7 +533,7 @@ internal sealed partial class SqlServerDataContext
         return $"""
             SELECT {PolicySelectList()}
             FROM {Name(options.SchemaName, table.TableName)}
-            WHERE {Name(table.EnabledColumn)} = 1
+            WHERE {Name(table.EnabledColumn)} = {TrueSql}
               AND {Name(table.ProductNameColumn)} = @productName
             ORDER BY {Name(table.PrimaryKeyColumn)};
             """;
@@ -510,15 +552,42 @@ internal sealed partial class SqlServerDataContext
     internal string BuildUpsertSoftwareLicenseSql()
     {
         var license = options.SoftwareLicenseTable;
+        var table = Name(options.SchemaName, license.TableName);
+        if (dialect.Provider == StorageProvider.PostgreSql)
+        {
+            return $"""
+                INSERT INTO {table}
+                ({Name(license.PcForeignKeyColumn)}, {Name(license.SoftwareNameColumn)},
+                 {Name(license.LicenseSourceColumn)}, {Name(license.UpdatedAtUtcColumn)})
+                VALUES (@pcId, @name, @licenseSource, @updatedAt)
+                ON CONFLICT ({Name(license.PcForeignKeyColumn)}, {Name(license.SoftwareNameColumn)}) DO UPDATE SET
+                    {Name(license.LicenseSourceColumn)} = EXCLUDED.{Name(license.LicenseSourceColumn)},
+                    {Name(license.UpdatedAtUtcColumn)} = EXCLUDED.{Name(license.UpdatedAtUtcColumn)};
+                """;
+        }
+
+        if (dialect.Provider == StorageProvider.MySql)
+        {
+            return $"""
+                INSERT INTO {table}
+                ({Name(license.PcForeignKeyColumn)}, {Name(license.SoftwareNameColumn)},
+                 {Name(license.LicenseSourceColumn)}, {Name(license.UpdatedAtUtcColumn)})
+                VALUES (@pcId, @name, @licenseSource, @updatedAt)
+                ON DUPLICATE KEY UPDATE
+                    {Name(license.LicenseSourceColumn)} = VALUES({license.LicenseSourceColumn}),
+                    {Name(license.UpdatedAtUtcColumn)} = VALUES({license.UpdatedAtUtcColumn});
+                """;
+        }
+
         return $"""
-            UPDATE {Name(options.SchemaName, license.TableName)}
+            UPDATE {table}
             SET {Name(license.LicenseSourceColumn)} = @licenseSource,
                 {Name(license.UpdatedAtUtcColumn)} = @updatedAt
             WHERE {Name(license.PcForeignKeyColumn)} = @pcId
               AND {Name(license.SoftwareNameColumn)} = @name;
             IF @@ROWCOUNT = 0
             BEGIN
-                INSERT INTO {Name(options.SchemaName, license.TableName)}
+                INSERT INTO {table}
                 ({Name(license.PcForeignKeyColumn)}, {Name(license.SoftwareNameColumn)},
                  {Name(license.LicenseSourceColumn)}, {Name(license.UpdatedAtUtcColumn)})
                 VALUES (@pcId, @name, @licenseSource, @updatedAt);
@@ -545,12 +614,12 @@ internal sealed partial class SqlServerDataContext
                 {PolicySelectList()}
             FROM {Name(options.SchemaName, table.TableName)}
             WHERE (@search IS NULL
-                OR {Name(table.ProductNameColumn)} LIKE @search
-                OR {Name(table.VersionPatternColumn)} LIKE @search
-                OR {Name(table.PublisherColumn)} LIKE @search)
+                OR {Name(table.ProductNameColumn)} LIKE @search{LikeEscape}
+                OR {Name(table.VersionPatternColumn)} LIKE @search{LikeEscape}
+                OR {Name(table.PublisherColumn)} LIKE @search{LikeEscape})
               AND (@classification IS NULL OR {Name(table.ClassificationColumn)} = @classification)
             ORDER BY {Name(table.ProductNameColumn)}, {Name(table.PrimaryKeyColumn)}
-            OFFSET @skip ROWS FETCH NEXT @take ROWS ONLY;
+            {Pagination};
             """;
     }
 
@@ -563,16 +632,16 @@ internal sealed partial class SqlServerDataContext
             SELECT
                 COUNT(*) OVER() AS total_count,
                 v.{Name(violation.PrimaryKeyColumn)} AS id,
-                p.{Name(pc.DeviceCodeColumn)} AS deviceCode,
-                {DisplayHostNameSql("p")} AS hostName,
-                v.{Name(violation.DisplayNameColumn)} AS softwareName,
-                v.{Name(violation.DisplayVersionColumn)} AS softwareVersion,
+                p.{Name(pc.DeviceCodeColumn)} AS {Name("deviceCode")},
+                {DisplayHostNameSql("p")} AS {Name("hostName")},
+                v.{Name(violation.DisplayNameColumn)} AS {Name("softwareName")},
+                v.{Name(violation.DisplayVersionColumn)} AS {Name("softwareVersion")},
                 v.{Name(violation.PublisherColumn)} AS publisher,
-                v.{Name(violation.PolicyForeignKeyColumn)} AS policyId,
-                pol.{Name(policy.ProductNameColumn)} AS policyProductName,
+                v.{Name(violation.PolicyForeignKeyColumn)} AS {Name("policyId")},
+                pol.{Name(policy.ProductNameColumn)} AS {Name("policyProductName")},
                 pol.{Name(policy.ClassificationColumn)} AS classification,
-                v.{Name(violation.DetectedAtUtcColumn)} AS detectedAtUtc,
-                v.{Name(violation.LastSeenAtUtcColumn)} AS lastSeenAtUtc
+                v.{Name(violation.DetectedAtUtcColumn)} AS {Name("detectedAtUtc")},
+                v.{Name(violation.LastSeenAtUtcColumn)} AS {Name("lastSeenAtUtc")}
             FROM {Name(options.SchemaName, violation.TableName)} AS v
             INNER JOIN {Name(options.SchemaName, pc.TableName)} AS p
                 ON p.{Name(pc.PrimaryKeyColumn)} = v.{Name(violation.PcForeignKeyColumn)}
@@ -580,10 +649,10 @@ internal sealed partial class SqlServerDataContext
                 ON pol.{Name(policy.PrimaryKeyColumn)} = v.{Name(violation.PolicyForeignKeyColumn)}
             WHERE (@search IS NULL
                 OR {HostNameSearchSql("p")}
-                OR v.{Name(violation.DisplayNameColumn)} LIKE @search)
+                OR v.{Name(violation.DisplayNameColumn)} LIKE @search{LikeEscape})
               AND (@since IS NULL OR v.{Name(violation.DetectedAtUtcColumn)} >= @since)
             ORDER BY v.{Name(violation.LastSeenAtUtcColumn)} DESC, v.{Name(violation.PrimaryKeyColumn)} DESC
-            OFFSET @skip ROWS FETCH NEXT @take ROWS ONLY;
+            {Pagination};
             """;
     }
 
@@ -598,7 +667,7 @@ internal sealed partial class SqlServerDataContext
             """;
     }
 
-    private SoftwarePolicyEntry? ReadPolicy(SqlDataReader reader)
+    private SoftwarePolicyEntry? ReadPolicy(DbDataReader reader)
     {
         var table = options.SoftwarePolicyTable;
         if (!SoftwarePolicyClassificationNames.TryParse(reader.GetString(reader.GetOrdinal(table.ClassificationColumn)), out var classification))
@@ -615,21 +684,21 @@ internal sealed partial class SqlServerDataContext
             classification,
             ReadNullableString(reader, table.NotesColumn),
             reader.GetBoolean(reader.GetOrdinal(table.EnabledColumn)),
-            reader.GetFieldValue<DateTimeOffset>(reader.GetOrdinal(table.UpdatedAtUtcColumn)),
+            ReadDateTimeOffset(reader, reader.GetOrdinal(table.UpdatedAtUtcColumn)),
             LicenseSourceNames.ForManagedPolicy(classification, defaultLicenseSource));
     }
 
-    private static void AddPolicyWriteParameters(SqlCommand command, SoftwarePolicyWriteRequest request, DateTimeOffset updatedAt)
+    private void AddPolicyWriteParameters(DbCommand command, SoftwarePolicyWriteRequest request, DateTimeOffset updatedAt)
     {
         LicenseSourceNames.TryParse(request.DefaultLicenseSource, out var defaultLicenseSource);
-        command.Parameters.Add(new SqlParameter("@classification", SoftwarePolicyClassificationNames.ToStorage(request.Classification!.Value)));
-        command.Parameters.Add(new SqlParameter("@productName", Truncate(request.ProductName.Trim(), 256)));
-        command.Parameters.Add(new SqlParameter("@publisher", DbValue(Truncate(NullIfWhiteSpace(request.Publisher), 256))));
-        command.Parameters.Add(new SqlParameter("@versionPattern", DbValue(Truncate(NullIfWhiteSpace(request.VersionPattern), 64))));
-        command.Parameters.Add(new SqlParameter("@notes", DbValue(Truncate(NullIfWhiteSpace(request.Notes), 1024))));
-        command.Parameters.Add(new SqlParameter("@enabled", request.Enabled));
-        command.Parameters.Add(new SqlParameter("@updatedAt", updatedAt));
-        command.Parameters.Add(new SqlParameter(
+        Bind(command, ("@classification", SoftwarePolicyClassificationNames.ToStorage(request.Classification!.Value)));
+        Bind(command, ("@productName", Truncate(request.ProductName.Trim(), 256)));
+        Bind(command, ("@publisher", DbValue(Truncate(NullIfWhiteSpace(request.Publisher), 256))));
+        Bind(command, ("@versionPattern", DbValue(Truncate(NullIfWhiteSpace(request.VersionPattern), 64))));
+        Bind(command, ("@notes", DbValue(Truncate(NullIfWhiteSpace(request.Notes), 1024))));
+        Bind(command, ("@enabled", request.Enabled));
+        Bind(command, ("@updatedAt", updatedAt));
+        Bind(command, (
             "@defaultLicenseSource",
             DbValue(LicenseSourceNames.ForManagedPolicy(request.Classification.Value, defaultLicenseSource))));
     }

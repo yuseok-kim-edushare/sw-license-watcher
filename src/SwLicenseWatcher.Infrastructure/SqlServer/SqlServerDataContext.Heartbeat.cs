@@ -1,32 +1,32 @@
 using System.Collections.Concurrent;
 using System.Data;
-using Microsoft.Data.SqlClient;
+using System.Data.Common;
 using SwLicenseWatcher.Application;
 using SwLicenseWatcher.Core;
 
-namespace SwLicenseWatcher.Infrastructure.SqlServer;
+namespace SwLicenseWatcher.Infrastructure.Relational;
 
-internal sealed partial class SqlServerDataContext
+public sealed partial class RelationalDataContext
 {
     public async Task SaveHeartbeatAsync(AgentHeartbeat heartbeat, CancellationToken cancellationToken)
     {
-        await using var connection = new SqlConnection(options.ConnectionString);
+        await using var connection = CreateConnection();
         await connection.OpenAsync(cancellationToken);
-        await using var transaction = (SqlTransaction)await connection.BeginTransactionAsync(IsolationLevel.Serializable, cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(IsolationLevel.Serializable, cancellationToken);
         var identity = new PcIdentity(heartbeat.DeviceCode, heartbeat.HostName, string.Empty, string.Empty, heartbeat.Version);
         var pcId = await UpsertPcAsync(connection, transaction, identity, null, heartbeat.ReportedAtUtc, cancellationToken);
         await ExecuteAsync(
             connection,
             transaction,
             BuildClearStaleHeartbeatNotificationIfHeartbeatAppliedSql(),
-            [new("@pcId", pcId), new("@heartbeatAt", heartbeat.ReportedAtUtc)],
+            [("@pcId", pcId), ("@heartbeatAt", heartbeat.ReportedAtUtc)],
             cancellationToken);
         await transaction.CommitAsync(cancellationToken);
     }
 
     public async Task<List<StalePcHeartbeat>> GetStaleHeartbeatsAsync(DateTimeOffset cutoff, CancellationToken cancellationToken)
     {
-        await using var connection = new SqlConnection(options.ConnectionString);
+        await using var connection = CreateConnection();
         await connection.OpenAsync(cancellationToken);
         return await ReadStaleHeartbeatsAsync(connection, transaction: null, cutoff, cancellationToken);
     }
@@ -36,15 +36,15 @@ internal sealed partial class SqlServerDataContext
         DateTimeOffset notifiedAtUtc,
         CancellationToken cancellationToken)
     {
-        await using var connection = new SqlConnection(options.ConnectionString);
+        await using var connection = CreateConnection();
         await connection.OpenAsync(cancellationToken);
-        await using var transaction = (SqlTransaction)await connection.BeginTransactionAsync(IsolationLevel.Serializable, cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(IsolationLevel.Serializable, cancellationToken);
 
         await ExecuteAsync(
             connection,
             transaction,
             BuildClearRecoveredStaleHeartbeatNotificationsSql(),
-            [new("@cutoff", cutoff)],
+            [("@cutoff", cutoff)],
             cancellationToken);
 
         var stalePcs = await ReadStaleHeartbeatsAsync(connection, transaction, cutoff, cancellationToken);
@@ -62,7 +62,7 @@ internal sealed partial class SqlServerDataContext
                 connection,
                 transaction,
                 BuildInsertStaleHeartbeatNotificationSql(),
-                [new("@deviceCode", pc.DeviceCode), new("@notifiedAt", notifiedAtUtc)],
+                [("@deviceCode", pc.DeviceCode), ("@notifiedAt", notifiedAtUtc)],
                 cancellationToken);
         }
 
@@ -98,6 +98,17 @@ internal sealed partial class SqlServerDataContext
     {
         var pc = options.PcTable;
         var notification = options.StaleHeartbeatNotificationTable;
+        if (dialect.Provider == StorageProvider.PostgreSql)
+        {
+            return $"""
+                DELETE FROM {Name(options.SchemaName, notification.TableName)} AS n
+                USING {Name(options.SchemaName, pc.TableName)} AS p
+                WHERE p.{Name(pc.PrimaryKeyColumn)} = n.{Name(notification.PcForeignKeyColumn)}
+                  AND (p.{Name(pc.LastHeartbeatUtcColumn)} IS NULL
+                   OR p.{Name(pc.LastHeartbeatUtcColumn)} >= @cutoff);
+                """;
+        }
+
         return $"""
             DELETE n
             FROM {Name(options.SchemaName, notification.TableName)} AS n
@@ -129,28 +140,39 @@ internal sealed partial class SqlServerDataContext
     {
         var pc = options.PcTable;
         var notification = options.StaleHeartbeatNotificationTable;
-        return $"""
-            DELETE n
-            FROM {Name(options.SchemaName, notification.TableName)} AS n
-            WHERE n.{Name(notification.PcForeignKeyColumn)} = @pcId
+        var filter = $"""
+            n.{Name(notification.PcForeignKeyColumn)} = @pcId
               AND EXISTS (
                   SELECT 1
                   FROM {Name(options.SchemaName, pc.TableName)} AS p
                   WHERE p.{Name(pc.PrimaryKeyColumn)} = @pcId
-                    AND p.{Name(pc.LastHeartbeatUtcColumn)} = @heartbeatAt);
+                    AND p.{Name(pc.LastHeartbeatUtcColumn)} = @heartbeatAt)
+            """;
+        if (dialect.Provider == StorageProvider.PostgreSql)
+        {
+            return $"""
+                DELETE FROM {Name(options.SchemaName, notification.TableName)} AS n
+                WHERE {filter};
+                """;
+        }
+
+        return $"""
+            DELETE n
+            FROM {Name(options.SchemaName, notification.TableName)} AS n
+            WHERE {filter};
             """;
     }
 
     private async Task<List<StalePcHeartbeat>> ReadStaleHeartbeatsAsync(
-        SqlConnection connection,
-        SqlTransaction? transaction,
+        DbConnection connection,
+        DbTransaction? transaction,
         DateTimeOffset cutoff,
         CancellationToken cancellationToken)
     {
         var table = options.PcTable;
         var sql = BuildGetStaleHeartbeatsSql();
         await using var command = CreateCommand(connection, transaction, sql);
-        command.Parameters.Add(new SqlParameter("@cutoff", cutoff));
+        Bind(command, ("@cutoff", cutoff));
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         var stale = new List<StalePcHeartbeat>();
         while (await reader.ReadAsync(cancellationToken))
@@ -158,15 +180,15 @@ internal sealed partial class SqlServerDataContext
             stale.Add(new StalePcHeartbeat(
                 reader.GetString(reader.GetOrdinal(table.DeviceCodeColumn)),
                 reader.GetString(reader.GetOrdinal(table.HostNameColumn)),
-                reader.GetFieldValue<DateTimeOffset>(reader.GetOrdinal(table.LastHeartbeatUtcColumn))));
+                ReadDateTimeOffset(reader, reader.GetOrdinal(table.LastHeartbeatUtcColumn))));
         }
 
         return stale;
     }
 
     private async Task<List<string>> ReadNotifiedStaleHeartbeatDeviceCodesAsync(
-        SqlConnection connection,
-        SqlTransaction? transaction,
+        DbConnection connection,
+        DbTransaction? transaction,
         CancellationToken cancellationToken)
     {
         var pc = options.PcTable;

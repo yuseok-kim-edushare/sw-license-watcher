@@ -1,9 +1,10 @@
 using SwLicenseWatcher.Application;
+using SwLicenseWatcher.Infrastructure.Relational;
 using SwLicenseWatcher.Core;
 
 namespace SwLicenseWatcher.Infrastructure.SqlServer;
 
-internal sealed class SqlServerUninstallRepository(SqlServerDataContext context) : IUninstallRequestStore
+internal sealed class SqlServerUninstallRepository(RelationalDataContext context) : IUninstallRequestStore
 {
     public Task<UninstallRequestCreatedResponse?> CreateUninstallRequestAsync(
         string deviceCode, CancellationToken cancellationToken) =>

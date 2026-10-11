@@ -1,9 +1,10 @@
 using SwLicenseWatcher.Application;
+using SwLicenseWatcher.Infrastructure.Relational;
 using SwLicenseWatcher.Core;
 
 namespace SwLicenseWatcher.Infrastructure.SqlServer;
 
-internal sealed class SqlServerWorkerUpdatePinRepository(SqlServerDataContext context) : IWorkerUpdatePinStore
+internal sealed class SqlServerWorkerUpdatePinRepository(RelationalDataContext context) : IWorkerUpdatePinStore
 {
     public Task<UpdateManifest?> GetWorkerUpdatePinAsync(
         string targetServiceName, CancellationToken cancellationToken) =>
