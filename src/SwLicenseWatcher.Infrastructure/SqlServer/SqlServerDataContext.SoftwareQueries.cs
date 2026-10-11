@@ -250,11 +250,12 @@ public sealed partial class RelationalDataContext
         }
 
         var versionKey = $"RTRIM({version})";
+        var versionOrder = dialect.Provider == StorageProvider.PostgreSql ? $"{versionKey} NULLS FIRST" : versionKey;
         return $"""
             WITH page AS (
                 SELECT
                     COUNT(*) OVER() AS total_count,
-                    ROW_NUMBER() OVER(ORDER BY {name}, {versionKey}, {classificationColumn}) AS row_index,
+                    ROW_NUMBER() OVER(ORDER BY {name}, {versionOrder}, {classificationColumn}) AS row_index,
                     {name},
                     MIN({version}) AS {version},
                     {classificationColumn},
@@ -263,7 +264,7 @@ public sealed partial class RelationalDataContext
                 WHERE (@search IS NULL OR {name} LIKE @search{LikeEscape})
                   AND (@classification IS NULL OR {classificationColumn} = @classification)
                 GROUP BY {name}, {versionKey}, {classificationColumn}
-                ORDER BY {name}, {versionKey}, {classificationColumn}
+                ORDER BY {name}, {versionOrder}, {classificationColumn}
                 {Pagination}
             )
             SELECT page.total_count, page.row_index,
