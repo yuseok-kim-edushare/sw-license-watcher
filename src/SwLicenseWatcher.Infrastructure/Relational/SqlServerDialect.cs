@@ -60,6 +60,10 @@ internal sealed class SqlServerDialect : IRelationalDialect
         _ => value
     };
 
+    public void AssignNullParameter(DbParameter parameter, bool timestamp)
+    {
+    }
+
     public bool DmlReturnsRows => true;
 
     public bool IsUniqueViolation(DbException exception) =>

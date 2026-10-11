@@ -1,5 +1,6 @@
 using System.Data.Common;
 using Npgsql;
+using NpgsqlTypes;
 using SwLicenseWatcher.Core;
 
 namespace SwLicenseWatcher.Infrastructure.Relational;
@@ -48,6 +49,14 @@ internal sealed class PostgreSqlDialect : IRelationalDialect
         DateTimeOffset timestamp => timestamp.ToUniversalTime(),
         _ => value
     };
+
+    public void AssignNullParameter(DbParameter parameter, bool timestamp)
+    {
+        if (parameter is NpgsqlParameter npgsql)
+        {
+            npgsql.NpgsqlDbType = timestamp ? NpgsqlDbType.TimestampTz : NpgsqlDbType.Text;
+        }
+    }
 
     public bool DmlReturnsRows => true;
 

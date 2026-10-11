@@ -51,6 +51,10 @@ internal sealed class MySqlDialect : IRelationalDialect
         _ => value
     };
 
+    public void AssignNullParameter(DbParameter parameter, bool timestamp)
+    {
+    }
+
     public bool DmlReturnsRows => false;
 
     public bool IsUniqueViolation(DbException exception) =>

@@ -60,7 +60,16 @@ public sealed partial class RelationalDataContext
         {
             var parameter = command.CreateParameter();
             parameter.ParameterName = name;
-            parameter.Value = dialect.NormalizeParameterValue(value is null ? DBNull.Value : value);
+            if (value is TypedNull typed)
+            {
+                parameter.Value = DBNull.Value;
+                dialect.AssignNullParameter(parameter, typed.Timestamp);
+            }
+            else
+            {
+                parameter.Value = dialect.NormalizeParameterValue(value is null ? DBNull.Value : value);
+            }
+
             command.Parameters.Add(parameter);
         }
     }
@@ -275,7 +284,26 @@ public sealed partial class RelationalDataContext
         return await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
-    private static object DbValue(object? value) => value ?? DBNull.Value;
+    private readonly record struct TypedNull(bool Timestamp);
+
+    private static object DbValue(string? value) => value ?? (object)new TypedNull(false);
+
+    private static object DbValue(DateTimeOffset? value)
+    {
+        if (value is null)
+        {
+            return new TypedNull(true);
+        }
+
+        return value.Value;
+    }
+
+    private static object DbValue(object? value) => value switch
+    {
+        null or DBNull => DBNull.Value,
+        TypedNull typed => typed,
+        _ => value
+    };
 
     private static string? NullIfWhiteSpace(string? value) =>
         string.IsNullOrWhiteSpace(value) ? null : value.Trim();

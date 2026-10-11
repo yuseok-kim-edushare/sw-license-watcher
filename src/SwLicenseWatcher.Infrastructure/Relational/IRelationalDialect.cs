@@ -39,6 +39,8 @@ public interface IRelationalDialect
 
     object NormalizeParameterValue(object? value);
 
+    void AssignNullParameter(DbParameter parameter, bool timestamp);
+
     bool DmlReturnsRows { get; }
 
     bool IsUniqueViolation(DbException exception);

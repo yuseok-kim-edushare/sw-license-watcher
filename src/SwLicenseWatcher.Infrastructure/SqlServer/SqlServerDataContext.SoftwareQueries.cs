@@ -154,40 +154,7 @@ public sealed partial class RelationalDataContext
         var name = Name(software.DisplayNameColumn);
         var version = Name(software.DisplayVersionColumn);
         var classificationColumn = Name(software.ClassificationColumn);
-        // 페이지 그룹과 설치 PC를 SQL 안에서 짝지어 GROUP BY와 같은 비교 규칙(후행 공백, collation, NULL)을 그대로 쓴다.
-        var sql = $"""
-            WITH page AS (
-                SELECT
-                    COUNT(*) OVER() AS total_count,
-                    ROW_NUMBER() OVER(ORDER BY {name}, {version}, {classificationColumn}) AS row_index,
-                    {name}, {version}, {classificationColumn},
-                    COUNT(DISTINCT {Name(software.PcForeignKeyColumn)}) AS device_count
-                FROM {Name(options.SchemaName, software.TableName)}
-                WHERE (@search IS NULL OR {name} LIKE @search{LikeEscape})
-                  AND (@classification IS NULL OR {classificationColumn} = @classification)
-                GROUP BY {name}, {version}, {classificationColumn}
-                ORDER BY {name}, {version}, {classificationColumn}
-                {Pagination}
-            )
-            SELECT page.total_count, page.row_index,
-                page.{name}, page.{version}, page.{classificationColumn}, page.device_count,
-                d.device_code, d.device_name
-            FROM page
-            OUTER APPLY (
-                SELECT DISTINCT
-                    {DisplayDeviceCodeSql("p")} AS device_code,
-                    {DisplayHostNameSql("p")} AS device_name
-                FROM {Name(options.SchemaName, software.TableName)} AS s
-                INNER JOIN {Name(options.SchemaName, pc.TableName)} AS p
-                    ON p.{Name(pc.PrimaryKeyColumn)} = s.{Name(software.PcForeignKeyColumn)}
-                WHERE s.{name} = page.{name}
-                  AND (s.{version} = page.{version} OR (s.{version} IS NULL AND page.{version} IS NULL))
-                  AND (s.{classificationColumn} = page.{classificationColumn}
-                       OR (s.{classificationColumn} IS NULL AND page.{classificationColumn} IS NULL))
-                  AND (@search IS NULL OR s.{name} LIKE @search{LikeEscape})
-            ) AS d
-            ORDER BY page.row_index, d.device_name, d.device_code;
-            """;
+        var sql = BuildListSoftwareWithAssetsSql(software, pc, name, version, classificationColumn);
         await using var command = CreateCommand(connection, null, sql);
         Bind(command, ("@search", DbValue(ToContainsPattern(search))));
         Bind(command, ("@classification", DbValue(classification)));
@@ -203,7 +170,7 @@ public sealed partial class RelationalDataContext
         var deviceNameOrdinal = reader.GetOrdinal("device_name");
         while (await reader.ReadAsync(cancellationToken))
         {
-            var rowIndex = reader.GetInt64(rowIndexOrdinal);
+            var rowIndex = Convert.ToInt64(reader.GetValue(rowIndexOrdinal), System.Globalization.CultureInfo.InvariantCulture);
             if (rowIndex != currentRow)
             {
                 if (aggregates.Count == 0)
@@ -216,7 +183,7 @@ public sealed partial class RelationalDataContext
                     reader.GetString(reader.GetOrdinal(software.DisplayNameColumn)),
                     ReadNullableString(reader, software.DisplayVersionColumn),
                     ReadClassification(reader, software.ClassificationColumn),
-                    reader.GetInt32(reader.GetOrdinal("device_count"))));
+                    ReadInt32(reader, "device_count")));
                 devices.Add([]);
             }
 
@@ -235,6 +202,97 @@ public sealed partial class RelationalDataContext
         }
 
         return (totalCount, aggregates.Select((item, index) => new SoftwareAggregateAssets(item, devices[index])).ToList());
+    }
+
+    private string BuildListSoftwareWithAssetsSql(
+        InstalledSoftwareTableOptions software,
+        PcTableOptions pc,
+        string name,
+        string version,
+        string classificationColumn)
+    {
+        // 페이지 그룹과 설치 PC를 SQL 안에서 짝지어 GROUP BY와 같은 비교 규칙(후행 공백, collation, NULL)을 그대로 쓴다.
+        if (dialect.Provider == StorageProvider.SqlServer)
+        {
+            return $"""
+                WITH page AS (
+                    SELECT
+                        COUNT(*) OVER() AS total_count,
+                        ROW_NUMBER() OVER(ORDER BY {name}, {version}, {classificationColumn}) AS row_index,
+                        {name}, {version}, {classificationColumn},
+                        COUNT(DISTINCT {Name(software.PcForeignKeyColumn)}) AS device_count
+                    FROM {Name(options.SchemaName, software.TableName)}
+                    WHERE (@search IS NULL OR {name} LIKE @search{LikeEscape})
+                      AND (@classification IS NULL OR {classificationColumn} = @classification)
+                    GROUP BY {name}, {version}, {classificationColumn}
+                    ORDER BY {name}, {version}, {classificationColumn}
+                    {Pagination}
+                )
+                SELECT page.total_count, page.row_index,
+                    page.{name}, page.{version}, page.{classificationColumn}, page.device_count,
+                    d.device_code, d.device_name
+                FROM page
+                OUTER APPLY (
+                    SELECT DISTINCT
+                        {DisplayDeviceCodeSql("p")} AS device_code,
+                        {DisplayHostNameSql("p")} AS device_name
+                    FROM {Name(options.SchemaName, software.TableName)} AS s
+                    INNER JOIN {Name(options.SchemaName, pc.TableName)} AS p
+                        ON p.{Name(pc.PrimaryKeyColumn)} = s.{Name(software.PcForeignKeyColumn)}
+                    WHERE s.{name} = page.{name}
+                      AND (s.{version} = page.{version} OR (s.{version} IS NULL AND page.{version} IS NULL))
+                      AND (s.{classificationColumn} = page.{classificationColumn}
+                           OR (s.{classificationColumn} IS NULL AND page.{classificationColumn} IS NULL))
+                      AND (@search IS NULL OR s.{name} LIKE @search{LikeEscape})
+                ) AS d
+                ORDER BY page.row_index, d.device_name, d.device_code;
+                """;
+        }
+
+        var versionKey = $"RTRIM({version})";
+        return $"""
+            WITH page AS (
+                SELECT
+                    COUNT(*) OVER() AS total_count,
+                    ROW_NUMBER() OVER(ORDER BY {name}, {versionKey}, {classificationColumn}) AS row_index,
+                    {name},
+                    MIN({version}) AS {version},
+                    {classificationColumn},
+                    COUNT(DISTINCT {Name(software.PcForeignKeyColumn)}) AS device_count
+                FROM {Name(options.SchemaName, software.TableName)}
+                WHERE (@search IS NULL OR {name} LIKE @search{LikeEscape})
+                  AND (@classification IS NULL OR {classificationColumn} = @classification)
+                GROUP BY {name}, {versionKey}, {classificationColumn}
+                ORDER BY {name}, {versionKey}, {classificationColumn}
+                {Pagination}
+            )
+            SELECT page.total_count, page.row_index,
+                page.{name}, page.{version}, page.{classificationColumn}, page.device_count,
+                d.device_code, d.device_name
+            FROM page
+            LEFT JOIN (
+                SELECT DISTINCT
+                    s.{name} AS {name},
+                    RTRIM(s.{version}) AS {version},
+                    s.{classificationColumn} AS {classificationColumn},
+                    {DisplayDeviceCodeSql("p")} AS device_code,
+                    {DisplayHostNameSql("p")} AS device_name
+                FROM {Name(options.SchemaName, software.TableName)} AS s
+                INNER JOIN {Name(options.SchemaName, pc.TableName)} AS p
+                    ON p.{Name(pc.PrimaryKeyColumn)} = s.{Name(software.PcForeignKeyColumn)}
+                WHERE (@search IS NULL OR s.{name} LIKE @search{LikeEscape})
+            ) AS d
+                ON d.{name} = page.{name}
+               AND (
+                    (d.{version} IS NULL AND page.{version} IS NULL)
+                    OR RTRIM(d.{version}) = RTRIM(page.{version})
+               )
+               AND (
+                    (d.{classificationColumn} IS NULL AND page.{classificationColumn} IS NULL)
+                    OR d.{classificationColumn} = page.{classificationColumn}
+               )
+            ORDER BY page.row_index, d.device_name, d.device_code;
+            """;
     }
 
     private async Task<List<SoftwareAggregate>> FillSoftwareLicenseCountsAsync(
