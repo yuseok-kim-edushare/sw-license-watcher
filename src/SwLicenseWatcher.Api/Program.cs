@@ -8,7 +8,10 @@ builder.WebHost.UseWebRoot("wwwroot");
 var builder = WebApplication.CreateBuilder(args);
 #endif
 
-builder.Services.AddWindowsService(options => options.ServiceName = "SwLicenseWatcher.Api");
+if (OperatingSystem.IsWindows())
+{
+    builder.Services.AddWindowsService(options => options.ServiceName = "SwLicenseWatcher.Api");
+}
 builder.Services
     .AddApiOptions(builder.Configuration)
     .AddApiServices();

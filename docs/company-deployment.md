@@ -27,11 +27,13 @@ deploy/
     Uninstall-ApiServer.ps1
     Install-Agent.ps1       PC에 Worker + Watchdog만 설치
     Uninstall-Agent.ps1
+  linux/
+    sw-license-watcher-api.service   리눅스 Kestrel systemd 유닛
 ```
 
 직원 PC에는 PowerShell 대신 전체 Release ZIP(`SwLicenseWatcher-{version}.zip`) 안의 `Packager.exe`로 만든 **회사 Setup.exe 하나**를 배포할 수 있습니다. API가 이미 있으면 더 작은 `SwLicenseWatcher.Packager-{version}.zip`만 받아도 됩니다. 패키저·직원 설치·제거 승인 순서는 [packager-setup.ko.md](packager-setup.ko.md)입니다. Intune/자동화가 있으면 아래 스크립트 경로를 그대로 씁니다.
 
-전체 ZIP의 `api/win-x64`(AOT)와 `api/iis/win-x64`(IIS)는 서버용입니다. `Install-ApiServer.ps1`은 `api/win-x64`만 복사하고, `Install-Agent.ps1`은 `agent-worker`와 `agent-watchdog`만 복사합니다. 루트의 `Packager.exe`와 Setup 스텁은 스크립트가 건드리지 않습니다.
+전체 ZIP의 `api/win-x64`(Windows AOT), `api/linux-x64`(Linux AOT), `api/iis/win-x64`(IIS)는 서버용입니다. 리눅스만 필요하면 `SwLicenseWatcher.Api.linux-x64-{version}.zip`을 받습니다. `Install-ApiServer.ps1`은 `api/win-x64`만 복사하고, `Install-Agent.ps1`은 `agent-worker`와 `agent-watchdog`만 복사합니다. 루트의 `Packager.exe`와 Setup 스텁은 스크립트가 건드리지 않습니다.
 
 ## 1. 구성 요소
 
@@ -66,11 +68,12 @@ CD는 다음 시크릿이 있으면 publish 산출물의 EXE/DLL에 Authenticode
 
 ## 3. 서버 API
 
-API는 서버에서만 호스팅합니다. PC 에이전트 설치 대상이 아닙니다. Kestrel(Native AOT)은 `Install-ApiServer.ps1`로 Windows Service로 등록하고, IIS in-process는 아래 수동 절차를 따릅니다. Release ZIP에는 두 가지 서버 산출물이 있습니다.
+API는 서버에서만 호스팅합니다. PC 에이전트 설치 대상이 아닙니다. Windows Kestrel(Native AOT)은 `Install-ApiServer.ps1`로 Windows Service로 등록하고, Linux Kestrel은 systemd로 등록합니다. IIS in-process는 아래 수동 절차를 따릅니다.
 
 | 산출물 | 언제 | 설정 예시 |
 | --- | --- | --- |
 | `api/win-x64/` Native AOT | Kestrel Windows Service (`Install-ApiServer.ps1`) | [appsettings.api.company.json](../deploy/examples/appsettings.api.company.json) |
+| `api/linux-x64/` Native AOT | Kestrel systemd (`sw-license-watcher-api.service`) | 같은 회사 템플릿. `Storage:Provider`는 `MySql` 또는 `PostgreSql` |
 | `api/iis/win-x64/` framework-dependent | IIS in-process (`web.config`) | [appsettings.api.iis.company.json](../deploy/examples/appsettings.api.iis.company.json) |
 
 공통 키:
@@ -161,6 +164,27 @@ HTTPS 인증서는 스크립트가 설치하지 않습니다. 서버 인증서�
 .\Uninstall-ApiServer.ps1                 # 서비스만 삭제, 파일·방화벽 규칙 유지
 .\Uninstall-ApiServer.ps1 -RemoveFiles -RemoveFirewall
 ```
+
+### Kestrel (Native AOT) Linux systemd
+
+`api/linux-x64` 또는 `SwLicenseWatcher.Api.linux-x64-{version}.zip`은 Windows 에이전트 없이 API만 있습니다. 실행 파일 `SwLicenseWatcher.Api`와 `sw-license-watcher-api.service`가 들어 있습니다. 대상 서버에 .NET 런타임은 필요 없습니다. `AddWindowsService`는 Windows 빌드에서만 호출되므로 리눅스 프로세스는 Kestrel만 띄우고, 콘텐츠 루트는 실행 파일 폴더입니다.
+
+리눅스에서는 SQL Server 대신 `Storage:Provider`를 `MySql` 또는 `PostgreSql`로 두고, 그 섹션의 연결 문자열을 채웁니다. 스키마는 API가 백그라운드에서 적용합니다. `Apply-DbSchema.ps1`은 SQL Server 전용입니다.
+
+`Kestrel:Endpoints`의 주소가 `127.0.0.1`이면 그 호스트 안에서만 받습니다. PC 에이전트가 붙게 하려면 `https://0.0.0.0:443`처럼 열어야 합니다. 인증서 파일 경로도 `appsettings.json`에 둡니다.
+
+```bash
+sudo useradd --system --home /opt/sw-license-watcher --shell /usr/sbin/nologin swlw
+sudo mkdir -p /opt/sw-license-watcher
+sudo cp -a SwLicenseWatcher.Api wwwroot appsettings.json sw-license-watcher-api.service /opt/sw-license-watcher/
+sudo chown -R swlw:swlw /opt/sw-license-watcher
+sudo cp /opt/sw-license-watcher/sw-license-watcher-api.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now sw-license-watcher-api
+curl -k https://127.0.0.1/health
+```
+
+유닛의 `WorkingDirectory`와 `ExecStart`는 `/opt/sw-license-watcher`입니다. 다른 경로에 두면 유닛을 고칩니다. `wwwroot`는 `/admin`에 필요하므로 실행 파일과 같이 둡니다.
 
 ### IIS in-process
 

@@ -16,9 +16,12 @@ permissions:
   contents: write
 
 jobs:
-  deploy:
+  release-version:
     if: github.event.workflow_run.conclusion == 'success' || github.event_name == 'workflow_dispatch'
-    runs-on: windows-latest
+    runs-on: ubuntu-latest
+    outputs:
+      new_release: ${{ steps.version.outputs.new_release }}
+      latest_release: ${{ steps.version.outputs.latest_release }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v7
@@ -37,33 +40,8 @@ jobs:
           }
           git tag --list --sort=-version:refname | Select-Object -First 15
 
-      - name: Get USERPROFILE and set CACHE_PATH
-        shell: pwsh
-        run: |
-          $userProfile = [System.Environment]::GetEnvironmentVariable("USERPROFILE")
-          $cachePath = Join-Path $userProfile ".nuget\packages"
-          echo "CACHE_PATH=$cachePath" >> $env:GITHUB_ENV
-
-      - name: Cache NuGet packages
-        uses: actions/cache@v6
-        with:
-          path: |
-            ~/.nuget/packages
-            ${{ env.CACHE_PATH }}
-          key: ${{ runner.os }}-nuget-${{ hashFiles('**/*.csproj', '**/*.slnx', '**/Directory.Packages.props') }}
-          restore-keys: |
-            ${{ runner.os }}-nuget-
-
-      - name: Setup .NET
-        uses: actions/setup-dotnet@v6
-        with:
-          dotnet-version: 10.0.x
-          dotnet-quality: ga
-
-      - name: Restore dependencies
-        run: dotnet restore SwLicenseWatcher.slnx
-
       - name: Compute next release version
+        id: version
         shell: pwsh
         env:
           MANUAL_VERSION: ${{ github.event.inputs.version }}
@@ -87,6 +65,10 @@ jobs:
             return $null
           }
 
+          function Set-VersionOutput([string]$name, [string]$value) {
+            [System.IO.File]::AppendAllText($env:GITHUB_OUTPUT, "$name=$value`n")
+          }
+
           $headSubject = (git log -1 --format=%s).Trim()
           Write-Output "HEAD $(git rev-parse --short HEAD): $headSubject"
 
@@ -94,7 +76,6 @@ jobs:
           $latestRelease = "$latestRelease".Trim()
           if ($latestRelease) {
             Write-Output "Latest release version: $latestRelease"
-            echo "latest_release=$latestRelease" >> $env:GITHUB_ENV
           } else {
             Write-Output "No previous x.y.z release tag found."
           }
@@ -158,7 +139,99 @@ jobs:
           }
 
           Write-Output "Next release version: $newVersionString"
-          echo "new_release=$newVersionString" >> $env:GITHUB_ENV
+          Set-VersionOutput 'new_release' $newVersionString
+          Set-VersionOutput 'latest_release' $latestRelease
+
+  publish-linux-api:
+    needs: release-version
+    if: github.event.workflow_run.conclusion == 'success' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.ref_name }}
+
+      - name: Install Native AOT prerequisites
+        run: sudo apt-get update && sudo apt-get install -y clang zlib1g-dev
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: 10.0.x
+          dotnet-quality: ga
+
+      - name: Publish Api (linux-x64, Native AOT)
+        env:
+          NEW_RELEASE: ${{ needs.release-version.outputs.new_release }}
+        run: |
+          set -euo pipefail
+          dotnet publish src/SwLicenseWatcher.Api/SwLicenseWatcher.Api.csproj \
+            -r linux-x64 -c Release \
+            -p:Version="$NEW_RELEASE" \
+            -p:AssemblyVersion="$NEW_RELEASE.0" \
+            -p:FileVersion="$NEW_RELEASE.0" \
+            -p:InformationalVersion="$NEW_RELEASE" \
+            -o ./publish/api/linux-x64
+          cp deploy/linux/sw-license-watcher-api.service ./publish/api/linux-x64/sw-license-watcher-api.service
+          test -x ./publish/api/linux-x64/SwLicenseWatcher.Api
+
+      - name: Upload Linux API
+        uses: actions/upload-artifact@v7
+        with:
+          name: api-linux-x64
+          path: publish/api/linux-x64
+          if-no-files-found: error
+
+  publish-windows:
+    needs: release-version
+    if: github.event.workflow_run.conclusion == 'success' || github.event_name == 'workflow_dispatch'
+    runs-on: windows-latest
+    env:
+      new_release: ${{ needs.release-version.outputs.new_release }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+        with:
+          fetch-tags: true
+          fetch-depth: 0
+          ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.ref_name }}
+
+      - name: Fetch tags
+        shell: pwsh
+        run: |
+          if (Test-Path .git/shallow) {
+            git fetch --unshallow --force --tags origin
+          } else {
+            git fetch --force --tags origin
+          }
+          git tag --list --sort=-version:refname | Select-Object -First 15
+
+      - name: Get USERPROFILE and set CACHE_PATH
+        shell: pwsh
+        run: |
+          $userProfile = [System.Environment]::GetEnvironmentVariable("USERPROFILE")
+          $cachePath = Join-Path $userProfile ".nuget\packages"
+          echo "CACHE_PATH=$cachePath" >> $env:GITHUB_ENV
+
+      - name: Cache NuGet packages
+        uses: actions/cache@v6
+        with:
+          path: |
+            ~/.nuget/packages
+            ${{ env.CACHE_PATH }}
+          key: ${{ runner.os }}-nuget-${{ hashFiles('**/*.csproj', '**/*.slnx', '**/Directory.Packages.props') }}
+          restore-keys: |
+            ${{ runner.os }}-nuget-
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: 10.0.x
+          dotnet-quality: ga
+
+      - name: Restore dependencies
+        run: dotnet restore SwLicenseWatcher.slnx
 
       - name: Publish Agent Watchdog (win-x64, Native AOT)
         shell: pwsh
@@ -281,6 +354,49 @@ jobs:
             Remove-Item -Path $pfxPath -Force
           }
 
+      - name: Upload Windows publish
+        uses: actions/upload-artifact@v7
+        with:
+          name: windows-publish
+          path: publish
+          if-no-files-found: error
+
+  package:
+    needs: [release-version, publish-windows, publish-linux-api]
+    if: github.event.workflow_run.conclusion == 'success' || github.event_name == 'workflow_dispatch'
+    runs-on: windows-latest
+    env:
+      new_release: ${{ needs.release-version.outputs.new_release }}
+      latest_release: ${{ needs.release-version.outputs.latest_release }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+        with:
+          fetch-tags: true
+          fetch-depth: 0
+          ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.ref_name }}
+
+      - name: Fetch tags
+        shell: pwsh
+        run: |
+          if (Test-Path .git/shallow) {
+            git fetch --unshallow --force --tags origin
+          } else {
+            git fetch --force --tags origin
+          }
+
+      - name: Download Windows publish
+        uses: actions/download-artifact@v7
+        with:
+          name: windows-publish
+          path: publish
+
+      - name: Download Linux API
+        uses: actions/download-artifact@v7
+        with:
+          name: api-linux-x64
+          path: publish/api/linux-x64
+
       - name: Prepare release files
         shell: pwsh
         run: |
@@ -300,7 +416,8 @@ jobs:
             @{ Src = "publish\agent-watchdog\win-x64"; Dest = "agent-watchdog\win-x64" },
             @{ Src = "publish\agent-worker\win-x64"; Dest = "agent-worker\win-x64" },
             @{ Src = "publish\api\win-x64"; Dest = "api\win-x64" },
-            @{ Src = "publish\api\iis\win-x64"; Dest = "api\iis\win-x64" }
+            @{ Src = "publish\api\iis\win-x64"; Dest = "api\iis\win-x64" },
+            @{ Src = "publish\api\linux-x64"; Dest = "api\linux-x64" }
           )) {
             $src = Join-Path $projectRoot $copy.Src
             $dest = Join-Path $stagingDir $copy.Dest
@@ -356,6 +473,7 @@ jobs:
             $releaseNotes += "- agent-watchdog/win-x64/ - self-update Windows Service`n"
             $releaseNotes += "- agent-worker/win-x64/ - inventory collection Windows Service`n"
             $releaseNotes += "- api/win-x64/ - ASP.NET Core API Native AOT (Kestrel)`n"
+            $releaseNotes += "- api/linux-x64/ - ASP.NET Core API Native AOT for Linux (Kestrel, systemd unit)`n"
             $releaseNotes += "- api/iis/win-x64/ - ASP.NET Core API for IIS in-process hosting`n"
             $releaseNotes += "- Packager.exe - IT GUI to bake server URL and agent token into one Setup.exe`n"
             $releaseNotes += "- SwLicenseWatcher-Setup.exe - empty launcher stub (do not give to employees)`n"
@@ -428,12 +546,25 @@ jobs:
           }
           Compress-Archive -Path (Join-Path $packagerStaging "*") -DestinationPath $packagerZipPath -Force
 
+          $linuxApiDir = Join-Path "${{ github.workspace }}" "publish\api\linux-x64"
+          if (!(Test-Path $linuxApiDir)) {
+            Write-Error "Linux API publish output not found at $linuxApiDir"
+            exit 1
+          }
+          $linuxZipName = "SwLicenseWatcher.Api.linux-x64-$newVersionString.zip"
+          $linuxZipPath = Join-Path $env:RELEASE_ROOT $linuxZipName
+          if (Test-Path $linuxZipPath) {
+            Remove-Item -Path $linuxZipPath -Force
+          }
+          Compress-Archive -Path (Join-Path $linuxApiDir "*") -DestinationPath $linuxZipPath -Force
+
           $combinedSha = (Get-FileHash -Algorithm SHA256 -Path $zipPath).Hash.ToLowerInvariant()
           $workerSha = (Get-FileHash -Algorithm SHA256 -Path $workerZipPath).Hash.ToLowerInvariant()
           $packagerSha = (Get-FileHash -Algorithm SHA256 -Path $packagerZipPath).Hash.ToLowerInvariant()
+          $linuxSha = (Get-FileHash -Algorithm SHA256 -Path $linuxZipPath).Hash.ToLowerInvariant()
           $sumsPath = Join-Path $env:RELEASE_ROOT "SHA256SUMS.txt"
           $utf8NoBom = New-Object System.Text.UTF8Encoding $false
-          $sums = "$combinedSha  $zipName`n$workerSha  $workerZipName`n$packagerSha  $packagerZipName`n"
+          $sums = "$combinedSha  $zipName`n$workerSha  $workerZipName`n$packagerSha  $packagerZipName`n$linuxSha  $linuxZipName`n"
           [System.IO.File]::WriteAllText($sumsPath, $sums, $utf8NoBom)
 
           $packageUrl = "https://github.com/${{ github.repository }}/releases/download/$newVersionString/$workerZipName"
@@ -450,11 +581,16 @@ jobs:
           $releaseNotes += "  `"Sha256`": `"$workerSha`"`n"
           $releaseNotes += "}`n"
           $releaseNotes += "```````n"
+          $releaseNotes += "`n`n### Linux API`n`n"
+          $releaseNotes += "- Asset: $linuxZipName`n"
+          $releaseNotes += "- Also inside the combined zip at api/linux-x64/, with sw-license-watcher-api.service`n"
+          $releaseNotes += "- SHA-256: $linuxSha`n"
 
           echo "zip_path=$zipPath" >> $env:GITHUB_ENV
           echo "zip_name=$zipName" >> $env:GITHUB_ENV
           echo "worker_zip_path=$workerZipPath" >> $env:GITHUB_ENV
           echo "packager_zip_path=$packagerZipPath" >> $env:GITHUB_ENV
+          echo "linux_zip_path=$linuxZipPath" >> $env:GITHUB_ENV
           echo "sha256sums_path=$sumsPath" >> $env:GITHUB_ENV
 
           $releaseNotes | Out-File -FilePath (Join-Path $env:RELEASE_ROOT "releaseNotes.txt") -Encoding utf8
@@ -470,6 +606,7 @@ jobs:
             ${{ env.zip_path }}
             ${{ env.worker_zip_path }}
             ${{ env.packager_zip_path }}
+            ${{ env.linux_zip_path }}
             ${{ env.sha256sums_path }}
           tag_name: ${{ env.new_release }}
           name: Release ${{ env.new_release }}

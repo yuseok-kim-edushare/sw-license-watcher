@@ -1,0 +1,15 @@
+[Unit]
+Description=SwLicenseWatcher API
+After=network.target
+
+[Service]
+Type=simple
+User=swlw
+Group=swlw
+WorkingDirectory=/opt/sw-license-watcher
+ExecStart=/opt/sw-license-watcher/SwLicenseWatcher.Api
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

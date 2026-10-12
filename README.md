@@ -79,8 +79,8 @@
 
 ## CI/CD
 
-- **CI (`ci.yaml`)**: `main` 대상 push/PR에서 `windows-latest`로 솔루션 Restore/Build/Test를 검증합니다. `build-test`는 SQL Server LocalDB를 기동한 뒤 회사 스키마 매핑으로 스냅샷·정책·위반·heartbeat 통합 테스트를 돌립니다(로컬에 LocalDB가 없으면 해당 테스트는 skip, CI에서는 실패). `relational-db`는 Ubuntu에서 MySQL 8.4, MariaDB 11.8, PostgreSQL 16으로 같은 통합 시나리오를 돌립니다. 연결 환경 변수가 없으면 해당 테스트는 skip입니다. 이와 병행해 win-x64 Native AOT publish를 수행합니다. AOT 스모크는 의도적으로 DB 없이 `/health` 503을 확인합니다. IL trim/AOT 경고는 자체 코드(SwLicenseWatcher.*)에서 발생하면 실패하고, `Microsoft.Data.SqlClient` 등 서드파티 어셈블리 경고는 요약만 보고합니다. 산출된 native 실행 파일을 smoke-run합니다. Dependabot PR이 build-test, aot-publish, relational-db를 모두 통과하면 auto-merge 워크플로우를 트리거합니다.
-- **CD (`cd.yaml`)**: `main`에서 CI가 성공하면 다음 릴리스 버전을 먼저 계산합니다(최신 `x.y.z` 태그 patch+1). 커밋 메시지 `Update Version To x.y.z`(대소문자·공백 무시, 선택적 `v`)가 있으면 그 버전으로 재정의하고, Actions에서 CD를 `workflow_dispatch`로 돌릴 때 `version` 입력을 넣어도 됩니다. 그 버전으로 `Agent.Watchdog`/`Agent.Worker` Native AOT와 API Native AOT(Kestrel)·IIS in-process, Setup 런처 AOT, Setup/Packager WinForms self-contained를 publish하고, 에이전트 폴더에 `.version`을 씁니다. GitHub 시크릿 `SIGNING_CERTIFICATE_PFX_BASE64`·`SIGNING_CERTIFICATE_PASSWORD`(선택 `SIGNING_TIMESTAMP_URL`)가 있으면 EXE/DLL에 Authenticode 서명을 합니다. Release 자산은 전체 구성 `SwLicenseWatcher-{version}.zip`(API·에이전트·Packager·Setup), Worker·Watchdog 자체 패치용 `SwLicenseWatcher.Agent.Worker-{version}.zip`, API 없이 더 작은 IT용 `SwLicenseWatcher.Packager-{version}.zip`, `SHA256SUMS.txt`입니다. OAuth 2 Resource Server(JWT) 관리자 인증은 0.2.0부터입니다.
+- **CI (`ci.yaml`)**: `main` 대상 push/PR에서 `windows-latest`로 솔루션 Restore/Build/Test를 검증합니다. `build-test`는 SQL Server LocalDB를 기동한 뒤 회사 스키마 매핑으로 스냅샷·정책·위반·heartbeat 통합 테스트를 돌립니다(로컬에 LocalDB가 없으면 해당 테스트는 skip, CI에서는 실패). `relational-db`는 Ubuntu에서 MySQL 8.4, MariaDB 11.8, PostgreSQL 16으로 같은 통합 시나리오를 돌립니다. 연결 환경 변수가 없으면 해당 테스트는 skip입니다. 이와 병행해 win-x64 Native AOT publish를 수행합니다. `linux-api`는 Ubuntu에서 API만 linux-x64 Native AOT로 publish한 뒤 DB 없이 `/health` 503을 확인합니다. AOT 스모크는 의도적으로 DB 없이 `/health` 503을 확인합니다. IL trim/AOT 경고는 자체 코드(SwLicenseWatcher.*)에서 발생하면 실패하고, `Microsoft.Data.SqlClient` 등 서드파티 어셈블리 경고는 요약만 보고합니다. 산출된 native 실행 파일을 smoke-run합니다. Dependabot PR이 build-test, aot-publish, relational-db, linux-api를 모두 통과하면 auto-merge 워크플로우를 트리거합니다.
+- **CD (`cd.yaml`)**: `main`에서 CI가 성공하면 다음 릴리스 버전을 먼저 계산합니다(최신 `x.y.z` 태그 patch+1). 커밋 메시지 `Update Version To x.y.z`(대소문자·공백 무시, 선택적 `v`)가 있으면 그 버전으로 재정의하고, Actions에서 CD를 `workflow_dispatch`로 돌릴 때 `version` 입력을 넣어도 됩니다. 그 버전으로 `Agent.Watchdog`/`Agent.Worker` Native AOT와 API Native AOT(Windows Kestrel·Linux Kestrel·IIS in-process), Setup 런처 AOT, Setup/Packager WinForms self-contained를 publish하고, 에이전트 폴더에 `.version`을 씁니다. Linux API는 Ubuntu에서 컴파일합니다. GitHub 시크릿 `SIGNING_CERTIFICATE_PFX_BASE64`·`SIGNING_CERTIFICATE_PASSWORD`(선택 `SIGNING_TIMESTAMP_URL`)가 있으면 EXE/DLL에 Authenticode 서명을 합니다. Release 자산은 전체 구성 `SwLicenseWatcher-{version}.zip`(API·에이전트·Packager·Setup), Worker·Watchdog 자체 패치용 `SwLicenseWatcher.Agent.Worker-{version}.zip`, API 없이 더 작은 IT용 `SwLicenseWatcher.Packager-{version}.zip`, 리눅스 서버만 받는 `SwLicenseWatcher.Api.linux-x64-{version}.zip`, `SHA256SUMS.txt`입니다. OAuth 2 Resource Server(JWT) 관리자 인증은 0.2.0부터입니다.
 
 Release ZIP 구조:
 
@@ -89,7 +89,8 @@ SwLicenseWatcher-{version}.zip
   SwLicenseWatcher-{version}/
     agent-watchdog/win-x64/   Watchdog (.version 포함)
     agent-worker/win-x64/     Worker (.version 포함)
-    api/win-x64/              API Native AOT (Kestrel 단독)
+    api/win-x64/              API Native AOT (Kestrel 단독, Windows Service)
+    api/linux-x64/            API Native AOT (Kestrel, systemd 유닛 포함)
     api/iis/win-x64/          API IIS in-process (web.config 포함)
     Packager.exe              IT 패키저 (주소·키를 Setup에 심음)
     SwLicenseWatcher-Setup.exe   런처 스텁 (페이로드 없음)
@@ -97,6 +98,7 @@ SwLicenseWatcher-{version}.zip
 
 SwLicenseWatcher.Agent.Worker-{version}.zip   자체 패치 (Worker 파일과 watchdog-update/)
 SwLicenseWatcher.Packager-{version}.zip       위와 같되 API 없음 (IT만 받을 때)
+SwLicenseWatcher.Api.linux-x64-{version}.zip  리눅스 API만 (실행 파일, wwwroot, systemd 유닛)
 SHA256SUMS.txt                                위 ZIP의 SHA-256
 ```
 
@@ -137,7 +139,7 @@ SHA256SUMS.txt                                위 ZIP의 SHA-256
 
 서버 API는 [deploy/examples/appsettings.api.company.json](deploy/examples/appsettings.api.company.json)(Kestrel) 또는 [deploy/examples/appsettings.api.iis.company.json](deploy/examples/appsettings.api.iis.company.json)(IIS)으로 맞추고, 회사 PC에는 Worker·Watchdog만 설치합니다. 서버·Intune 절차는 [docs/company-deployment.md](docs/company-deployment.md), USB·그룹웨어용 설치 관리자는 [docs/packager-setup.ko.md](docs/packager-setup.ko.md), 집 PC 재현은 [docs/hands-on-practice.ko.md](docs/hands-on-practice.ko.md)를 참고하세요.
 
-Kestrel(Native AOT, `api/win-x64`)은 서버에서 [deploy/scripts/Install-ApiServer.ps1](deploy/scripts/Install-ApiServer.ps1)로 Windows Service(`SwLicenseWatcher.Api`)를 **LocalSystem**으로 등록합니다. API는 `AddWindowsService`로 자신을 호스팅하므로 SCM에서 시작해도 콘텐츠 루트는 실행 파일 폴더이고, Application 이벤트 로그 원본은 `SwLicenseWatcher.Api`입니다. Native AOT slim builder에서도 `UseKestrelHttpsConfiguration`으로 `Kestrel:Endpoints:Https`가 적용됩니다. IIS in-process(`api/iis/win-x64`)는 Hosting Bundle과 사이트 바인딩을 쓰는 수동 절차입니다.
+Kestrel(Native AOT, `api/win-x64`)은 서버에서 [deploy/scripts/Install-ApiServer.ps1](deploy/scripts/Install-ApiServer.ps1)로 Windows Service(`SwLicenseWatcher.Api`)를 **LocalSystem**으로 등록합니다. Windows에서만 `AddWindowsService`로 SCM에 붙으므로, 서비스로 시작해도 콘텐츠 루트는 실행 파일 폴더이고 Application 이벤트 로그 원본은 `SwLicenseWatcher.Api`입니다. 같은 API의 linux-x64 빌드는 `api/linux-x64/`와 `SwLicenseWatcher.Api.linux-x64-{version}.zip`에 있으며, Kestrel만 띄우고 systemd 유닛 `sw-license-watcher-api.service`를 같이 넣습니다. 리눅스에서는 `Storage:Provider`를 `MySql` 또는 `PostgreSql`로 두는 구성이 자연스럽습니다. Native AOT slim builder에서도 `UseKestrelHttpsConfiguration`으로 `Kestrel:Endpoints:Https`가 적용됩니다. IIS in-process(`api/iis/win-x64`)는 Hosting Bundle과 사이트 바인딩을 쓰는 수동 절차입니다.
 
 ```powershell
 $agentToken = .\deploy\scripts\New-ApiToken.ps1

@@ -618,14 +618,110 @@ jobs:
           SWLW_POSTGRES_CONNECTION: Host=127.0.0.1;Port=5432;Database=swlw;Username=postgres;Password=swlw
         run: dotnet test tests/SwLicenseWatcher.Infrastructure.Tests/SwLicenseWatcher.Infrastructure.Tests.csproj -c Release --filter Category=RelationalIntegration
 
+  linux-api:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install Native AOT prerequisites
+        run: sudo apt-get update && sudo apt-get install -y clang zlib1g-dev
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: 10.0.x
+          dotnet-quality: ga
+
+      - name: Publish Api (linux-x64, Native AOT)
+        run: |
+          set -euo pipefail
+          log="${RUNNER_TEMP}/publish-api-linux.log"
+          set +e
+          dotnet publish src/SwLicenseWatcher.Api/SwLicenseWatcher.Api.csproj \
+            -r linux-x64 -c Release \
+            -o ./publish/api/linux-x64 \
+            -p:TrimmerSingleWarn=false \
+            2>&1 | tee "$log"
+          status=${PIPESTATUS[0]}
+          set -e
+          if [ "$status" -ne 0 ]; then
+            echo "::error::dotnet publish failed for the Linux API with exit code $status."
+            exit "$status"
+          fi
+          python3 - "$log" <<'PY'
+          import re
+          import sys
+
+          log_path = sys.argv[1]
+          prefixes = ("SwLicenseWatcher.", "Program.", "<Program>", "Program+")
+          first_party = []
+          with open(log_path, encoding="utf-8", errors="replace") as log:
+              for line in log:
+                  match = re.search(r"warning (IL\d{4}): (.+?): ", line)
+                  if match and match.group(2).startswith(prefixes):
+                      first_party.append(line.rstrip())
+          if first_party:
+              for line in first_party:
+                  print(f"::error::{line}")
+              print(f"::error::{len(first_party)} first-party IL trim/AOT warning(s) in the Linux API publish")
+              sys.exit(1)
+          PY
+          cp deploy/linux/sw-license-watcher-api.service ./publish/api/linux-x64/sw-license-watcher-api.service
+          test -x ./publish/api/linux-x64/SwLicenseWatcher.Api
+
+      - name: Smoke Linux API health
+        run: |
+          set -euo pipefail
+          api="./publish/api/linux-x64/SwLicenseWatcher.Api"
+          stdout="${RUNNER_TEMP}/api-linux-stdout.log"
+          stderr="${RUNNER_TEMP}/api-linux-stderr.log"
+          export Security__AgentToken='aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
+          export Security__AdminToken='bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb'
+          export Storage__SqlServer__ConnectionString='Server=127.0.0.1,1;Database=x;User Id=x;Password=x;Encrypt=False;Connect Timeout=1'
+          export Kestrel__Endpoints__Http__Url='http://127.0.0.1:5080'
+          "$api" >"$stdout" 2>"$stderr" &
+          pid=$!
+          cleanup() {
+            if kill -0 "$pid" 2>/dev/null; then
+              kill "$pid" || true
+              wait "$pid" || true
+            fi
+          }
+          trap cleanup EXIT
+          for _ in $(seq 1 30); do
+            if ! kill -0 "$pid" 2>/dev/null; then
+              echo '=== api stdout ==='
+              cat "$stdout" || true
+              echo '=== api stderr ==='
+              cat "$stderr" || true
+              echo "API process exited early."
+              exit 1
+            fi
+            code="$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:5080/health || true)"
+            if [ "$code" = "503" ]; then
+              echo 'API health endpoint returned 503 (database unreachable).'
+              exit 0
+            fi
+            sleep 2
+          done
+          echo '=== api stdout ==='
+          cat "$stdout" || true
+          echo '=== api stderr ==='
+          cat "$stderr" || true
+          echo 'API did not return 503 from /health within 60s.'
+          exit 1
+
   trigger-auto-merge:
     runs-on: ubuntu-latest
-    needs: [build-test, aot-publish, relational-db]
+    needs: [build-test, aot-publish, relational-db, linux-api]
     if: |
       github.event_name == 'pull_request' &&
       needs.build-test.result == 'success' &&
       needs.aot-publish.result == 'success' &&
       needs.relational-db.result == 'success' &&
+      needs.linux-api.result == 'success' &&
       github.actor == 'dependabot[bot]'
     permissions:
       actions: write
