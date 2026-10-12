@@ -44,6 +44,11 @@
       <_AdminPublishDir>$(MSBuildThisFileDirectory)obj\$(Configuration)\admin-wasm\</_AdminPublishDir>
       <_PublishedAdminDir>$(PublishDir)wwwroot\admin\</_PublishedAdminDir>
     </PropertyGroup>
+    <!-- Restore is a separate invocation so the publish sees project.assets.json. -->
+    <MSBuild Projects="..\SwLicenseWatcher.Admin\SwLicenseWatcher.Admin.csproj"
+             Targets="Restore"
+             Properties="Configuration=$(Configuration);PublishDir=$(_AdminPublishDir);PublishAot=false;PublishTrimmed=false;SelfContained=false;RuntimeIdentifier=browser-wasm;UseAppHost=false;AdminInnerPublish=true"
+             RemoveProperties="RuntimeIdentifier;SelfContained;PublishAot;PublishTrimmed" />
     <MSBuild Projects="..\SwLicenseWatcher.Admin\SwLicenseWatcher.Admin.csproj"
              Targets="Publish"
              Properties="Configuration=$(Configuration);PublishDir=$(_AdminPublishDir);PublishAot=false;PublishTrimmed=false;SelfContained=false;RuntimeIdentifier=browser-wasm;UseAppHost=false;AdminInnerPublish=true"

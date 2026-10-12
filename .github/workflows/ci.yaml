@@ -637,9 +637,11 @@ jobs:
       - name: Publish Api (linux-x64, Native AOT)
         run: |
           set -euo pipefail
+          # The solution also contains Windows-only projects, which cannot restore on Linux.
+          dotnet restore src/SwLicenseWatcher.Api/SwLicenseWatcher.Api.csproj -r linux-x64
+          dotnet restore src/SwLicenseWatcher.Admin/SwLicenseWatcher.Admin.csproj
           log="${RUNNER_TEMP}/publish-api-linux.log"
           set +e
-          dotnet restore
           dotnet publish src/SwLicenseWatcher.Api/SwLicenseWatcher.Api.csproj \
             -r linux-x64 -c Release \
             -o ./publish/api/linux-x64 \

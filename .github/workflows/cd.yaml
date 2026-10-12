@@ -166,7 +166,9 @@ jobs:
           NEW_RELEASE: ${{ needs.release-version.outputs.new_release }}
         run: |
           set -euo pipefail
-          dotnet restore
+          # The solution also contains Windows-only projects, which cannot restore on Linux.
+          dotnet restore src/SwLicenseWatcher.Api/SwLicenseWatcher.Api.csproj -r linux-x64
+          dotnet restore src/SwLicenseWatcher.Admin/SwLicenseWatcher.Admin.csproj
           dotnet publish src/SwLicenseWatcher.Api/SwLicenseWatcher.Api.csproj \
             -r linux-x64 -c Release \
             -p:Version="$NEW_RELEASE" \
