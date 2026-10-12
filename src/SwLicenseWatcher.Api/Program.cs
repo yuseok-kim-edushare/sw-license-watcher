@@ -1,9 +1,14 @@
 using SwLicenseWatcher.Api;
 
 #if NATIVE_AOT
-var builder = WebApplication.CreateSlimBuilder(args);
+var contentRoot = AppContext.BaseDirectory;
+var builder = WebApplication.CreateSlimBuilder(new WebApplicationOptions
+{
+    Args = args,
+    ContentRootPath = contentRoot,
+    WebRootPath = Path.Combine(contentRoot, "wwwroot"),
+});
 builder.WebHost.UseKestrelHttpsConfiguration();
-builder.WebHost.UseWebRoot("wwwroot");
 #else
 var builder = WebApplication.CreateBuilder(args);
 #endif
