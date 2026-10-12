@@ -639,6 +639,7 @@ jobs:
           set -euo pipefail
           log="${RUNNER_TEMP}/publish-api-linux.log"
           set +e
+          dotnet restore
           dotnet publish src/SwLicenseWatcher.Api/SwLicenseWatcher.Api.csproj \
             -r linux-x64 -c Release \
             -o ./publish/api/linux-x64 \
