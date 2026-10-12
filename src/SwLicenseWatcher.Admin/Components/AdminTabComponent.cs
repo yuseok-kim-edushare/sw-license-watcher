@@ -21,6 +21,8 @@ public abstract class AdminTabComponent : ComponentBase, IAdminTab
     protected int Skip { get; set; }
     protected int TotalCount { get; set; }
     protected string Search { get; set; } = "";
+    protected string? SortColumn { get; private set; }
+    protected bool SortDescending { get; private set; }
     protected string Error { get; set; } = "";
     protected string Meta { get; set; } = "";
 
@@ -77,11 +79,28 @@ public abstract class AdminTabComponent : ComponentBase, IAdminTab
         }
     }
 
+    protected async Task ToggleSortAsync(string column)
+    {
+        if (string.Equals(SortColumn, column, StringComparison.Ordinal))
+        {
+            SortDescending = !SortDescending;
+        }
+        else
+        {
+            SortColumn = column;
+            SortDescending = false;
+        }
+
+        Skip = 0;
+        await RefreshAsync();
+    }
+
     protected string PagingQuery()
     {
         var parts = new List<string> { $"skip={Skip}", $"take={PageSize}" };
         AddSearch(parts);
         AddFilters(parts);
+        AddSort(parts);
         return string.Join("&", parts);
     }
 
@@ -90,6 +109,7 @@ public abstract class AdminTabComponent : ComponentBase, IAdminTab
         var parts = new List<string>();
         AddSearch(parts);
         AddFilters(parts);
+        AddSort(parts);
         return string.Join("&", parts);
     }
 
@@ -103,6 +123,17 @@ public abstract class AdminTabComponent : ComponentBase, IAdminTab
         {
             parts.Add("search=" + Uri.EscapeDataString(Search.Trim()));
         }
+    }
+
+    private void AddSort(List<string> parts)
+    {
+        if (string.IsNullOrEmpty(SortColumn))
+        {
+            return;
+        }
+
+        parts.Add("sort=" + Uri.EscapeDataString(SortColumn));
+        parts.Add("dir=" + (SortDescending ? "desc" : "asc"));
     }
 
     protected async Task DownloadCsvAsync(string path, string fileName)

@@ -13,7 +13,9 @@ public sealed partial class RelationalDataContext
         int take,
         string? search,
         int? staleAfterHours,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        string? sort = null,
+        bool sortDescending = false)
     {
         await using var connection = CreateConnection();
         await connection.OpenAsync(cancellationToken);
@@ -21,22 +23,7 @@ public sealed partial class RelationalDataContext
         DateTimeOffset? staleCutoff = staleAfterHours is int hours
             ? DateTimeOffset.UtcNow - TimeSpan.FromHours(hours)
             : null;
-        var sql = $"""
-            SELECT
-                COUNT(*) OVER() AS total_count,
-                {Name(table.DeviceCodeColumn)}, {Name(table.HostNameColumn)}, {Name(table.DomainNameColumn)},
-                {Name(table.OperatingSystemColumn)}, {Name(table.AgentVersionColumn)},
-                {Name(table.LastHeartbeatUtcColumn)}, {Name(table.LastInventoryUtcColumn)},
-                {Name(table.AssignedHostNameColumn)}, {Name(table.AdminNotesColumn)},
-                {Name(table.AssignedDeviceCodeColumn)}, {Name(table.DeviceIdColumn)}
-            FROM {Name(options.SchemaName, table.TableName)}
-            WHERE (@search IS NULL OR {HostNameSearchSql()})
-              AND (@staleCutoff IS NULL
-                OR {Name(table.LastHeartbeatUtcColumn)} IS NULL
-                OR {Name(table.LastHeartbeatUtcColumn)} < @staleCutoff)
-            ORDER BY {DisplayHostNameSql()}, {Name(table.DeviceCodeColumn)}
-            {Pagination};
-            """;
+        var sql = BuildListDevicesSql(sort, sortDescending);
         await using var command = CreateCommand(connection, null, sql);
         Bind(command, ("@search", DbValue(ToContainsPattern(search))));
         Bind(command, ("@staleCutoff", DbValue(staleCutoff)));
@@ -69,6 +56,46 @@ public sealed partial class RelationalDataContext
         }
 
         return (totalCount, items);
+    }
+
+    internal string BuildListDevicesSql(string? sort = null, bool sortDescending = false)
+    {
+        var table = options.PcTable;
+        var orderBy = DeviceOrderBy(sort, sortDescending);
+        return $"""
+            SELECT
+                COUNT(*) OVER() AS total_count,
+                {Name(table.DeviceCodeColumn)}, {Name(table.HostNameColumn)}, {Name(table.DomainNameColumn)},
+                {Name(table.OperatingSystemColumn)}, {Name(table.AgentVersionColumn)},
+                {Name(table.LastHeartbeatUtcColumn)}, {Name(table.LastInventoryUtcColumn)},
+                {Name(table.AssignedHostNameColumn)}, {Name(table.AdminNotesColumn)},
+                {Name(table.AssignedDeviceCodeColumn)}, {Name(table.DeviceIdColumn)}
+            FROM {Name(options.SchemaName, table.TableName)}
+            WHERE (@search IS NULL OR {HostNameSearchSql()})
+              AND (@staleCutoff IS NULL
+                OR {Name(table.LastHeartbeatUtcColumn)} IS NULL
+                OR {Name(table.LastHeartbeatUtcColumn)} < @staleCutoff)
+            ORDER BY {orderBy}
+            {Pagination};
+            """;
+    }
+
+    private string DeviceOrderBy(string? sort, bool descending)
+    {
+        var table = options.PcTable;
+        var fallback = $"{DisplayHostNameSql()}, {Name(table.DeviceCodeColumn)}";
+        var expression = sort switch
+        {
+            AdminListSort.DeviceCode => DisplayDeviceCodeSql(),
+            AdminListSort.HostName => DisplayHostNameSql(),
+            AdminListSort.DomainName => Name(table.DomainNameColumn),
+            AdminListSort.OperatingSystem => Name(table.OperatingSystemColumn),
+            AdminListSort.AgentVersion => Name(table.AgentVersionColumn),
+            AdminListSort.LastHeartbeatUtc => Name(table.LastHeartbeatUtcColumn),
+            AdminListSort.LastInventoryUtc => Name(table.LastInventoryUtcColumn),
+            _ => null
+        };
+        return OrderByColumn(expression, descending, fallback);
     }
 
     public async Task<DeviceDetail?> GetDeviceAsync(

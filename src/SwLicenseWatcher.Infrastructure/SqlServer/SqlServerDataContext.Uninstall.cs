@@ -123,11 +123,13 @@ public sealed partial class RelationalDataContext
         int skip,
         int take,
         string? search,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        string? sort = null,
+        bool sortDescending = false)
     {
         await using var connection = CreateConnection();
         await connection.OpenAsync(cancellationToken);
-        await using var command = CreateCommand(connection, null, BuildListUninstallRequestsSql());
+        await using var command = CreateCommand(connection, null, BuildListUninstallRequestsSql(sort, sortDescending));
         Bind(command,
             ("@search", DbValue(ToContainsPattern(search))),
             ("@skip", skip),
@@ -388,10 +390,16 @@ public sealed partial class RelationalDataContext
             """;
     }
 
-    internal string BuildListUninstallRequestsSql()
+    internal string BuildListUninstallRequestsSql(string? sort = null, bool sortDescending = false)
     {
         var table = options.UninstallRequestTable;
         var pc = options.PcTable;
+        var pendingFirst = $"CASE WHEN r.{Name(table.StatusColumn)} = {Lit(UninstallGrant.Pending)} THEN 0 ELSE 1 END, r.{Name(table.RequestedAtUtcColumn)} DESC";
+        var expression = UninstallOrderExpression(table, pc, sort);
+        var orderBy = expression is null
+            ? pendingFirst
+            : OrderByColumn(expression, sortDescending, $"r.{Name(table.PrimaryKeyColumn)}");
+
         return $"""
             SELECT
                 COUNT(*) OVER() AS total_count,
@@ -407,11 +415,24 @@ public sealed partial class RelationalDataContext
                 OR {HostNameSearchSql("p")}
                 OR r.{Name(table.StatusColumn)} LIKE @search{LikeEscape}
                 OR r.{Name(table.OriginColumn)} LIKE @search{LikeEscape})
-            ORDER BY CASE WHEN r.{Name(table.StatusColumn)} = {Lit(UninstallGrant.Pending)} THEN 0 ELSE 1 END,
-                     r.{Name(table.RequestedAtUtcColumn)} DESC
+            ORDER BY {orderBy}
             {Pagination};
             """;
     }
+
+    private string? UninstallOrderExpression(UninstallRequestTableOptions table, PcTableOptions pc, string? sort) =>
+        sort switch
+        {
+            AdminListSort.Id => $"r.{Name(table.PrimaryKeyColumn)}",
+            AdminListSort.DeviceCode => $"p.{Name(pc.DeviceCodeColumn)}",
+            AdminListSort.HostName => DisplayHostNameSql("p"),
+            AdminListSort.Origin => $"r.{Name(table.OriginColumn)}",
+            AdminListSort.Status => $"r.{Name(table.StatusColumn)}",
+            AdminListSort.RequestedAtUtc => $"r.{Name(table.RequestedAtUtcColumn)}",
+            AdminListSort.ApprovedAtUtc => $"r.{Name(table.ApprovedAtUtcColumn)}",
+            AdminListSort.ExpiresAtUtc => $"r.{Name(table.ExpiresAtUtcColumn)}",
+            _ => null
+        };
 
     internal string BuildApproveUninstallRequestSql()
     {

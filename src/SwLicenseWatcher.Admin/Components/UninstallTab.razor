@@ -14,7 +14,19 @@
 }
 <p class="meta">@Meta</p>
 <table class="data">
-    <thead><tr><th>ID</th><th>자산코드</th><th>PC 명</th><th>출처</th><th>상태</th><th>요청</th><th>승인</th><th>만료</th><th>처리</th></tr></thead>
+    <thead>
+        <tr>
+            <SortHeader Title="ID" Column="@AdminListSort.Id" ActiveColumn="@SortColumn" Descending="SortDescending" OnSort="ToggleSortAsync" />
+            <SortHeader Title="자산코드" Column="@AdminListSort.DeviceCode" ActiveColumn="@SortColumn" Descending="SortDescending" OnSort="ToggleSortAsync" />
+            <SortHeader Title="PC 명" Column="@AdminListSort.HostName" ActiveColumn="@SortColumn" Descending="SortDescending" OnSort="ToggleSortAsync" />
+            <SortHeader Title="출처" Column="@AdminListSort.Origin" ActiveColumn="@SortColumn" Descending="SortDescending" OnSort="ToggleSortAsync" />
+            <SortHeader Title="상태" Column="@AdminListSort.Status" ActiveColumn="@SortColumn" Descending="SortDescending" OnSort="ToggleSortAsync" />
+            <SortHeader Title="요청" Column="@AdminListSort.RequestedAtUtc" ActiveColumn="@SortColumn" Descending="SortDescending" OnSort="ToggleSortAsync" />
+            <SortHeader Title="승인" Column="@AdminListSort.ApprovedAtUtc" ActiveColumn="@SortColumn" Descending="SortDescending" OnSort="ToggleSortAsync" />
+            <SortHeader Title="만료" Column="@AdminListSort.ExpiresAtUtc" ActiveColumn="@SortColumn" Descending="SortDescending" OnSort="ToggleSortAsync" />
+            <th>처리</th>
+        </tr>
+    </thead>
     <tbody>
         @if (_requests.Count == 0)
         {

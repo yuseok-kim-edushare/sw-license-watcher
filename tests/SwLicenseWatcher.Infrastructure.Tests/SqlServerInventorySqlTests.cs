@@ -392,4 +392,84 @@ public class SqlServerInventorySqlTests
         Assert.Contains("INSERT INTO [inventory].[worker_update_pin]", sql, StringComparison.Ordinal);
         Assert.Contains("[target_service_name] = @targetServiceName", sql, StringComparison.Ordinal);
     }
+
+    [Fact]
+    public void List_sql_keeps_the_default_order_when_sort_is_omitted()
+    {
+        var context = new RelationalDataContext(new SqlServerStorageOptions());
+        Assert.Contains(
+            "ORDER BY COALESCE(NULLIF([assigned_host_name], N''), [host_name]), [device_code]",
+            context.BuildListDevicesSql(),
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "ORDER BY [display_name], [display_version], [classification]",
+            context.BuildListSoftwareSql(),
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "ROW_NUMBER() OVER(ORDER BY [display_name], [display_version], [classification])",
+            context.BuildListSoftwareWithAssetsSql(),
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "ORDER BY [product_name], [policy_id]",
+            context.BuildListPoliciesSql(),
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "ORDER BY v.[last_seen_at_utc] DESC, v.[violation_id] DESC",
+            context.BuildListViolationsSql(),
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "ORDER BY CASE WHEN r.[status] = N'pending' THEN 0 ELSE 1 END, r.[requested_at_utc] DESC",
+            context.BuildListUninstallRequestsSql(),
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void List_sql_orders_by_the_allowlisted_column_and_keeps_a_tie_break()
+    {
+        var context = new RelationalDataContext(new SqlServerStorageOptions());
+        Assert.Contains(
+            "ORDER BY [last_heartbeat_utc] DESC, COALESCE(NULLIF([assigned_host_name], N''), [host_name]), [device_code]",
+            context.BuildListDevicesSql(AdminListSort.LastHeartbeatUtc, sortDescending: true),
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "ORDER BY COUNT(DISTINCT [pc_id]) DESC, [display_name], [display_version], [classification]",
+            context.BuildListSoftwareSql(AdminListSort.DeviceCount, sortDescending: true),
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "ROW_NUMBER() OVER(ORDER BY COUNT(DISTINCT [pc_id]) ASC, [display_name], [display_version], [classification])",
+            context.BuildListSoftwareWithAssetsSql(AdminListSort.DeviceCount, sortDescending: false),
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "ORDER BY [updated_at_utc] DESC, [product_name], [policy_id]",
+            context.BuildListPoliciesSql(AdminListSort.UpdatedAtUtc, sortDescending: true),
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "ORDER BY v.[display_name] ASC, v.[last_seen_at_utc] DESC, v.[violation_id] DESC",
+            context.BuildListViolationsSql(AdminListSort.SoftwareName, sortDescending: false),
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "ORDER BY COALESCE(NULLIF(p.[assigned_host_name], N''), p.[host_name]) ASC, r.[uninstall_request_id]",
+            context.BuildListUninstallRequestsSql(AdminListSort.HostName, sortDescending: false),
+            StringComparison.Ordinal);
+        Assert.DoesNotContain("CASE WHEN", context.BuildListUninstallRequestsSql(AdminListSort.HostName), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void List_sql_ignores_a_sort_key_that_is_not_allowlisted()
+    {
+        var context = new RelationalDataContext(new SqlServerStorageOptions());
+        var devices = context.BuildListDevicesSql("device_code; DROP TABLE pc_entity", sortDescending: true);
+        Assert.Contains(
+            "ORDER BY COALESCE(NULLIF([assigned_host_name], N''), [host_name]), [device_code]",
+            devices,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain("DROP", devices, StringComparison.Ordinal);
+
+        var software = context.BuildListSoftwareSql("companyCount", sortDescending: true);
+        Assert.Contains(
+            "ORDER BY [display_name], [display_version], [classification]",
+            software,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain("companyCount", software, StringComparison.Ordinal);
+    }
 }

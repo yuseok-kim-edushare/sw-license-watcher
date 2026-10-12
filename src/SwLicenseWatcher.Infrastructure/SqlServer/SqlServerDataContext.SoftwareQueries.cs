@@ -13,24 +13,14 @@ public sealed partial class RelationalDataContext
         int take,
         string? search,
         string? classification,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        string? sort = null,
+        bool sortDescending = false)
     {
         await using var connection = CreateConnection();
         await connection.OpenAsync(cancellationToken);
         var software = options.InstalledSoftwareTable;
-        var sql = $"""
-            SELECT
-                COUNT(*) OVER() AS total_count,
-                {Name(software.DisplayNameColumn)}, {Name(software.DisplayVersionColumn)},
-                {Name(software.ClassificationColumn)},
-                COUNT(DISTINCT {Name(software.PcForeignKeyColumn)}) AS device_count
-            FROM {Name(options.SchemaName, software.TableName)}
-            WHERE (@search IS NULL OR {Name(software.DisplayNameColumn)} LIKE @search{LikeEscape})
-              AND (@classification IS NULL OR {Name(software.ClassificationColumn)} = @classification)
-            GROUP BY {Name(software.DisplayNameColumn)}, {Name(software.DisplayVersionColumn)}, {Name(software.ClassificationColumn)}
-            ORDER BY {Name(software.DisplayNameColumn)}, {Name(software.DisplayVersionColumn)}, {Name(software.ClassificationColumn)}
-            {Pagination};
-            """;
+        var sql = BuildListSoftwareSql(sort, sortDescending);
         await using var command = CreateCommand(connection, null, sql);
         Bind(command, ("@search", DbValue(ToContainsPattern(search))));
         Bind(command, ("@classification", DbValue(classification)));
@@ -60,6 +50,29 @@ public sealed partial class RelationalDataContext
         }
 
         return (totalCount, items);
+    }
+
+    internal string BuildListSoftwareSql(string? sort = null, bool sortDescending = false)
+    {
+        var software = options.InstalledSoftwareTable;
+        var name = Name(software.DisplayNameColumn);
+        var version = Name(software.DisplayVersionColumn);
+        var classificationColumn = Name(software.ClassificationColumn);
+        var deviceCount = SoftwareDeviceCountSql(software);
+        var orderBy = SoftwareOrderBy(name, version, classificationColumn, deviceCount, sort, sortDescending);
+        return $"""
+            SELECT
+                COUNT(*) OVER() AS total_count,
+                {name}, {version},
+                {classificationColumn},
+                {deviceCount} AS device_count
+            FROM {Name(options.SchemaName, software.TableName)}
+            WHERE (@search IS NULL OR {name} LIKE @search{LikeEscape})
+              AND (@classification IS NULL OR {classificationColumn} = @classification)
+            GROUP BY {name}, {version}, {classificationColumn}
+            ORDER BY {orderBy}
+            {Pagination};
+            """;
     }
 
     public async Task<(int TotalCount, List<SoftwareDevice> Items)> ListSoftwareDevicesAsync(
@@ -145,16 +158,14 @@ public sealed partial class RelationalDataContext
         int take,
         string? search,
         string? classification,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        string? sort = null,
+        bool sortDescending = false)
     {
         await using var connection = CreateConnection();
         await connection.OpenAsync(cancellationToken);
         var software = options.InstalledSoftwareTable;
-        var pc = options.PcTable;
-        var name = Name(software.DisplayNameColumn);
-        var version = Name(software.DisplayVersionColumn);
-        var classificationColumn = Name(software.ClassificationColumn);
-        var sql = BuildListSoftwareWithAssetsSql(software, pc, name, version, classificationColumn);
+        var sql = BuildListSoftwareWithAssetsSql(sort, sortDescending);
         await using var command = CreateCommand(connection, null, sql);
         Bind(command, ("@search", DbValue(ToContainsPattern(search))));
         Bind(command, ("@classification", DbValue(classification)));
@@ -204,28 +215,46 @@ public sealed partial class RelationalDataContext
         return (totalCount, aggregates.Select((item, index) => new SoftwareAggregateAssets(item, devices[index])).ToList());
     }
 
+    internal string BuildListSoftwareWithAssetsSql(string? sort = null, bool sortDescending = false)
+    {
+        var software = options.InstalledSoftwareTable;
+        var pc = options.PcTable;
+        return BuildListSoftwareWithAssetsSql(
+            software,
+            pc,
+            Name(software.DisplayNameColumn),
+            Name(software.DisplayVersionColumn),
+            Name(software.ClassificationColumn),
+            sort,
+            sortDescending);
+    }
+
     private string BuildListSoftwareWithAssetsSql(
         InstalledSoftwareTableOptions software,
         PcTableOptions pc,
         string name,
         string version,
-        string classificationColumn)
+        string classificationColumn,
+        string? sort,
+        bool sortDescending)
     {
+        var deviceCount = SoftwareDeviceCountSql(software);
         // 페이지 그룹과 설치 PC를 SQL 안에서 짝지어 GROUP BY와 같은 비교 규칙(후행 공백, collation, NULL)을 그대로 쓴다.
         if (dialect.Provider == StorageProvider.SqlServer)
         {
+            var orderBy = SoftwareOrderBy(name, version, classificationColumn, deviceCount, sort, sortDescending);
             return $"""
                 WITH page AS (
                     SELECT
                         COUNT(*) OVER() AS total_count,
-                        ROW_NUMBER() OVER(ORDER BY {name}, {version}, {classificationColumn}) AS row_index,
+                        ROW_NUMBER() OVER(ORDER BY {orderBy}) AS row_index,
                         {name}, {version}, {classificationColumn},
-                        COUNT(DISTINCT {Name(software.PcForeignKeyColumn)}) AS device_count
+                        {deviceCount} AS device_count
                     FROM {Name(options.SchemaName, software.TableName)}
                     WHERE (@search IS NULL OR {name} LIKE @search{LikeEscape})
                       AND (@classification IS NULL OR {classificationColumn} = @classification)
                     GROUP BY {name}, {version}, {classificationColumn}
-                    ORDER BY {name}, {version}, {classificationColumn}
+                    ORDER BY {orderBy}
                     {Pagination}
                 )
                 SELECT page.total_count, page.row_index,
@@ -251,20 +280,22 @@ public sealed partial class RelationalDataContext
 
         var versionKey = $"RTRIM({version})";
         var versionOrder = dialect.Provider == StorageProvider.PostgreSql ? $"{versionKey} NULLS FIRST" : versionKey;
+        var pageOrder = SoftwareOrderBy(
+            name, versionOrder, classificationColumn, deviceCount, sort, sortDescending, versionKey);
         return $"""
             WITH page AS (
                 SELECT
                     COUNT(*) OVER() AS total_count,
-                    ROW_NUMBER() OVER(ORDER BY {name}, {versionOrder}, {classificationColumn}) AS row_index,
+                    ROW_NUMBER() OVER(ORDER BY {pageOrder}) AS row_index,
                     {name},
                     MIN({version}) AS {version},
                     {classificationColumn},
-                    COUNT(DISTINCT {Name(software.PcForeignKeyColumn)}) AS device_count
+                    {deviceCount} AS device_count
                 FROM {Name(options.SchemaName, software.TableName)}
                 WHERE (@search IS NULL OR {name} LIKE @search{LikeEscape})
                   AND (@classification IS NULL OR {classificationColumn} = @classification)
                 GROUP BY {name}, {versionKey}, {classificationColumn}
-                ORDER BY {name}, {versionOrder}, {classificationColumn}
+                ORDER BY {pageOrder}
                 {Pagination}
             )
             SELECT page.total_count, page.row_index,
@@ -294,6 +325,30 @@ public sealed partial class RelationalDataContext
                )
             ORDER BY page.row_index, d.device_name, d.device_code;
             """;
+    }
+
+    private string SoftwareDeviceCountSql(InstalledSoftwareTableOptions software) =>
+        $"COUNT(DISTINCT {Name(software.PcForeignKeyColumn)})";
+
+    private string SoftwareOrderBy(
+        string name,
+        string version,
+        string classification,
+        string deviceCount,
+        string? sort,
+        bool descending,
+        string? versionSort = null)
+    {
+        var fallback = $"{name}, {version}, {classification}";
+        var expression = sort switch
+        {
+            AdminListSort.Name => name,
+            AdminListSort.Version => versionSort ?? version,
+            AdminListSort.Classification => classification,
+            AdminListSort.DeviceCount => deviceCount,
+            _ => null
+        };
+        return OrderByColumn(expression, descending, fallback);
     }
 
     private async Task<List<SoftwareAggregate>> FillSoftwareLicenseCountsAsync(

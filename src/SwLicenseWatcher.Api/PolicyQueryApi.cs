@@ -15,6 +15,8 @@ internal static class PolicyQueryApi
             string? search,
             string? classification,
             string? format,
+            string? sort,
+            string? dir,
             CancellationToken cancellationToken) =>
         {
             if (!QueryList.TryValidateSearch(search, out var searchError))
@@ -27,10 +29,15 @@ internal static class PolicyQueryApi
                 return Results.BadRequest(classificationError);
             }
 
+            if (!QueryList.TryNormalizeSort(sort, dir, AdminListSort.Policies, out var sortColumn, out var sortDescending, out var sortError))
+            {
+                return Results.BadRequest(sortError);
+            }
+
             var csv = QueryList.WantsCsv(format);
             var (normalizedSkip, normalizedTake) = QueryList.NormalizePaging(skip, take, csv);
             var (totalCount, items) = await repository.ListPoliciesAsync(
-                normalizedSkip, normalizedTake, search, normalizedClassification, cancellationToken);
+                normalizedSkip, normalizedTake, search, normalizedClassification, cancellationToken, sortColumn, sortDescending);
 
             if (csv)
             {
@@ -50,6 +57,8 @@ internal static class PolicyQueryApi
             string? search,
             string? since,
             string? format,
+            string? sort,
+            string? dir,
             CancellationToken cancellationToken) =>
         {
             if (!QueryList.TryValidateSearch(search, out var searchError))
@@ -62,10 +71,15 @@ internal static class PolicyQueryApi
                 return Results.BadRequest(sinceError);
             }
 
+            if (!QueryList.TryNormalizeSort(sort, dir, AdminListSort.Violations, out var sortColumn, out var sortDescending, out var sortError))
+            {
+                return Results.BadRequest(sortError);
+            }
+
             var csv = QueryList.WantsCsv(format);
             var (normalizedSkip, normalizedTake) = QueryList.NormalizePaging(skip, take, csv);
             var (totalCount, items) = await repository.ListViolationsAsync(
-                normalizedSkip, normalizedTake, search, parsedSince, cancellationToken);
+                normalizedSkip, normalizedTake, search, parsedSince, cancellationToken, sortColumn, sortDescending);
 
             if (csv)
             {

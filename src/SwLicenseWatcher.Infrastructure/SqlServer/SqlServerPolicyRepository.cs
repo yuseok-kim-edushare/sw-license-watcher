@@ -7,8 +7,14 @@ namespace SwLicenseWatcher.Infrastructure.SqlServer;
 internal sealed class SqlServerPolicyRepository(RelationalDataContext context) : IPolicyStore
 {
     public Task<(int TotalCount, List<SoftwarePolicyEntry> Items)> ListPoliciesAsync(
-        int skip, int take, string? search, string? classification, CancellationToken cancellationToken) =>
-        context.ListPoliciesAsync(skip, take, search, classification, cancellationToken);
+        int skip,
+        int take,
+        string? search,
+        string? classification,
+        CancellationToken cancellationToken,
+        string? sort = null,
+        bool sortDescending = false) =>
+        context.ListPoliciesAsync(skip, take, search, classification, cancellationToken, sort, sortDescending);
 
     public Task<SoftwarePolicyEntry?> GetPolicyAsync(long id, CancellationToken cancellationToken) =>
         context.GetPolicyAsync(id, cancellationToken);

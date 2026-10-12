@@ -52,7 +52,11 @@
     <thead>
         <tr>
             <th class="check"><input type="checkbox" checked="@AllPageSelected" @onchange="ToggleSelectAll" /></th>
-            <th>이름</th><th>버전</th><th>분류</th><th>PC 수</th><th>회사</th><th>BYO</th><th>미지정</th>
+            <SortHeader Title="이름" Column="@AdminListSort.Name" ActiveColumn="@SortColumn" Descending="SortDescending" OnSort="ToggleSortAsync" />
+            <SortHeader Title="버전" Column="@AdminListSort.Version" ActiveColumn="@SortColumn" Descending="SortDescending" OnSort="ToggleSortAsync" />
+            <SortHeader Title="분류" Column="@AdminListSort.Classification" ActiveColumn="@SortColumn" Descending="SortDescending" OnSort="ToggleSortAsync" />
+            <SortHeader Title="PC 수" Column="@AdminListSort.DeviceCount" ActiveColumn="@SortColumn" Descending="SortDescending" OnSort="ToggleSortAsync" />
+            <th>회사</th><th>BYO</th><th>미지정</th>
         </tr>
     </thead>
     <tbody>

@@ -1,0 +1,23 @@
+<th aria-sort="@AriaSort">
+    <button type="button" class="sort" @onclick="ToggleAsync">
+        @Title
+        @if (Active)
+        {
+            <span class="mark" aria-hidden="true">@(Descending ? "↓" : "↑")</span>
+        }
+    </button>
+</th>
+
+@code {
+    [Parameter, EditorRequired] public string Title { get; set; } = "";
+    [Parameter, EditorRequired] public string Column { get; set; } = "";
+    [Parameter] public string? ActiveColumn { get; set; }
+    [Parameter] public bool Descending { get; set; }
+    [Parameter] public EventCallback<string> OnSort { get; set; }
+
+    private bool Active => string.Equals(ActiveColumn, Column, StringComparison.Ordinal);
+
+    private string AriaSort => Active ? (Descending ? "descending" : "ascending") : "none";
+
+    private Task ToggleAsync() => OnSort.InvokeAsync(Column);
+}

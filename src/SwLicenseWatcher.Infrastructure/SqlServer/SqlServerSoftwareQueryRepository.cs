@@ -11,8 +11,10 @@ internal sealed class SqlServerSoftwareQueryRepository(RelationalDataContext con
         int take,
         string? search,
         string? classification,
-        CancellationToken cancellationToken) =>
-        context.ListSoftwareAsync(skip, take, search, classification, cancellationToken);
+        CancellationToken cancellationToken,
+        string? sort = null,
+        bool sortDescending = false) =>
+        context.ListSoftwareAsync(skip, take, search, classification, cancellationToken, sort, sortDescending);
 
     public Task<(int TotalCount, List<SoftwareDevice> Items)> ListSoftwareDevicesAsync(
         string name,
@@ -27,6 +29,8 @@ internal sealed class SqlServerSoftwareQueryRepository(RelationalDataContext con
         int take,
         string? search,
         string? classification,
-        CancellationToken cancellationToken) =>
-        context.ListSoftwareWithAssetsAsync(skip, take, search, classification, cancellationToken);
+        CancellationToken cancellationToken,
+        string? sort = null,
+        bool sortDescending = false) =>
+        context.ListSoftwareWithAssetsAsync(skip, take, search, classification, cancellationToken, sort, sortDescending);
 }

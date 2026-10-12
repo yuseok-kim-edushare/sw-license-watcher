@@ -35,7 +35,9 @@ public interface IDeviceQuery
         int take,
         string? search,
         int? staleAfterHours,
-        CancellationToken cancellationToken);
+        CancellationToken cancellationToken,
+        string? sort = null,
+        bool sortDescending = false);
 
     Task<DeviceDetail?> GetDeviceAsync(
         string deviceCode,
@@ -73,7 +75,9 @@ public interface ISoftwareQuery
         int take,
         string? search,
         string? classification,
-        CancellationToken cancellationToken);
+        CancellationToken cancellationToken,
+        string? sort = null,
+        bool sortDescending = false);
 
     Task<(int TotalCount, List<SoftwareDevice> Items)> ListSoftwareDevicesAsync(
         string name,
@@ -87,7 +91,9 @@ public interface ISoftwareQuery
         int take,
         string? search,
         string? classification,
-        CancellationToken cancellationToken);
+        CancellationToken cancellationToken,
+        string? sort = null,
+        bool sortDescending = false);
 }
 
 public interface IViolationQuery
@@ -97,7 +103,9 @@ public interface IViolationQuery
         int take,
         string? search,
         DateTimeOffset? since,
-        CancellationToken cancellationToken);
+        CancellationToken cancellationToken,
+        string? sort = null,
+        bool sortDescending = false);
 }
 
 public interface IPolicyStore
@@ -107,7 +115,9 @@ public interface IPolicyStore
         int take,
         string? search,
         string? classification,
-        CancellationToken cancellationToken);
+        CancellationToken cancellationToken,
+        string? sort = null,
+        bool sortDescending = false);
 
     Task<SoftwarePolicyEntry?> GetPolicyAsync(long id, CancellationToken cancellationToken);
 
@@ -159,7 +169,9 @@ public interface IUninstallRequestStore
         int skip,
         int take,
         string? search,
-        CancellationToken cancellationToken);
+        CancellationToken cancellationToken,
+        string? sort = null,
+        bool sortDescending = false);
 
     Task<bool> ApproveUninstallRequestAsync(long id, CancellationToken cancellationToken);
 

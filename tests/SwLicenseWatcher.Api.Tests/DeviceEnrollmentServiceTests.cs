@@ -160,7 +160,13 @@ public class DeviceEnrollmentServiceTests
         public DeviceEnrollmentKeys? Keys { get; set; }
 
         public Task<(int TotalCount, List<DeviceSummary> Items)> ListDevicesAsync(
-            int skip, int take, string? search, int? staleAfterHours, CancellationToken cancellationToken) =>
+            int skip,
+            int take,
+            string? search,
+            int? staleAfterHours,
+            CancellationToken cancellationToken,
+            string? sort = null,
+            bool sortDescending = false) =>
             throw new NotSupportedException();
 
         public Task<DeviceDetail?> GetDeviceAsync(

@@ -78,6 +78,46 @@ public class PolicyQueryApiTests
     }
 
     [Fact]
+    public void TryNormalizeSort_uses_ascending_when_direction_is_missing()
+    {
+        Assert.True(QueryList.TryNormalizeSort(null, null, AdminListSort.Devices, out var column, out var descending, out var error));
+        Assert.Null(column);
+        Assert.False(descending);
+        Assert.Equal(string.Empty, error);
+
+        Assert.True(QueryList.TryNormalizeSort("  ", " ", AdminListSort.Devices, out column, out descending, out error));
+        Assert.Null(column);
+        Assert.False(descending);
+
+        Assert.True(QueryList.TryNormalizeSort(" hostName ", null, AdminListSort.Devices, out column, out descending, out error));
+        Assert.Equal(AdminListSort.HostName, column);
+        Assert.False(descending);
+        Assert.Equal(string.Empty, error);
+
+        Assert.True(QueryList.TryNormalizeSort(AdminListSort.DeviceCount, "DESC", AdminListSort.Software, out column, out descending, out error));
+        Assert.Equal(AdminListSort.DeviceCount, column);
+        Assert.True(descending);
+    }
+
+    [Fact]
+    public void TryNormalizeSort_rejects_unknown_columns_and_directions()
+    {
+        Assert.False(QueryList.TryNormalizeSort("companyCount", "asc", AdminListSort.Software, out var column, out var descending, out var error));
+        Assert.Null(column);
+        Assert.False(descending);
+        Assert.Equal("sort is not a supported column.", error);
+
+        Assert.False(QueryList.TryNormalizeSort(AdminListSort.HostName, "sideways", AdminListSort.Devices, out column, out descending, out error));
+        Assert.Null(column);
+        Assert.False(descending);
+        Assert.Equal("dir must be asc or desc.", error);
+
+        Assert.False(QueryList.TryNormalizeSort(null, "desc", AdminListSort.Devices, out column, out _, out error));
+        Assert.Null(column);
+        Assert.Equal("dir requires sort.", error);
+    }
+
+    [Fact]
     public void NormalizePaging_uses_inventory_defaults_and_clamps()
     {
         Assert.Equal((0, QueryList.DefaultTake), QueryList.NormalizePaging(null, null, csv: false));

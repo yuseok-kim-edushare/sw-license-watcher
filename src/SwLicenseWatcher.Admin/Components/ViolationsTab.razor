@@ -17,7 +17,18 @@
 }
 <p class="meta">@Meta</p>
 <table class="data">
-    <thead><tr><th>PC</th><th>PC 명</th><th>소프트웨어</th><th>버전</th><th>정책</th><th>분류</th><th>최초 적발</th><th>마지막 발견</th></tr></thead>
+    <thead>
+        <tr>
+            <SortHeader Title="PC" Column="@AdminListSort.DeviceCode" ActiveColumn="@SortColumn" Descending="SortDescending" OnSort="ToggleSortAsync" />
+            <SortHeader Title="PC 명" Column="@AdminListSort.HostName" ActiveColumn="@SortColumn" Descending="SortDescending" OnSort="ToggleSortAsync" />
+            <SortHeader Title="소프트웨어" Column="@AdminListSort.SoftwareName" ActiveColumn="@SortColumn" Descending="SortDescending" OnSort="ToggleSortAsync" />
+            <SortHeader Title="버전" Column="@AdminListSort.SoftwareVersion" ActiveColumn="@SortColumn" Descending="SortDescending" OnSort="ToggleSortAsync" />
+            <SortHeader Title="정책" Column="@AdminListSort.PolicyProductName" ActiveColumn="@SortColumn" Descending="SortDescending" OnSort="ToggleSortAsync" />
+            <SortHeader Title="분류" Column="@AdminListSort.Classification" ActiveColumn="@SortColumn" Descending="SortDescending" OnSort="ToggleSortAsync" />
+            <SortHeader Title="최초 적발" Column="@AdminListSort.DetectedAtUtc" ActiveColumn="@SortColumn" Descending="SortDescending" OnSort="ToggleSortAsync" />
+            <SortHeader Title="마지막 발견" Column="@AdminListSort.LastSeenAtUtc" ActiveColumn="@SortColumn" Descending="SortDescending" OnSort="ToggleSortAsync" />
+        </tr>
+    </thead>
     <tbody>
         @if (_violations.Count == 0)
         {

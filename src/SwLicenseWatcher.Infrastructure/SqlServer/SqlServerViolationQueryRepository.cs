@@ -11,6 +11,8 @@ internal sealed class SqlServerViolationQueryRepository(RelationalDataContext co
         int take,
         string? search,
         DateTimeOffset? since,
-        CancellationToken cancellationToken) =>
-        context.ListViolationsAsync(skip, take, search, since, cancellationToken);
+        CancellationToken cancellationToken,
+        string? sort = null,
+        bool sortDescending = false) =>
+        context.ListViolationsAsync(skip, take, search, since, cancellationToken, sort, sortDescending);
 }

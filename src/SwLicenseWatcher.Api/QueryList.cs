@@ -56,4 +56,52 @@ internal static class QueryList
         error = string.Empty;
         return true;
     }
+
+    internal static bool TryNormalizeSort(
+        string? sort,
+        string? direction,
+        IReadOnlySet<string> allowedColumns,
+        out string? column,
+        out bool descending,
+        out string error)
+    {
+        column = null;
+        descending = false;
+        if (string.IsNullOrWhiteSpace(sort))
+        {
+            if (!string.IsNullOrWhiteSpace(direction))
+            {
+                error = "dir requires sort.";
+                return false;
+            }
+
+            error = string.Empty;
+            return true;
+        }
+
+        var normalized = sort.Trim();
+        if (!allowedColumns.Contains(normalized))
+        {
+            error = "sort is not a supported column.";
+            return false;
+        }
+
+        if (string.IsNullOrWhiteSpace(direction) || direction.Trim().Equals("asc", StringComparison.OrdinalIgnoreCase))
+        {
+            column = normalized;
+            error = string.Empty;
+            return true;
+        }
+
+        if (direction.Trim().Equals("desc", StringComparison.OrdinalIgnoreCase))
+        {
+            column = normalized;
+            descending = true;
+            error = string.Empty;
+            return true;
+        }
+
+        error = "dir must be asc or desc.";
+        return false;
+    }
 }

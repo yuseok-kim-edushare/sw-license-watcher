@@ -19,6 +19,8 @@ internal static class InventoryQueryApi
             string? search,
             int? staleAfterHours,
             string? format,
+            string? sort,
+            string? dir,
             CancellationToken cancellationToken) =>
         {
             if (staleAfterHours is < 1)
@@ -31,10 +33,15 @@ internal static class InventoryQueryApi
                 return Results.BadRequest(searchError);
             }
 
+            if (!QueryList.TryNormalizeSort(sort, dir, AdminListSort.Devices, out var sortColumn, out var sortDescending, out var sortError))
+            {
+                return Results.BadRequest(sortError);
+            }
+
             var csv = QueryList.WantsCsv(format);
             var (normalizedSkip, normalizedTake) = QueryList.NormalizePaging(skip, take, csv);
             var (totalCount, items) = await repository.ListDevicesAsync(
-                normalizedSkip, normalizedTake, search, staleAfterHours, cancellationToken);
+                normalizedSkip, normalizedTake, search, staleAfterHours, cancellationToken, sortColumn, sortDescending);
 
             if (csv)
             {
@@ -68,6 +75,8 @@ internal static class InventoryQueryApi
             string? search,
             string? classification,
             string? format,
+            string? sort,
+            string? dir,
             CancellationToken cancellationToken) =>
         {
             if (!QueryList.TryValidateSearch(search, out var searchError))
@@ -80,12 +89,17 @@ internal static class InventoryQueryApi
                 return Results.BadRequest(classificationError);
             }
 
+            if (!QueryList.TryNormalizeSort(sort, dir, AdminListSort.Software, out var sortColumn, out var sortDescending, out var sortError))
+            {
+                return Results.BadRequest(sortError);
+            }
+
             var csv = QueryList.WantsCsv(format);
             var (normalizedSkip, normalizedTake) = QueryList.NormalizePaging(skip, take, csv);
             if (csv)
             {
                 var (_, rows) = await repository.ListSoftwareWithAssetsAsync(
-                    normalizedSkip, normalizedTake, search, normalizedClassification, cancellationToken);
+                    normalizedSkip, normalizedTake, search, normalizedClassification, cancellationToken, sortColumn, sortDescending);
                 return InventoryCsv.File(
                     "software.csv",
                     ["Name", "Version", "Classification", "DeviceCount", "CompanyCount", "ByoCount", "UnassignedCount", "DeviceCodes", "DeviceNames"],
@@ -93,7 +107,7 @@ internal static class InventoryQueryApi
             }
 
             var (totalCount, items) = await repository.ListSoftwareAsync(
-                normalizedSkip, normalizedTake, search, normalizedClassification, cancellationToken);
+                normalizedSkip, normalizedTake, search, normalizedClassification, cancellationToken, sortColumn, sortDescending);
             return Results.Ok(new SoftwareAggregateListResponse(normalizedSkip, normalizedTake, totalCount, items));
         });
 

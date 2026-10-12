@@ -11,8 +11,10 @@ internal sealed class SqlServerDeviceQueryRepository(RelationalDataContext conte
         int take,
         string? search,
         int? staleAfterHours,
-        CancellationToken cancellationToken) =>
-        context.ListDevicesAsync(skip, take, search, staleAfterHours, cancellationToken);
+        CancellationToken cancellationToken,
+        string? sort = null,
+        bool sortDescending = false) =>
+        context.ListDevicesAsync(skip, take, search, staleAfterHours, cancellationToken, sort, sortDescending);
 
     public Task<DeviceDetail?> GetDeviceAsync(
         string deviceCode,

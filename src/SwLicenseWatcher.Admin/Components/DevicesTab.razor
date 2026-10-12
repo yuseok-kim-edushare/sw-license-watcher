@@ -34,7 +34,17 @@
 <p class="meta">@Meta</p>
 
 <table class="data">
-    <thead><tr><th>자산코드</th><th>PC 명</th><th>도메인</th><th>OS</th><th>에이전트</th><th>heartbeat</th><th>inventory</th></tr></thead>
+    <thead>
+        <tr>
+            <SortHeader Title="자산코드" Column="@AdminListSort.DeviceCode" ActiveColumn="@SortColumn" Descending="SortDescending" OnSort="ToggleSortAsync" />
+            <SortHeader Title="PC 명" Column="@AdminListSort.HostName" ActiveColumn="@SortColumn" Descending="SortDescending" OnSort="ToggleSortAsync" />
+            <SortHeader Title="도메인" Column="@AdminListSort.DomainName" ActiveColumn="@SortColumn" Descending="SortDescending" OnSort="ToggleSortAsync" />
+            <SortHeader Title="OS" Column="@AdminListSort.OperatingSystem" ActiveColumn="@SortColumn" Descending="SortDescending" OnSort="ToggleSortAsync" />
+            <SortHeader Title="에이전트" Column="@AdminListSort.AgentVersion" ActiveColumn="@SortColumn" Descending="SortDescending" OnSort="ToggleSortAsync" />
+            <SortHeader Title="heartbeat" Column="@AdminListSort.LastHeartbeatUtc" ActiveColumn="@SortColumn" Descending="SortDescending" OnSort="ToggleSortAsync" />
+            <SortHeader Title="inventory" Column="@AdminListSort.LastInventoryUtc" ActiveColumn="@SortColumn" Descending="SortDescending" OnSort="ToggleSortAsync" />
+        </tr>
+    </thead>
     <tbody>
         @if (_devices.Count == 0)
         {

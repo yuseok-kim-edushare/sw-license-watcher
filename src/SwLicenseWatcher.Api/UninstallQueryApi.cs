@@ -113,6 +113,8 @@ internal static class UninstallQueryApi
             int? skip,
             int? take,
             string? search,
+            string? sort,
+            string? dir,
             CancellationToken cancellationToken) =>
         {
             if (!QueryList.TryValidateSearch(search, out var searchError))
@@ -120,9 +122,14 @@ internal static class UninstallQueryApi
                 return Results.BadRequest(searchError);
             }
 
+            if (!QueryList.TryNormalizeSort(sort, dir, AdminListSort.UninstallRequests, out var sortColumn, out var sortDescending, out var sortError))
+            {
+                return Results.BadRequest(sortError);
+            }
+
             var (normalizedSkip, normalizedTake) = QueryList.NormalizePaging(skip, take, csv: false);
             var (totalCount, items) = await repository.ListUninstallRequestsAsync(
-                normalizedSkip, normalizedTake, search, cancellationToken);
+                normalizedSkip, normalizedTake, search, cancellationToken, sortColumn, sortDescending);
             return Results.Ok(new UninstallRequestListResponse(normalizedSkip, normalizedTake, totalCount, items));
         });
 

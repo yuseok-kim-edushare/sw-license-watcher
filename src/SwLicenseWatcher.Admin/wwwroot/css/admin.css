@@ -201,6 +201,19 @@ table.data th, table.data td {
   text-overflow: ellipsis;
 }
 table.data th { background: #eef1f5; font-weight: 600; }
+table.data button.sort {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  font-weight: 600;
+  white-space: nowrap;
+}
+table.data button.sort:hover:not(:disabled) { background: transparent; }
+table.data button.sort .mark { color: var(--accent); font-size: 11px; }
 table.data th.check, table.data td.check {
   width: 36px;
   max-width: 36px;

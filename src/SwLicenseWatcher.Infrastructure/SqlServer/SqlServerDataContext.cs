@@ -357,6 +357,11 @@ public sealed partial class RelationalDataContext
 
     internal string Name(params string[] parts) => dialect.QuoteQualified(parts);
 
+    private static string OrderByColumn(string? expression, bool descending, string fallback) =>
+        string.IsNullOrEmpty(expression)
+            ? fallback
+            : $"{expression} {(descending ? "DESC" : "ASC")}, {fallback}";
+
     internal string DisplayHostNameSql(string? tableAlias = null)
     {
         var table = options.PcTable;

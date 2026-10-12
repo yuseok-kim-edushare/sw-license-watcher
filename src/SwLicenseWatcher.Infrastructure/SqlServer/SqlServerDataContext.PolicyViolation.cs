@@ -13,11 +13,13 @@ public sealed partial class RelationalDataContext
         int take,
         string? search,
         string? classification,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        string? sort = null,
+        bool sortDescending = false)
     {
         await using var connection = CreateConnection();
         await connection.OpenAsync(cancellationToken);
-        await using var command = CreateCommand(connection, null, BuildListPoliciesSql());
+        await using var command = CreateCommand(connection, null, BuildListPoliciesSql(sort, sortDescending));
         Bind(command, ("@search", DbValue(ToContainsPattern(search))));
         Bind(command, ("@classification", DbValue(classification)));
         Bind(command, ("@skip", skip));
@@ -220,11 +222,13 @@ public sealed partial class RelationalDataContext
         int take,
         string? search,
         DateTimeOffset? since,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        string? sort = null,
+        bool sortDescending = false)
     {
         await using var connection = CreateConnection();
         await connection.OpenAsync(cancellationToken);
-        await using var command = CreateCommand(connection, null, BuildListViolationsSql());
+        await using var command = CreateCommand(connection, null, BuildListViolationsSql(sort, sortDescending));
         Bind(command, ("@search", DbValue(ToContainsPattern(search))));
         Bind(command, ("@since", DbValue(since)));
         Bind(command, ("@skip", skip));
@@ -605,29 +609,47 @@ public sealed partial class RelationalDataContext
             """;
     }
 
-    internal string BuildListPoliciesSql()
+    internal string BuildListPoliciesSql(string? sort = null, bool sortDescending = false)
     {
         var table = options.SoftwarePolicyTable;
+        var id = Name(table.PrimaryKeyColumn);
+        var productName = Name(table.ProductNameColumn);
+        var orderBy = OrderByColumn(PolicyOrderExpression(table, sort), sortDescending, $"{productName}, {id}");
         return $"""
             SELECT
                 COUNT(*) OVER() AS total_count,
                 {PolicySelectList()}
             FROM {Name(options.SchemaName, table.TableName)}
             WHERE (@search IS NULL
-                OR {Name(table.ProductNameColumn)} LIKE @search{LikeEscape}
+                OR {productName} LIKE @search{LikeEscape}
                 OR {Name(table.VersionPatternColumn)} LIKE @search{LikeEscape}
                 OR {Name(table.PublisherColumn)} LIKE @search{LikeEscape})
               AND (@classification IS NULL OR {Name(table.ClassificationColumn)} = @classification)
-            ORDER BY {Name(table.ProductNameColumn)}, {Name(table.PrimaryKeyColumn)}
+            ORDER BY {orderBy}
             {Pagination};
             """;
     }
 
-    internal string BuildListViolationsSql()
+    private string? PolicyOrderExpression(SoftwarePolicyTableOptions table, string? sort) => sort switch
+    {
+        AdminListSort.Id => Name(table.PrimaryKeyColumn),
+        AdminListSort.ProductName => Name(table.ProductNameColumn),
+        AdminListSort.Publisher => Name(table.PublisherColumn),
+        AdminListSort.VersionPattern => Name(table.VersionPatternColumn),
+        AdminListSort.Classification => Name(table.ClassificationColumn),
+        AdminListSort.DefaultLicenseSource => Name(table.DefaultLicenseSourceColumn),
+        AdminListSort.Enabled => Name(table.EnabledColumn),
+        AdminListSort.UpdatedAtUtc => Name(table.UpdatedAtUtcColumn),
+        _ => null
+    };
+
+    internal string BuildListViolationsSql(string? sort = null, bool sortDescending = false)
     {
         var violation = options.SoftwareViolationTable;
         var pc = options.PcTable;
         var policy = options.SoftwarePolicyTable;
+        var fallback = $"v.{Name(violation.LastSeenAtUtcColumn)} DESC, v.{Name(violation.PrimaryKeyColumn)} DESC";
+        var orderBy = OrderByColumn(ViolationOrderExpression(violation, pc, policy, sort), sortDescending, fallback);
         return $"""
             SELECT
                 COUNT(*) OVER() AS total_count,
@@ -651,10 +673,27 @@ public sealed partial class RelationalDataContext
                 OR {HostNameSearchSql("p")}
                 OR v.{Name(violation.DisplayNameColumn)} LIKE @search{LikeEscape})
               AND (@since IS NULL OR v.{Name(violation.DetectedAtUtcColumn)} >= @since)
-            ORDER BY v.{Name(violation.LastSeenAtUtcColumn)} DESC, v.{Name(violation.PrimaryKeyColumn)} DESC
+            ORDER BY {orderBy}
             {Pagination};
             """;
     }
+
+    private string? ViolationOrderExpression(
+        SoftwareViolationTableOptions violation,
+        PcTableOptions pc,
+        SoftwarePolicyTableOptions policy,
+        string? sort) => sort switch
+    {
+        AdminListSort.DeviceCode => $"p.{Name(pc.DeviceCodeColumn)}",
+        AdminListSort.HostName => DisplayHostNameSql("p"),
+        AdminListSort.SoftwareName => $"v.{Name(violation.DisplayNameColumn)}",
+        AdminListSort.SoftwareVersion => $"v.{Name(violation.DisplayVersionColumn)}",
+        AdminListSort.PolicyProductName => $"pol.{Name(policy.ProductNameColumn)}",
+        AdminListSort.Classification => $"pol.{Name(policy.ClassificationColumn)}",
+        AdminListSort.DetectedAtUtc => $"v.{Name(violation.DetectedAtUtcColumn)}",
+        AdminListSort.LastSeenAtUtc => $"v.{Name(violation.LastSeenAtUtcColumn)}",
+        _ => null
+    };
 
     private string PolicySelectList(string? qualifier = null)
     {

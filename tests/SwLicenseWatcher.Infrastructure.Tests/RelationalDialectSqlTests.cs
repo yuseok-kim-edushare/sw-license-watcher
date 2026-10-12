@@ -50,6 +50,11 @@ public class RelationalDialectSqlTests
         Assert.Contains("DELETE FROM", context.BuildClearRecoveredStaleHeartbeatNotificationsSql(), StringComparison.Ordinal);
         Assert.DoesNotContain("DELETE n", context.BuildClearRecoveredStaleHeartbeatNotificationsSql(), StringComparison.Ordinal);
         Assert.Contains("OFFSET @skip ROWS FETCH NEXT @take ROWS ONLY", context.BuildListPoliciesSql(), StringComparison.Ordinal);
+        var software = context.BuildListSoftwareWithAssetsSql();
+        Assert.Contains("NULLS FIRST", software, StringComparison.Ordinal);
+        var sorted = context.BuildListSoftwareWithAssetsSql(AdminListSort.Name, sortDescending: false);
+        Assert.Contains("\"display_name\" ASC", sorted, StringComparison.Ordinal);
+        Assert.Contains("NULLS FIRST", sorted, StringComparison.Ordinal);
         Assert.Contains("= TRUE", context.BuildFindEnabledExactNamePolicySql(), StringComparison.Ordinal);
     }
 
