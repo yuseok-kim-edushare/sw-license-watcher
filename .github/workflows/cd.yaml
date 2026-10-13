@@ -389,13 +389,13 @@ jobs:
           }
 
       - name: Download Windows publish
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           name: windows-publish
           path: publish
 
       - name: Download Linux API
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           name: api-linux-x64
           path: publish/api/linux-x64
