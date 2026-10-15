@@ -362,6 +362,9 @@ jobs:
         with:
           name: windows-publish
           path: publish
+          # .version is a dotfile. upload-artifact omits those unless this is set,
+          # and a missing file makes the agent identify itself as 0.0.0.
+          include-hidden-files: true
           if-no-files-found: error
 
   package:
@@ -399,6 +402,30 @@ jobs:
         with:
           name: api-linux-x64
           path: publish/api/linux-x64
+
+      - name: Stamp agent version files
+        shell: pwsh
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:new_release)) {
+            throw "new_release is not set."
+          }
+
+          $utf8NoBom = New-Object System.Text.UTF8Encoding $false
+          foreach ($relative in @("publish\agent-worker\win-x64", "publish\agent-watchdog\win-x64")) {
+            $dir = Join-Path "${{ github.workspace }}" $relative
+            if (!(Test-Path -LiteralPath $dir)) {
+              throw "Publish output not found at: $dir"
+            }
+
+            $path = Join-Path $dir ".version"
+            [System.IO.File]::WriteAllText($path, $env:new_release, $utf8NoBom)
+            $written = [System.IO.File]::ReadAllText($path).Trim()
+            if ($written -ne $env:new_release) {
+              throw "Expected $path to contain '$($env:new_release)' but found '$written'."
+            }
+
+            Write-Host "Stamped $path as $written"
+          }
 
       - name: Prepare release files
         shell: pwsh

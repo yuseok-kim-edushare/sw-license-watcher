@@ -1,4 +1,5 @@
 using System.IO.Compression;
+using SwLicenseWatcher.Core;
 
 namespace SwLicenseWatcher.Setup.Core;
 
@@ -70,13 +71,13 @@ public static class ReleaseLayout
         if (File.Exists(versionFile))
         {
             var version = File.ReadAllText(versionFile).Trim();
-            if (version.Length > 0)
+            if (ExecutableVersion.Normalize(version) is not null)
             {
                 return version;
             }
         }
 
-        return "0.0.0";
+        return ExecutableVersion.TryRead(Path.Combine(workerDirectory, PayloadLayout.WorkerExe)) ?? "0.0.0";
     }
 
     public static string ExtractAgentsFromReleaseZip(string zipPath, string destinationDirectory)

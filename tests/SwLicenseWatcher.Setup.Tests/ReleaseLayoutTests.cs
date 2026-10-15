@@ -1,4 +1,5 @@
 using System.IO.Compression;
+using SwLicenseWatcher.Core;
 using SwLicenseWatcher.Setup.Core;
 
 namespace SwLicenseWatcher.Setup.Tests;
@@ -42,6 +43,31 @@ public class ReleaseLayoutTests
         ReleaseLayout.ExtractAgentsFromReleaseZip(zipPath, extracted);
         Assert.True(ReleaseLayout.TryFindAgents(extracted, out var worker, out _));
         Assert.Equal("1.0.0", ReleaseLayout.ReadVersion(worker));
+    }
+
+    [Fact]
+    public void Zero_version_file_falls_back_to_the_worker_executable()
+    {
+        using var dir = new TempDirectory();
+        var worker = Path.Combine(dir.Path, "agent-worker", "win-x64");
+        Directory.CreateDirectory(worker);
+        var source = typeof(ReleaseLayoutTests).Assembly.Location;
+        var expected = ExecutableVersion.TryRead(source);
+        Assert.NotNull(expected);
+        File.Copy(source, Path.Combine(worker, PayloadLayout.WorkerExe));
+        File.WriteAllText(Path.Combine(worker, PayloadLayout.VersionFileName), "0.0.0");
+
+        Assert.Equal(expected, ReleaseLayout.ReadVersion(worker));
+    }
+
+    [Fact]
+    public void Missing_version_file_and_unversioned_executable_stays_zero()
+    {
+        using var dir = new TempDirectory();
+        var worker = dir.Path;
+        File.WriteAllText(Path.Combine(worker, PayloadLayout.WorkerExe), "not a pe");
+
+        Assert.Equal("0.0.0", ReleaseLayout.ReadVersion(worker));
     }
 
     private static void Write(ZipArchive archive, string name, string content)

@@ -169,7 +169,7 @@ public sealed class Worker(
             if (File.Exists(versionFile))
             {
                 var installedVersion = File.ReadAllText(versionFile).Trim();
-                if (!string.IsNullOrEmpty(installedVersion))
+                if (ExecutableVersion.Normalize(installedVersion) is not null)
                 {
                     return installedVersion;
                 }
@@ -180,7 +180,11 @@ public sealed class Worker(
             logger.LogDebug(ex, "Unable to read the installed version from {VersionFile}.", versionFile);
         }
 
-        return typeof(Worker).Assembly.GetName().Version?.ToString() ?? "1.0.0";
+        // Setup records 0.0.0 when the release package has no .version file.
+        // The publish still embeds the real version in the executable.
+        return ExecutableVersion.TryRead(Environment.ProcessPath)
+            ?? ExecutableVersion.Normalize(typeof(Worker).Assembly.GetName().Version?.ToString())
+            ?? "1.0.0";
     }
 
     private async Task<InventoryIngestionRequest> CollectSnapshotAsync(WorkerAgentOptions agentOptions, CancellationToken cancellationToken)
