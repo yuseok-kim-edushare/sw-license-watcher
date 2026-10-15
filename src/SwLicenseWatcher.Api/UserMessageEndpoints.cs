@@ -97,6 +97,7 @@ internal static class UserMessageEndpoints
             IUserMessageStore store,
             UserMessageEventHub hub,
             DeviceEnrollmentService enrollment,
+            IHostApplicationLifetime lifetime,
             CancellationToken cancellationToken) =>
         {
             if (!UninstallQueryApi.TryValidateDeviceCode(deviceCode, out var normalizedDeviceCode, out var error))
@@ -127,7 +128,10 @@ internal static class UserMessageEndpoints
                 await WriteUserMessageAsync(http, message, cancellationToken);
             }
 
-            using var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, http.RequestAborted);
+            using var linked = CancellationTokenSource.CreateLinkedTokenSource(
+                cancellationToken,
+                http.RequestAborted,
+                lifetime.ApplicationStopping);
             var ct = linked.Token;
             await using var enumerator = hub.Subscribe(normalizedDeviceCode, ct).GetAsyncEnumerator(ct);
             try

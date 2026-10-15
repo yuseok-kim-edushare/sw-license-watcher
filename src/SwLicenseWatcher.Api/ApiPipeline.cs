@@ -9,6 +9,8 @@ internal static class ApiPipeline
 {
     internal static WebApplication UseApiPipeline(this WebApplication app)
     {
+        app.Lifetime.ApplicationStopping.Register(() =>
+            app.Services.GetRequiredService<UserMessageEventHub>().CompleteAll());
         app.Use(ExceptionHandlingMiddleware.InvokeAsync);
         app.Use(RequestPolicyMiddleware.InvokeAsync);
         app.UseAdminDashboard();

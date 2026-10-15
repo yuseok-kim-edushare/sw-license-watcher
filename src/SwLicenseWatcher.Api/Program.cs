@@ -17,6 +17,9 @@ if (OperatingSystem.IsWindows())
 {
     builder.Services.AddWindowsService(options => options.ServiceName = "SwLicenseWatcher.Api");
 }
+
+builder.Services.Configure<HostOptions>(options =>
+    options.ShutdownTimeout = TimeSpan.FromSeconds(2));
 builder.Services
     .AddApiOptions(builder.Configuration)
     .AddApiServices();

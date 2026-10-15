@@ -55,4 +55,15 @@ internal sealed class UserMessageEventHub
             }
         }
     }
+
+    public void CompleteAll()
+    {
+        foreach (var bucket in _subscribers.Values)
+        {
+            foreach (var channel in bucket.Values)
+            {
+                channel.Writer.TryComplete();
+            }
+        }
+    }
 }
