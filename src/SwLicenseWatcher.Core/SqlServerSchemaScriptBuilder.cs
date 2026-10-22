@@ -183,8 +183,11 @@ public sealed class SqlServerSchemaScriptBuilder : ISchemaScriptBuilder
         AppendDropDeviceCodeUniqueConstraint(sql, schema, pc);
         AppendUniqueIndexIfMissing(sql, schema, pc.TableName, pc.DeviceIdColumn);
         AppendUniqueIndexIfMissing(sql, schema, pc.TableName, pc.AssignedDeviceCodeColumn);
-        AppendUniqueIndexIfMissing(sql, schema, pc.TableName, pc.DeviceKeySha256Column);
         AppendIndexIfMissing(sql, schema, pc.TableName, pc.DeviceCodeColumn);
+        // SQL Server binds new column names when it compiles a batch. The index and
+        // backfill must run after the ALTER TABLE above has been executed.
+        sql.AppendLine("GO");
+        AppendUniqueIndexIfMissing(sql, schema, pc.TableName, pc.DeviceKeySha256Column);
         AppendBackfillInstalledAt(sql, schema, pc);
         AppendBackfillDeviceKeySha256(sql, schema, pc);
         AppendIndexIfMissing(sql, schema, installedSoftware.TableName, installedSoftware.PcForeignKeyColumn);

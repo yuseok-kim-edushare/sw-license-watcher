@@ -36,7 +36,14 @@ public class RelationalSchemaApplicatorTests
         var options = new SqlServerStorageOptions { SchemaName = "inventory" };
         var batches = CreateApplicator(options, applyOnStartup: false).BuildBatches();
 
-        var sql = Assert.Single(batches);
+        Assert.Equal(2, batches.Count);
+        var sql = string.Join('\n', batches);
+        Assert.Contains("ALTER TABLE [inventory].[pc_entity] ADD [installed_at_utc] DATETIMEOFFSET NULL;", batches[0], StringComparison.Ordinal);
+        Assert.Contains("ALTER TABLE [inventory].[pc_entity] ADD [device_key_sha256] CHAR(64) NULL;", batches[0], StringComparison.Ordinal);
+        Assert.DoesNotContain("UPDATE [inventory].[pc_entity]", batches[0], StringComparison.Ordinal);
+        Assert.DoesNotContain("UX_pc_entity_device_key_sha256", batches[0], StringComparison.Ordinal);
+        Assert.Contains("UPDATE [inventory].[pc_entity]", batches[1], StringComparison.Ordinal);
+        Assert.Contains("CREATE UNIQUE INDEX [UX_pc_entity_device_key_sha256]", batches[1], StringComparison.Ordinal);
         Assert.Contains("IF SCHEMA_ID(N'inventory') IS NULL", sql, StringComparison.Ordinal);
         Assert.Contains("IF OBJECT_ID(N'[inventory].[pc_entity]', N'U') IS NULL", sql, StringComparison.Ordinal);
         Assert.Contains("CREATE TABLE [inventory].[pc_entity]", sql, StringComparison.Ordinal);
