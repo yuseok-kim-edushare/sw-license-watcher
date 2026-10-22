@@ -236,7 +236,8 @@ public class SqlServerInventorySqlTests
         Assert.Contains("TOP (@take)", sql, StringComparison.Ordinal);
         Assert.Contains("[status] = @status", sql, StringComparison.Ordinal);
         Assert.Contains("ORDER BY m.[created_at_utc], m.[user_message_id]", sql, StringComparison.Ordinal);
-        Assert.Contains("p.[device_code] = @deviceCode", sql, StringComparison.Ordinal);
+        Assert.Contains("chosen.[device_code] = @deviceCode", sql, StringComparison.Ordinal);
+        Assert.Contains("chosen.[superseded_at_utc] IS NULL", sql, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -253,7 +254,8 @@ public class SqlServerInventorySqlTests
     {
         var sql = new RelationalDataContext(new SqlServerStorageOptions()).BuildBroadcastUserMessagesSql();
         Assert.Contains("MERGE [inventory].[pc_user_message]", sql, StringComparison.Ordinal);
-        Assert.Contains("USING [inventory].[pc_entity] AS p", sql, StringComparison.Ordinal);
+        Assert.Contains("FROM [inventory].[pc_entity]", sql, StringComparison.Ordinal);
+        Assert.Contains("[superseded_at_utc] IS NULL", sql, StringComparison.Ordinal);
         Assert.Contains("ON 1 = 0", sql, StringComparison.Ordinal);
     }
 
@@ -261,7 +263,7 @@ public class SqlServerInventorySqlTests
     public void BuildGetAgentUninstallRequestSql_binds_request_to_device_code()
     {
         var sql = new RelationalDataContext(new SqlServerStorageOptions()).BuildGetAgentUninstallRequestSql();
-        Assert.Contains("p.[device_code] = @deviceCode", sql, StringComparison.Ordinal);
+        Assert.Contains("chosen.[device_code] = @deviceCode", sql, StringComparison.Ordinal);
         Assert.Contains("r.[uninstall_request_id] = @id", sql, StringComparison.Ordinal);
         Assert.Contains("r.[code]", sql, StringComparison.Ordinal);
         Assert.Contains("r.[code_hash]", sql, StringComparison.Ordinal);
@@ -402,11 +404,11 @@ public class SqlServerInventorySqlTests
             context.BuildListDevicesSql(),
             StringComparison.Ordinal);
         Assert.Contains(
-            "ORDER BY [display_name], [display_version], [classification]",
+            "ORDER BY s.[display_name], s.[display_version], s.[classification]",
             context.BuildListSoftwareSql(),
             StringComparison.Ordinal);
         Assert.Contains(
-            "ROW_NUMBER() OVER(ORDER BY [display_name], [display_version], [classification])",
+            "ROW_NUMBER() OVER(ORDER BY s.[display_name], s.[display_version], s.[classification])",
             context.BuildListSoftwareWithAssetsSql(),
             StringComparison.Ordinal);
         Assert.Contains(
@@ -432,11 +434,11 @@ public class SqlServerInventorySqlTests
             context.BuildListDevicesSql(AdminListSort.LastHeartbeatUtc, sortDescending: true),
             StringComparison.Ordinal);
         Assert.Contains(
-            "ORDER BY COUNT(DISTINCT [pc_id]) DESC, [display_name], [display_version], [classification]",
+            "ORDER BY COUNT(DISTINCT s.[pc_id]) DESC, s.[display_name], s.[display_version], s.[classification]",
             context.BuildListSoftwareSql(AdminListSort.DeviceCount, sortDescending: true),
             StringComparison.Ordinal);
         Assert.Contains(
-            "ROW_NUMBER() OVER(ORDER BY COUNT(DISTINCT [pc_id]) ASC, [display_name], [display_version], [classification])",
+            "ROW_NUMBER() OVER(ORDER BY COUNT(DISTINCT s.[pc_id]) ASC, s.[display_name], s.[display_version], s.[classification])",
             context.BuildListSoftwareWithAssetsSql(AdminListSort.DeviceCount, sortDescending: false),
             StringComparison.Ordinal);
         Assert.Contains(
@@ -467,7 +469,7 @@ public class SqlServerInventorySqlTests
 
         var software = context.BuildListSoftwareSql("companyCount", sortDescending: true);
         Assert.Contains(
-            "ORDER BY [display_name], [display_version], [classification]",
+            "ORDER BY s.[display_name], s.[display_version], s.[classification]",
             software,
             StringComparison.Ordinal);
         Assert.DoesNotContain("companyCount", software, StringComparison.Ordinal);

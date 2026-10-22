@@ -299,14 +299,77 @@ public abstract class RelationalInventoryTests
         Assert.Contains(broadcast, item => item.DeviceAliases.Contains(deviceCode, StringComparer.OrdinalIgnoreCase));
     }
 
+    [Fact]
+    public async Task Same_asset_code_with_a_new_key_keeps_the_previous_installation()
+    {
+        EnsureAvailable();
+        var token = TestContext.Current.CancellationToken;
+        var deviceCode = Unique("PC");
+        var firstCollected = new DateTimeOffset(2026, 10, 2, 1, 0, 0, TimeSpan.Zero);
+        var firstKey = "first-key-" + deviceCode;
+        var secondKey = "second-key-" + deviceCode;
+        var oldSoftware = "Old-" + deviceCode;
+        var newSoftware = "New-" + deviceCode;
+
+        Assert.True((await Context.SaveSnapshotAsync(
+            Snapshot(deviceCode, firstCollected, firstKey, Software(oldSoftware, "1")),
+            token)).Applied);
+        var installedAt = new DateTimeOffset(2026, 10, 2, 1, 5, 0, TimeSpan.Zero);
+        await Context.BindDeviceEnrollmentAsync(deviceCode, null, firstKey, "{}", "id-old-" + deviceCode, token, installedAt);
+
+        Assert.True((await Context.SaveSnapshotAsync(
+            Snapshot(deviceCode, firstCollected.AddHours(-3), secondKey, Software(newSoftware, "2")),
+            token)).Applied);
+
+        var listed = await Context.ListDevicesAsync(0, 10, deviceCode, staleAfterHours: null, token);
+        Assert.Equal(2, listed.TotalCount);
+        Assert.Contains(listed.Items, device => device.SupersededAtUtc is not null && device.InstalledAtUtc == installedAt);
+        Assert.Contains(listed.Items, device => device.SupersededAtUtc is null && device.InstalledAtUtc is null);
+
+        var current = await Context.GetDeviceAsync(deviceCode, classification: null, token);
+        Assert.Equal(newSoftware, Assert.Single(current!.InstalledSoftware).Name);
+        Assert.Null(current.SupersededAtUtc);
+
+        var previous = await Context.GetDeviceAsync("id-old-" + deviceCode, classification: null, token);
+        Assert.Equal(oldSoftware, Assert.Single(previous!.InstalledSoftware).Name);
+        Assert.NotNull(previous.SupersededAtUtc);
+        Assert.Equal(installedAt, previous.InstalledAtUtc);
+
+        await Context.BindDeviceEnrollmentAsync(
+            deviceCode, null, secondKey, "{}", "id-new-" + deviceCode, token, installedAt.AddHours(4));
+        await Context.BindDeviceEnrollmentAsync(
+            deviceCode, null, secondKey, "{}", "id-new-" + deviceCode, token, installedAt.AddHours(8));
+        current = await Context.GetDeviceAsync(deviceCode, classification: null, token);
+        Assert.Equal(installedAt.AddHours(4), current!.InstalledAtUtc);
+        Assert.Equal("id-new-" + deviceCode, current.DeviceId);
+
+        var oldOnly = await Context.ListSoftwareAsync(0, 10, oldSoftware, classification: null, token);
+        Assert.DoesNotContain(oldOnly.Items, item => item.Name == oldSoftware && item.DeviceCount > 0);
+        var currentSoftware = await Context.ListSoftwareAsync(0, 10, newSoftware, classification: null, token);
+        Assert.Contains(currentSoftware.Items, item => item.Name == newSoftware && item.DeviceCount >= 1);
+
+        Assert.True((await Context.SaveSnapshotAsync(
+            Snapshot(deviceCode, firstCollected.AddHours(5), secondKey, Software(newSoftware, "3")),
+            token)).Applied);
+        listed = await Context.ListDevicesAsync(0, 10, deviceCode, staleAfterHours: null, token);
+        Assert.Equal(2, listed.TotalCount);
+    }
+
     protected static string Unique(string prefix) => prefix + "-" + Guid.NewGuid().ToString("N")[..12];
 
     protected static InventoryIngestionRequest Snapshot(
         string deviceCode,
         DateTimeOffset collectedAt,
         params InstalledSoftwareEntry[] software) =>
+        Snapshot(deviceCode, collectedAt, devicePublicKey: null, software);
+
+    protected static InventoryIngestionRequest Snapshot(
+        string deviceCode,
+        DateTimeOffset collectedAt,
+        string? devicePublicKey,
+        params InstalledSoftwareEntry[] software) =>
         new(
-            new PcIdentity(deviceCode, "host-" + deviceCode, "WORKGROUP", "Windows 11 Pro", "1.0.0"),
+            new PcIdentity(deviceCode, "host-" + deviceCode, "WORKGROUP", "Windows 11 Pro", "1.0.0", DevicePublicKey: devicePublicKey),
             software,
             collectedAt);
 

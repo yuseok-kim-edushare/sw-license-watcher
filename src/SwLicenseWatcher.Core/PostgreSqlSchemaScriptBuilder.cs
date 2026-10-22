@@ -39,11 +39,18 @@ public sealed class PostgreSqlSchemaScriptBuilder : ISchemaScriptBuilder
         AddColumn(statements, schema, pc.TableName, pc.DeviceIdColumn, "varchar(36)");
         AddColumn(statements, schema, pc.TableName, pc.DevicePublicKeyColumn, "text");
         AddColumn(statements, schema, pc.TableName, pc.DeviceCertificateColumn, "text");
+        AddColumn(statements, schema, pc.TableName, pc.DeviceKeySha256Column, "char(64)");
+        AddColumn(statements, schema, pc.TableName, pc.InstalledAtUtcColumn, "timestamptz");
+        AddColumn(statements, schema, pc.TableName, pc.SupersededAtUtcColumn, "timestamptz");
+        statements.Add($"ALTER TABLE {schema}.{Q(pc.TableName)} DROP CONSTRAINT IF EXISTS {Q(Ident("UX", pc.TableName, pc.DeviceCodeColumn))}");
         statements.Add(
             $"ALTER TABLE {schema}.{Q(uninstall.TableName)} ADD COLUMN IF NOT EXISTS {Q(uninstall.OriginColumn)} varchar(16) NOT NULL DEFAULT '{UninstallGrant.OriginAgent}'");
 
         AddPartialUniqueIndex(statements, schema, pc.TableName, pc.DeviceIdColumn);
         AddPartialUniqueIndex(statements, schema, pc.TableName, pc.AssignedDeviceCodeColumn);
+        AddPartialUniqueIndex(statements, schema, pc.TableName, pc.DeviceKeySha256Column);
+        AddIndex(statements, schema, pc.TableName, pc.DeviceCodeColumn);
+        statements.Add(BackfillInstalledAt(schema, pc));
         AddIndex(statements, schema, installedSoftware.TableName, installedSoftware.PcForeignKeyColumn);
         AddIndex(statements, schema, installedSoftware.TableName, installedSoftware.ClassificationColumn);
         AddIndex(statements, schema, policy.TableName, policy.ClassificationColumn);
@@ -72,7 +79,9 @@ public sealed class PostgreSqlSchemaScriptBuilder : ISchemaScriptBuilder
             {Q(pc.DeviceIdColumn)} varchar(36) NULL,
             {Q(pc.DevicePublicKeyColumn)} text NULL,
             {Q(pc.DeviceCertificateColumn)} text NULL,
-            CONSTRAINT {Q(Ident("UX", pc.TableName, pc.DeviceCodeColumn))} UNIQUE ({Q(pc.DeviceCodeColumn)})
+            {Q(pc.DeviceKeySha256Column)} char(64) NULL,
+            {Q(pc.InstalledAtUtcColumn)} timestamptz NULL,
+            {Q(pc.SupersededAtUtcColumn)} timestamptz NULL
         )
         """;
 
@@ -188,6 +197,21 @@ public sealed class PostgreSqlSchemaScriptBuilder : ISchemaScriptBuilder
             CONSTRAINT {Q(Ident("FK", message.TableName, pc.TableName))} FOREIGN KEY ({Q(message.PcForeignKeyColumn)}) REFERENCES {schema}.{Q(pc.TableName)} ({Q(pc.PrimaryKeyColumn)}) ON DELETE CASCADE
         )
         """;
+
+    private static string BackfillInstalledAt(string schema, PcTableOptions pc)
+    {
+        var table = $"{schema}.{Q(pc.TableName)}";
+        var certificate = Q(pc.DeviceCertificateColumn);
+        var installed = Q(pc.InstalledAtUtcColumn);
+        return $"""
+            UPDATE {table}
+            SET {installed} = to_timestamp(({certificate}::jsonb ->> 'iat')::double precision)
+            WHERE {installed} IS NULL
+              AND {certificate} IS NOT NULL
+              AND left(btrim({certificate}), 1) = chr(123)
+              AND ({certificate}::jsonb ->> 'iat') ~ '^[0-9]+$'
+            """;
+    }
 
     private static void AddColumn(List<string> statements, string schema, string table, string column, string definition) =>
         statements.Add($"ALTER TABLE {schema}.{Q(table)} ADD COLUMN IF NOT EXISTS {Q(column)} {definition}");

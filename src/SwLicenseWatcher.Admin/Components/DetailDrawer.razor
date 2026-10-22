@@ -42,6 +42,7 @@
                     </label>
                     <p class="meta">현장 보고 호스트 @Dash(detail.HostName)</p>
                     <p class="meta">기기 고유값 @Dash(detail.DeviceId)</p>
+                    <p class="meta">설치 @FormatTime(detail.InstalledAtUtc)@if (detail.SupersededAtUtc is not null) { <text> · 이전 설치 @FormatTime(detail.SupersededAtUtc)</text> }</p>
                     <p>@Dash(detail.DomainName)</p>
                     <p class="meta">@Dash(detail.OperatingSystem) · 에이전트 @Dash(detail.AgentVersion)</p>
                     <p class="meta">heartbeat @FormatTime(detail.LastHeartbeatUtc) · inventory @FormatTime(detail.LastInventoryUtc)</p>

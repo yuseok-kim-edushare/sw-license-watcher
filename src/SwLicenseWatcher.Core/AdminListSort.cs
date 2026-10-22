@@ -9,6 +9,7 @@ public static class AdminListSort
     public const string AgentVersion = "agentVersion";
     public const string LastHeartbeatUtc = "lastHeartbeatUtc";
     public const string LastInventoryUtc = "lastInventoryUtc";
+    public const string InstalledAtUtc = "installedAtUtc";
 
     public const string Name = "name";
     public const string Version = "version";
@@ -37,7 +38,7 @@ public static class AdminListSort
 
     public static IReadOnlySet<string> Devices { get; } = new HashSet<string>(StringComparer.Ordinal)
     {
-        DeviceCode, HostName, DomainName, OperatingSystem, AgentVersion, LastHeartbeatUtc, LastInventoryUtc
+        DeviceCode, HostName, DomainName, OperatingSystem, AgentVersion, LastHeartbeatUtc, LastInventoryUtc, InstalledAtUtc
     };
 
     public static IReadOnlySet<string> Software { get; } = new HashSet<string>(StringComparer.Ordinal)

@@ -48,7 +48,9 @@ public sealed class SqlServerSchemaScriptBuilder : ISchemaScriptBuilder
         sql.AppendLine($"    [{Escape(pc.DeviceIdColumn)}] NVARCHAR(36) NULL,");
         sql.AppendLine($"    [{Escape(pc.DevicePublicKeyColumn)}] NVARCHAR(MAX) NULL,");
         sql.AppendLine($"    [{Escape(pc.DeviceCertificateColumn)}] NVARCHAR(MAX) NULL,");
-        sql.AppendLine($"    CONSTRAINT [{Escape(BuildIdentifier("UX", pc.TableName, pc.DeviceCodeColumn))}] UNIQUE ([{Escape(pc.DeviceCodeColumn)}])");
+        sql.AppendLine($"    [{Escape(pc.DeviceKeySha256Column)}] CHAR(64) NULL,");
+        sql.AppendLine($"    [{Escape(pc.InstalledAtUtcColumn)}] DATETIMEOFFSET NULL,");
+        sql.AppendLine($"    [{Escape(pc.SupersededAtUtcColumn)}] DATETIMEOFFSET NULL");
         sql.AppendLine(");");
         sql.AppendLine("END");
         sql.AppendLine();
@@ -168,6 +170,9 @@ public sealed class SqlServerSchemaScriptBuilder : ISchemaScriptBuilder
         AppendColumnIfMissing(sql, schema, pc.TableName, pc.DeviceIdColumn, "NVARCHAR(36) NULL");
         AppendColumnIfMissing(sql, schema, pc.TableName, pc.DevicePublicKeyColumn, "NVARCHAR(MAX) NULL");
         AppendColumnIfMissing(sql, schema, pc.TableName, pc.DeviceCertificateColumn, "NVARCHAR(MAX) NULL");
+        AppendColumnIfMissing(sql, schema, pc.TableName, pc.DeviceKeySha256Column, "CHAR(64) NULL");
+        AppendColumnIfMissing(sql, schema, pc.TableName, pc.InstalledAtUtcColumn, "DATETIMEOFFSET NULL");
+        AppendColumnIfMissing(sql, schema, pc.TableName, pc.SupersededAtUtcColumn, "DATETIMEOFFSET NULL");
         AppendColumnIfMissing(
             sql,
             schema,
@@ -175,8 +180,13 @@ public sealed class SqlServerSchemaScriptBuilder : ISchemaScriptBuilder
             uninstall.OriginColumn,
             $"NVARCHAR(16) NOT NULL CONSTRAINT [{Escape(BuildIdentifier("DF", uninstall.TableName, uninstall.OriginColumn))}] DEFAULT(N'{UninstallGrant.OriginAgent}')");
         sql.AppendLine();
+        AppendDropDeviceCodeUniqueConstraint(sql, schema, pc);
         AppendUniqueIndexIfMissing(sql, schema, pc.TableName, pc.DeviceIdColumn);
         AppendUniqueIndexIfMissing(sql, schema, pc.TableName, pc.AssignedDeviceCodeColumn);
+        AppendUniqueIndexIfMissing(sql, schema, pc.TableName, pc.DeviceKeySha256Column);
+        AppendIndexIfMissing(sql, schema, pc.TableName, pc.DeviceCodeColumn);
+        AppendBackfillInstalledAt(sql, schema, pc);
+        AppendBackfillDeviceKeySha256(sql, schema, pc);
         AppendIndexIfMissing(sql, schema, installedSoftware.TableName, installedSoftware.PcForeignKeyColumn);
         AppendIndexIfMissing(sql, schema, installedSoftware.TableName, installedSoftware.ClassificationColumn);
         AppendIndexIfMissing(sql, schema, policy.TableName, policy.ClassificationColumn);
@@ -217,6 +227,39 @@ public sealed class SqlServerSchemaScriptBuilder : ISchemaScriptBuilder
         var column = Escape(columnName);
         sql.AppendLine($"IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'{indexLiteral}' AND object_id = OBJECT_ID(N'{objectId}'))");
         sql.AppendLine($"CREATE UNIQUE INDEX [{indexName}] ON [{escapedSchema}].[{Escape(tableName)}]([{column}]) WHERE [{column}] IS NOT NULL;");
+    }
+
+    private static void AppendDropDeviceCodeUniqueConstraint(StringBuilder sql, string escapedSchema, PcTableOptions pc)
+    {
+        var constraint = Escape(BuildIdentifier("UX", pc.TableName, pc.DeviceCodeColumn));
+        var objectId = EscapeSqlLiteral($"[{escapedSchema}].[{Escape(pc.TableName)}]");
+        var nameLiteral = EscapeSqlLiteral(constraint);
+        sql.AppendLine($"IF EXISTS (SELECT 1 FROM sys.key_constraints WHERE name = N'{nameLiteral}' AND parent_object_id = OBJECT_ID(N'{objectId}'))");
+        sql.AppendLine($"ALTER TABLE [{escapedSchema}].[{Escape(pc.TableName)}] DROP CONSTRAINT [{constraint}];");
+    }
+
+    private static void AppendBackfillInstalledAt(StringBuilder sql, string escapedSchema, PcTableOptions pc)
+    {
+        var table = $"[{escapedSchema}].[{Escape(pc.TableName)}]";
+        var certificate = $"[{Escape(pc.DeviceCertificateColumn)}]";
+        var installed = $"[{Escape(pc.InstalledAtUtcColumn)}]";
+        sql.AppendLine($"UPDATE {table}");
+        sql.AppendLine($"SET {installed} = DATEADD(SECOND, TRY_CONVERT(int, JSON_VALUE({certificate}, '$.iat')), CONVERT(datetimeoffset, '1970-01-01T00:00:00+00:00'))");
+        sql.AppendLine($"WHERE {installed} IS NULL");
+        sql.AppendLine($"  AND ISJSON({certificate}) = 1");
+        sql.AppendLine($"  AND TRY_CONVERT(bigint, JSON_VALUE({certificate}, '$.iat')) BETWEEN 0 AND 2147483647;");
+    }
+
+    private static void AppendBackfillDeviceKeySha256(StringBuilder sql, string escapedSchema, PcTableOptions pc)
+    {
+        var table = $"[{escapedSchema}].[{Escape(pc.TableName)}]";
+        var publicKey = $"[{Escape(pc.DevicePublicKeyColumn)}]";
+        var hash = $"[{Escape(pc.DeviceKeySha256Column)}]";
+        sql.AppendLine($"UPDATE {table}");
+        sql.AppendLine($"SET {hash} = LOWER(CONVERT(varchar(64), HASHBYTES('SHA2_256', CONVERT(varchar(8000), {publicKey})), 2))");
+        sql.AppendLine($"WHERE {hash} IS NULL");
+        sql.AppendLine($"  AND {publicKey} IS NOT NULL");
+        sql.AppendLine($"  AND LEN({publicKey}) BETWEEN 1 AND 8000;");
     }
 
     private static void AppendIndexIfMissing(StringBuilder sql, string escapedSchema, string tableName, string columnName)
@@ -275,6 +318,8 @@ public static class SqlIdentifierValidator
             options.PcTable.AssignedHostNameColumn, options.PcTable.AdminNotesColumn,
             options.PcTable.AssignedDeviceCodeColumn, options.PcTable.DeviceIdColumn,
             options.PcTable.DevicePublicKeyColumn, options.PcTable.DeviceCertificateColumn,
+            options.PcTable.DeviceKeySha256Column, options.PcTable.InstalledAtUtcColumn,
+            options.PcTable.SupersededAtUtcColumn,
             options.InstalledSoftwareTable.TableName, options.InstalledSoftwareTable.PrimaryKeyColumn,
             options.InstalledSoftwareTable.PcForeignKeyColumn, options.InstalledSoftwareTable.DisplayNameColumn,
             options.InstalledSoftwareTable.DisplayVersionColumn, options.InstalledSoftwareTable.PublisherColumn,

@@ -340,7 +340,7 @@ public sealed partial class RelationalDataContext
             FROM {Name(options.SchemaName, table.TableName)} AS r
             INNER JOIN {Name(options.SchemaName, pc.TableName)} AS p
                 ON p.{Name(pc.PrimaryKeyColumn)} = r.{Name(table.PcForeignKeyColumn)}
-            WHERE ({PcLookupPredicate("p")})
+            WHERE p.{Name(pc.PrimaryKeyColumn)} = ({PreferredPcIdSql()})
               AND r.{Name(table.StatusColumn)} = @status
               AND r.{Name(table.OriginColumn)} = @origin
             ORDER BY r.{Name(table.RequestedAtUtcColumn)} DESC{TakeSuffix("1")};
@@ -374,7 +374,7 @@ public sealed partial class RelationalDataContext
             INNER JOIN {Name(options.SchemaName, pc.TableName)} AS p
                 ON p.{Name(pc.PrimaryKeyColumn)} = r.{Name(table.PcForeignKeyColumn)}
             WHERE r.{Name(table.PrimaryKeyColumn)} = @id
-              AND ({PcLookupPredicate("p")});
+              AND p.{Name(pc.PrimaryKeyColumn)} = ({PreferredPcIdSql()});
             """;
     }
 

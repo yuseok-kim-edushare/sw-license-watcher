@@ -43,21 +43,22 @@
             <SortHeader Title="에이전트" Column="@AdminListSort.AgentVersion" ActiveColumn="@SortColumn" Descending="SortDescending" OnSort="ToggleSortAsync" />
             <SortHeader Title="heartbeat" Column="@AdminListSort.LastHeartbeatUtc" ActiveColumn="@SortColumn" Descending="SortDescending" OnSort="ToggleSortAsync" />
             <SortHeader Title="inventory" Column="@AdminListSort.LastInventoryUtc" ActiveColumn="@SortColumn" Descending="SortDescending" OnSort="ToggleSortAsync" />
+            <SortHeader Title="설치" Column="@AdminListSort.InstalledAtUtc" ActiveColumn="@SortColumn" Descending="SortDescending" OnSort="ToggleSortAsync" />
         </tr>
     </thead>
     <tbody>
         @if (_devices.Count == 0)
         {
-            <tr><td class="empty" colspan="7">항목이 없습니다.</td></tr>
+            <tr><td class="empty" colspan="8">항목이 없습니다.</td></tr>
         }
         else
         {
             @foreach (var row in _devices)
             {
                 <tr>
-                    <td><button type="button" class="linkish" @onclick="@(() => Drawer.OpenDeviceAsync(row.DeviceCode))">@Dash(row.DeviceCode)</button></td>
-                    <td><button type="button" class="linkish" @onclick="@(() => Drawer.OpenDeviceAsync(row.DeviceCode))">@Dash(PcName(row.HostName, row.AssignedHostName))</button></td><td>@Dash(row.DomainName)</td><td>@Dash(row.OperatingSystem)</td>
-                    <td>@Dash(row.AgentVersion)</td><td>@FormatTime(row.LastHeartbeatUtc)</td><td>@FormatTime(row.LastInventoryUtc)</td>
+                    <td><button type="button" class="linkish" @onclick="@(() => Drawer.OpenDeviceAsync(row.DeviceId ?? row.DeviceCode))">@Dash(row.DeviceCode)</button>@if (row.SupersededAtUtc is not null) { <span class="meta"> 이전 설치</span> }</td>
+                    <td><button type="button" class="linkish" @onclick="@(() => Drawer.OpenDeviceAsync(row.DeviceId ?? row.DeviceCode))">@Dash(PcName(row.HostName, row.AssignedHostName))</button></td><td>@Dash(row.DomainName)</td><td>@Dash(row.OperatingSystem)</td>
+                    <td>@Dash(row.AgentVersion)</td><td>@FormatTime(row.LastHeartbeatUtc)</td><td>@FormatTime(row.LastInventoryUtc)</td><td>@FormatTime(row.InstalledAtUtc)</td>
                 </tr>
             }
         }

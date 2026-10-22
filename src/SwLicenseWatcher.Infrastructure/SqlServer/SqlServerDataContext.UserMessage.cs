@@ -99,7 +99,8 @@ public sealed partial class RelationalDataContext
         var pc = options.PcTable;
         var sql = $"""
             SELECT {Name(pc.PrimaryKeyColumn)}, {Name(pc.DeviceCodeColumn)}, {Name(pc.AssignedDeviceCodeColumn)}, {Name(pc.DeviceIdColumn)}
-            FROM {Name(options.SchemaName, pc.TableName)};
+            FROM {Name(options.SchemaName, pc.TableName)}
+            WHERE {CurrentInstallationSql()};
             """;
         var targets = new List<(long PcId, string DeviceCode, string? AssignedDeviceCode, string? DeviceId)>();
         await using (var command = CreateCommand(connection, transaction, sql))
@@ -212,6 +213,7 @@ public sealed partial class RelationalDataContext
                          {Name(table.StatusColumn)}, {Name(table.CreatedAtUtcColumn)})
                     SELECT p.{Name(pc.PrimaryKeyColumn)}, @title, @body, @status, @createdAt
                     FROM {Name(options.SchemaName, pc.TableName)} AS p
+                    WHERE {CurrentInstallationSql("p")}
                     RETURNING {Name(table.PrimaryKeyColumn)}, {Name(table.PcForeignKeyColumn)}
                 )
                 SELECT inserted.{Name(table.PrimaryKeyColumn)}, p.{Name(pc.DeviceCodeColumn)},
@@ -229,7 +231,12 @@ public sealed partial class RelationalDataContext
 
         return $"""
             MERGE {Name(options.SchemaName, table.TableName)} AS target
-            USING {Name(options.SchemaName, pc.TableName)} AS p
+            USING (
+                SELECT {Name(pc.PrimaryKeyColumn)}, {Name(pc.DeviceCodeColumn)},
+                       {Name(pc.AssignedDeviceCodeColumn)}, {Name(pc.DeviceIdColumn)}
+                FROM {Name(options.SchemaName, pc.TableName)}
+                WHERE {CurrentInstallationSql()}
+            ) AS p
             ON 1 = 0
             WHEN NOT MATCHED THEN
                 INSERT ({Name(table.PcForeignKeyColumn)}, {Name(table.TitleColumn)}, {Name(table.BodyColumn)},
@@ -249,7 +256,7 @@ public sealed partial class RelationalDataContext
             FROM {Name(options.SchemaName, table.TableName)} AS m
             INNER JOIN {Name(options.SchemaName, pc.TableName)} AS p
                 ON p.{Name(pc.PrimaryKeyColumn)} = m.{Name(table.PcForeignKeyColumn)}
-            WHERE ({PcLookupPredicate("p")})
+            WHERE p.{Name(pc.PrimaryKeyColumn)} = ({PreferredPcIdSql()})
               AND m.{Name(table.StatusColumn)} = @status
             ORDER BY m.{Name(table.CreatedAtUtcColumn)}, m.{Name(table.PrimaryKeyColumn)}{TakeSuffix("@take")};
             """;
@@ -265,7 +272,7 @@ public sealed partial class RelationalDataContext
             """;
         var filter = $"""
             m.{Name(table.PrimaryKeyColumn)} = @id
-              AND ({PcLookupPredicate("p")})
+              AND p.{Name(pc.PrimaryKeyColumn)} = ({PreferredPcIdSql()})
               AND (
                     m.{Name(table.StatusColumn)} = @pending
                  OR m.{Name(table.StatusColumn)} = @consumed

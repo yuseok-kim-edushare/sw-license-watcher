@@ -47,12 +47,14 @@ public interface IDeviceQuery
     Task<DeviceAgentAssignment?> GetDeviceAssignmentAsync(
         string deviceCode,
         string? deviceId,
-        CancellationToken cancellationToken);
+        CancellationToken cancellationToken,
+        string? devicePublicKey = null);
 
     Task<DeviceEnrollmentKeys?> GetDeviceEnrollmentKeysAsync(
         string deviceCode,
         string? deviceId,
-        CancellationToken cancellationToken);
+        CancellationToken cancellationToken,
+        string? devicePublicKey = null);
 
     Task<DeviceProfileUpdateResult> UpdateDeviceProfileAsync(
         string deviceCode,
@@ -65,7 +67,8 @@ public interface IDeviceQuery
         string devicePublicKey,
         string deviceCertificate,
         string issuedDeviceId,
-        CancellationToken cancellationToken);
+        CancellationToken cancellationToken,
+        DateTimeOffset? installedAtUtc = null);
 }
 
 public interface ISoftwareQuery

@@ -47,7 +47,7 @@ internal static class InventoryQueryApi
             {
                 return InventoryCsv.File(
                     "devices.csv",
-                    ["DeviceCode", "HostName", "AssignedHostName", "AdminNotes", "DomainName", "OperatingSystem", "AgentVersion", "LastHeartbeatUtc", "LastInventoryUtc"],
+                    ["DeviceCode", "HostName", "AssignedHostName", "AdminNotes", "DomainName", "OperatingSystem", "AgentVersion", "LastHeartbeatUtc", "LastInventoryUtc", "InstalledAtUtc", "SupersededAtUtc"],
                     items.Select(device => new[]
                     {
                         device.DeviceCode,
@@ -58,7 +58,9 @@ internal static class InventoryQueryApi
                         device.OperatingSystem,
                         device.AgentVersion,
                         InventoryCsv.Format(device.LastHeartbeatUtc),
-                        InventoryCsv.Format(device.LastInventoryUtc)
+                        InventoryCsv.Format(device.LastInventoryUtc),
+                        InventoryCsv.Format(device.InstalledAtUtc),
+                        InventoryCsv.Format(device.SupersededAtUtc)
                     }));
             }
 
@@ -302,7 +304,7 @@ internal static class InventoryQueryApi
                 : detail.InstalledSoftware.Select(entry => DeviceSoftwareRow(detail, entry));
             return InventoryCsv.File(
                 $"device-{InventoryCsv.SafeFileName(detail.DeviceCode)}.csv",
-                ["DeviceCode", "HostName", "AssignedHostName", "AdminNotes", "DomainName", "OperatingSystem", "AgentVersion", "LastHeartbeatUtc", "LastInventoryUtc", "Name", "Version", "Publisher", "InstallLocation", "DiscoveryScope", "DiscoverySource", "Classification", "LicenseSource", "LicenseSourceOverride"],
+                ["DeviceCode", "HostName", "AssignedHostName", "AdminNotes", "DomainName", "OperatingSystem", "AgentVersion", "LastHeartbeatUtc", "LastInventoryUtc", "InstalledAtUtc", "SupersededAtUtc", "Name", "Version", "Publisher", "InstallLocation", "DiscoveryScope", "DiscoverySource", "Classification", "LicenseSource", "LicenseSourceOverride"],
                 rows);
         }
 
@@ -320,6 +322,8 @@ internal static class InventoryQueryApi
         detail.AgentVersion,
         InventoryCsv.Format(detail.LastHeartbeatUtc),
         InventoryCsv.Format(detail.LastInventoryUtc),
+        InventoryCsv.Format(detail.InstalledAtUtc),
+        InventoryCsv.Format(detail.SupersededAtUtc),
         entry?.Name,
         entry?.Version,
         entry?.Publisher,

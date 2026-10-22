@@ -19,7 +19,9 @@ public sealed record DeviceSummary(
     string? AssignedHostName = null,
     string? AdminNotes = null,
     string? DeviceId = null,
-    string? AssignedDeviceCode = null);
+    string? AssignedDeviceCode = null,
+    DateTimeOffset? InstalledAtUtc = null,
+    DateTimeOffset? SupersededAtUtc = null);
 
 public sealed record DeviceListResponse(
     int Skip,
@@ -39,7 +41,9 @@ public sealed record DeviceDetail(
     string? AssignedHostName = null,
     string? AdminNotes = null,
     string? DeviceId = null,
-    string? AssignedDeviceCode = null);
+    string? AssignedDeviceCode = null,
+    DateTimeOffset? InstalledAtUtc = null,
+    DateTimeOffset? SupersededAtUtc = null);
 
 public sealed record SoftwareAggregate(
     string Name,

@@ -52,7 +52,9 @@ public sealed partial class RelationalDataContext
                 ReadNullableString(reader, table.AssignedHostNameColumn),
                 ReadNullableString(reader, table.AdminNotesColumn),
                 ReadNullableString(reader, table.DeviceIdColumn),
-                assignedCode));
+                assignedCode,
+                ReadNullableDateTimeOffset(reader, table.InstalledAtUtcColumn),
+                ReadNullableDateTimeOffset(reader, table.SupersededAtUtcColumn)));
         }
 
         return (totalCount, items);
@@ -69,7 +71,8 @@ public sealed partial class RelationalDataContext
                 {Name(table.OperatingSystemColumn)}, {Name(table.AgentVersionColumn)},
                 {Name(table.LastHeartbeatUtcColumn)}, {Name(table.LastInventoryUtcColumn)},
                 {Name(table.AssignedHostNameColumn)}, {Name(table.AdminNotesColumn)},
-                {Name(table.AssignedDeviceCodeColumn)}, {Name(table.DeviceIdColumn)}
+                {Name(table.AssignedDeviceCodeColumn)}, {Name(table.DeviceIdColumn)},
+                {Name(table.InstalledAtUtcColumn)}, {Name(table.SupersededAtUtcColumn)}
             FROM {Name(options.SchemaName, table.TableName)}
             WHERE (@search IS NULL OR {HostNameSearchSql()})
               AND (@staleCutoff IS NULL
@@ -93,6 +96,7 @@ public sealed partial class RelationalDataContext
             AdminListSort.AgentVersion => Name(table.AgentVersionColumn),
             AdminListSort.LastHeartbeatUtc => Name(table.LastHeartbeatUtcColumn),
             AdminListSort.LastInventoryUtc => Name(table.LastInventoryUtcColumn),
+            AdminListSort.InstalledAtUtc => Name(table.InstalledAtUtcColumn),
             _ => null
         };
         return OrderByColumn(expression, descending, fallback);
@@ -107,13 +111,16 @@ public sealed partial class RelationalDataContext
         await connection.OpenAsync(cancellationToken);
         var table = options.PcTable;
         var sql = $"""
-            SELECT {Name(table.PrimaryKeyColumn)}, {Name(table.DeviceCodeColumn)}, {Name(table.HostNameColumn)},
+            SELECT {TakePrefix("1")} {Name(table.PrimaryKeyColumn)}, {Name(table.DeviceCodeColumn)}, {Name(table.HostNameColumn)},
                    {Name(table.DomainNameColumn)}, {Name(table.OperatingSystemColumn)}, {Name(table.AgentVersionColumn)},
                    {Name(table.LastHeartbeatUtcColumn)}, {Name(table.LastInventoryUtcColumn)},
                    {Name(table.AssignedHostNameColumn)}, {Name(table.AdminNotesColumn)},
-                   {Name(table.AssignedDeviceCodeColumn)}, {Name(table.DeviceIdColumn)}
-            FROM {Name(options.SchemaName, table.TableName)}
-            WHERE {PcLookupPredicate()};
+                   {Name(table.AssignedDeviceCodeColumn)}, {Name(table.DeviceIdColumn)},
+                   {Name(table.InstalledAtUtcColumn)}, {Name(table.SupersededAtUtcColumn)}
+            FROM {Name(options.SchemaName, table.TableName)} AS chosen
+            WHERE {PcLookupPredicate("chosen")}
+            ORDER BY {PreferredPcOrder("chosen")}
+            {TakeSuffix("1")};
             """;
         await using var command = CreateCommand(connection, null, sql);
         Bind(command, ("@deviceCode", deviceCode));
@@ -138,7 +145,9 @@ public sealed partial class RelationalDataContext
             ReadNullableString(reader, table.AssignedHostNameColumn),
             ReadNullableString(reader, table.AdminNotesColumn),
             ReadNullableString(reader, table.DeviceIdColumn),
-            assignedCode);
+            assignedCode,
+            ReadNullableDateTimeOffset(reader, table.InstalledAtUtcColumn),
+            ReadNullableDateTimeOffset(reader, table.SupersededAtUtcColumn));
         await reader.CloseAsync();
 
         var installed = await ReadInstalledSoftwareAsync(connection, transaction: null, pcId, classification, cancellationToken);
@@ -150,22 +159,19 @@ public sealed partial class RelationalDataContext
     public async Task<DeviceAgentAssignment?> GetDeviceAssignmentAsync(
         string deviceCode,
         string? deviceId,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        string? devicePublicKey = null)
     {
         await using var connection = CreateConnection();
         await connection.OpenAsync(cancellationToken);
         var table = options.PcTable;
-        var sql = $"""
-            SELECT {Name(table.DeviceCodeColumn)}, {Name(table.AssignedDeviceCodeColumn)},
-                   {Name(table.AssignedHostNameColumn)}, {Name(table.DeviceIdColumn)},
-                   {Name(table.DeviceCertificateColumn)}
-            FROM {Name(options.SchemaName, table.TableName)}
-            WHERE {PcLookupPredicate()}
-               OR (@deviceId IS NOT NULL AND {Name(table.DeviceIdColumn)} = @deviceId);
-            """;
+        var sql = EnrollmentSelectSql($"""
+            {Name(table.DeviceCodeColumn)}, {Name(table.AssignedDeviceCodeColumn)},
+            {Name(table.AssignedHostNameColumn)}, {Name(table.DeviceIdColumn)},
+            {Name(table.DeviceCertificateColumn)}
+            """);
         await using var command = CreateCommand(connection, null, sql);
-        Bind(command, ("@deviceCode", deviceCode));
-        Bind(command, ("@deviceId", DbValue(NullIfWhiteSpace(deviceId))));
+        BindEnrollment(command, deviceCode, deviceId, devicePublicKey);
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         if (!await reader.ReadAsync(cancellationToken))
         {
@@ -184,22 +190,19 @@ public sealed partial class RelationalDataContext
     public async Task<DeviceEnrollmentKeys?> GetDeviceEnrollmentKeysAsync(
         string deviceCode,
         string? deviceId,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        string? devicePublicKey = null)
     {
         await using var connection = CreateConnection();
         await connection.OpenAsync(cancellationToken);
         var table = options.PcTable;
-        var sql = $"""
-            SELECT {Name(table.DeviceCodeColumn)}, {Name(table.AssignedDeviceCodeColumn)},
-                   {Name(table.DeviceIdColumn)}, {Name(table.DevicePublicKeyColumn)},
-                   {Name(table.DeviceCertificateColumn)}
-            FROM {Name(options.SchemaName, table.TableName)}
-            WHERE {PcLookupPredicate()}
-               OR (@deviceId IS NOT NULL AND {Name(table.DeviceIdColumn)} = @deviceId);
-            """;
+        var sql = EnrollmentSelectSql($"""
+            {Name(table.DeviceCodeColumn)}, {Name(table.AssignedDeviceCodeColumn)},
+            {Name(table.DeviceIdColumn)}, {Name(table.DevicePublicKeyColumn)},
+            {Name(table.DeviceCertificateColumn)}
+            """);
         await using var command = CreateCommand(connection, null, sql);
-        Bind(command, ("@deviceCode", deviceCode));
-        Bind(command, ("@deviceId", DbValue(NullIfWhiteSpace(deviceId))));
+        BindEnrollment(command, deviceCode, deviceId, devicePublicKey);
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         if (!await reader.ReadAsync(cancellationToken))
         {
@@ -223,6 +226,12 @@ public sealed partial class RelationalDataContext
     {
         await using var connection = CreateConnection();
         await connection.OpenAsync(cancellationToken);
+        var pcId = await FindPcIdAsync(connection, transaction: null, deviceCode, cancellationToken);
+        if (pcId is null)
+        {
+            return DeviceProfileUpdateResult.NotFound;
+        }
+
         var table = options.PcTable;
         var assignedCode = NullIfWhiteSpace(request.AssignedDeviceCode);
         if (assignedCode is not null)
@@ -232,11 +241,11 @@ public sealed partial class RelationalDataContext
                 FROM {Name(options.SchemaName, table.TableName)}
                 WHERE ({Name(table.DeviceCodeColumn)} = @assignedDeviceCode
                     OR {Name(table.AssignedDeviceCodeColumn)} = @assignedDeviceCode)
-                  AND NOT ({PcLookupPredicate()});
+                  AND {Name(table.PrimaryKeyColumn)} <> @pcId;
                 """;
             await using var conflictCommand = CreateCommand(connection, null, conflict);
             Bind(conflictCommand, ("@assignedDeviceCode", assignedCode));
-            Bind(conflictCommand, ("@deviceCode", deviceCode));
+            Bind(conflictCommand, ("@pcId", pcId.Value));
             if (await conflictCommand.ExecuteScalarAsync(cancellationToken) is not null and not DBNull)
             {
                 return DeviceProfileUpdateResult.Conflict;
@@ -248,10 +257,10 @@ public sealed partial class RelationalDataContext
             SET {Name(table.AssignedHostNameColumn)} = @assignedHostName,
                 {Name(table.AdminNotesColumn)} = @adminNotes,
                 {Name(table.AssignedDeviceCodeColumn)} = @assignedDeviceCode
-            WHERE {PcLookupPredicate()};
+            WHERE {Name(table.PrimaryKeyColumn)} = @pcId;
             """;
         await using var command = CreateCommand(connection, null, sql);
-        Bind(command, ("@deviceCode", deviceCode));
+        Bind(command, ("@pcId", pcId.Value));
         Bind(command, ("@assignedHostName", DbValue(NullIfWhiteSpace(request.AssignedHostName))));
         Bind(command, ("@adminNotes", DbValue(NullIfWhiteSpace(request.AdminNotes))));
         Bind(command, ("@assignedDeviceCode", DbValue(assignedCode)));
@@ -266,8 +275,15 @@ public sealed partial class RelationalDataContext
         string devicePublicKey,
         string deviceCertificate,
         string issuedDeviceId,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        DateTimeOffset? installedAtUtc = null)
     {
+        var hash = DeviceKeyFingerprint.Sha256Hex(devicePublicKey);
+        if (hash is null)
+        {
+            return;
+        }
+
         await using var connection = CreateConnection();
         await connection.OpenAsync(cancellationToken);
         var table = options.PcTable;
@@ -275,17 +291,50 @@ public sealed partial class RelationalDataContext
             UPDATE {Name(options.SchemaName, table.TableName)}
             SET {Name(table.DeviceIdColumn)} = @issuedDeviceId,
                 {Name(table.DevicePublicKeyColumn)} = @devicePublicKey,
-                {Name(table.DeviceCertificateColumn)} = @deviceCertificate
-            WHERE ({PcLookupPredicate()} OR (@deviceId IS NOT NULL AND {Name(table.DeviceIdColumn)} = @deviceId))
+                {Name(table.DeviceCertificateColumn)} = @deviceCertificate,
+                {Name(table.DeviceKeySha256Column)} = @deviceKeySha256,
+                {Name(table.InstalledAtUtcColumn)} = COALESCE({Name(table.InstalledAtUtcColumn)}, @installedAt)
+            WHERE {Name(table.DeviceKeySha256Column)} = @deviceKeySha256
               AND {Name(table.DeviceIdColumn)} IS NULL;
             """;
         await using var command = CreateCommand(connection, null, sql);
+        Bind(command, ("@issuedDeviceId", issuedDeviceId));
+        Bind(command, ("@devicePublicKey", devicePublicKey.Trim()));
+        Bind(command, ("@deviceCertificate", deviceCertificate));
+        Bind(command, ("@deviceKeySha256", hash));
+        Bind(command, ("@installedAt", DbValue(installedAtUtc)));
+        await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    private string EnrollmentSelectSql(string columns)
+    {
+        var table = options.PcTable;
+        return $"""
+            SELECT {TakePrefix("1")} {columns}
+            FROM {Name(options.SchemaName, table.TableName)} AS chosen
+            WHERE (@deviceId IS NOT NULL AND chosen.{Name(table.DeviceIdColumn)} = @deviceId)
+               OR (@deviceKeySha256 IS NOT NULL AND chosen.{Name(table.DeviceKeySha256Column)} = @deviceKeySha256)
+               OR (@devicePublicKey IS NOT NULL AND chosen.{Name(table.DevicePublicKeyColumn)} = @devicePublicKey)
+               OR (
+                    @deviceId IS NULL
+                    AND @deviceKeySha256 IS NULL
+                    AND @devicePublicKey IS NULL
+                    AND ({PcLookupPredicate("chosen")})
+                    AND {CurrentInstallationSql("chosen")})
+            ORDER BY
+                CASE WHEN @deviceId IS NOT NULL AND chosen.{Name(table.DeviceIdColumn)} = @deviceId THEN 0 ELSE 1 END,
+                {PreferredPcOrder("chosen")}
+            {TakeSuffix("1")};
+            """;
+    }
+
+    private void BindEnrollment(DbCommand command, string deviceCode, string? deviceId, string? devicePublicKey)
+    {
+        var publicKey = NullIfWhiteSpace(devicePublicKey);
         Bind(command, ("@deviceCode", deviceCode));
         Bind(command, ("@deviceId", DbValue(NullIfWhiteSpace(deviceId))));
-        Bind(command, ("@issuedDeviceId", issuedDeviceId));
-        Bind(command, ("@devicePublicKey", devicePublicKey));
-        Bind(command, ("@deviceCertificate", deviceCertificate));
-        await command.ExecuteNonQueryAsync(cancellationToken);
+        Bind(command, ("@devicePublicKey", DbValue(publicKey)));
+        Bind(command, ("@deviceKeySha256", DbValue(DeviceKeyFingerprint.Sha256Hex(publicKey))));
     }
 
 }

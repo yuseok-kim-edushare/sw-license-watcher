@@ -76,7 +76,7 @@ internal sealed class DeviceEnrollmentService(
         string? proof,
         CancellationToken cancellationToken)
     {
-        var keys = await devices.GetDeviceEnrollmentKeysAsync(deviceCode, deviceId: null, cancellationToken);
+        var keys = await devices.GetDeviceEnrollmentKeysAsync(deviceCode, deviceId, cancellationToken, publicKey);
         if (keys is not null && !string.IsNullOrWhiteSpace(keys.DevicePublicKey))
         {
             return AuthorizeStoredKey(keys, deviceId, publicKey, proof, deviceCode);
@@ -98,7 +98,7 @@ internal sealed class DeviceEnrollmentService(
             return "The device proof is required.";
         }
 
-        var keys = await devices.GetDeviceEnrollmentKeysAsync(deviceCode, deviceId: null, cancellationToken);
+        var keys = await devices.GetDeviceEnrollmentKeysAsync(deviceCode, deviceId, cancellationToken);
         if (keys is null || string.IsNullOrWhiteSpace(keys.DevicePublicKey))
         {
             return "The device is not enrolled.";
@@ -169,7 +169,7 @@ internal sealed class DeviceEnrollmentService(
         string? publicKey,
         CancellationToken cancellationToken)
     {
-        var assignment = await devices.GetDeviceAssignmentAsync(deviceCode, deviceId, cancellationToken);
+        var assignment = await devices.GetDeviceAssignmentAsync(deviceCode, deviceId, cancellationToken, publicKey);
         if (assignment is null)
         {
             return null;
@@ -180,7 +180,9 @@ internal sealed class DeviceEnrollmentService(
             var issuedId = Guid.NewGuid().ToString("D");
             var certificate = authority.Issue(issuedId, publicKey);
             var json = JsonSerializer.Serialize(certificate, InventoryJsonSerializerContext.Default.DeviceCertificateDocument);
-            await devices.BindDeviceEnrollmentAsync(deviceCode, deviceId, publicKey, json, issuedId, cancellationToken);
+            var installedAt = certificate.Iat >= 0 ? DateTimeOffset.FromUnixTimeSeconds(certificate.Iat) : (DateTimeOffset?)null;
+            await devices.BindDeviceEnrollmentAsync(
+                deviceCode, deviceId, publicKey, json, issuedId, cancellationToken, installedAt);
             return await devices.GetDeviceAssignmentAsync(deviceCode, issuedId, cancellationToken);
         }
 

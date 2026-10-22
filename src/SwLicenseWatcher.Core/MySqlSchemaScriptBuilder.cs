@@ -38,6 +38,10 @@ public sealed class MySqlSchemaScriptBuilder : ISchemaScriptBuilder
         AddColumn(statements, pc.TableName, pc.DeviceIdColumn, "VARCHAR(36) NULL");
         AddColumn(statements, pc.TableName, pc.DevicePublicKeyColumn, "LONGTEXT NULL");
         AddColumn(statements, pc.TableName, pc.DeviceCertificateColumn, "LONGTEXT NULL");
+        AddColumn(statements, pc.TableName, pc.DeviceKeySha256Column, "CHAR(64) NULL");
+        AddColumn(statements, pc.TableName, pc.InstalledAtUtcColumn, "DATETIME(6) NULL");
+        AddColumn(statements, pc.TableName, pc.SupersededAtUtcColumn, "DATETIME(6) NULL");
+        DropIndexIfExists(statements, pc.TableName, Ident("UX", pc.TableName, pc.DeviceCodeColumn));
         AddColumn(
             statements,
             uninstall.TableName,
@@ -46,6 +50,10 @@ public sealed class MySqlSchemaScriptBuilder : ISchemaScriptBuilder
 
         AddUniqueIndex(statements, pc.TableName, pc.DeviceIdColumn);
         AddUniqueIndex(statements, pc.TableName, pc.AssignedDeviceCodeColumn);
+        AddUniqueIndex(statements, pc.TableName, pc.DeviceKeySha256Column);
+        AddIndex(statements, pc.TableName, pc.DeviceCodeColumn);
+        statements.Add(BackfillInstalledAt(pc));
+        statements.Add(BackfillDeviceKeySha256(pc));
         AddIndex(statements, installedSoftware.TableName, installedSoftware.PcForeignKeyColumn);
         AddIndex(statements, installedSoftware.TableName, installedSoftware.ClassificationColumn);
         AddIndex(statements, policy.TableName, policy.ClassificationColumn);
@@ -77,7 +85,9 @@ public sealed class MySqlSchemaScriptBuilder : ISchemaScriptBuilder
                 {Q(pc.DeviceIdColumn)} VARCHAR(36) NULL,
                 {Q(pc.DevicePublicKeyColumn)} LONGTEXT NULL,
                 {Q(pc.DeviceCertificateColumn)} LONGTEXT NULL,
-                UNIQUE KEY {Q(Ident("UX", pc.TableName, pc.DeviceCodeColumn))} ({Q(pc.DeviceCodeColumn)})
+                {Q(pc.DeviceKeySha256Column)} CHAR(64) NULL,
+                {Q(pc.InstalledAtUtcColumn)} DATETIME(6) NULL,
+                {Q(pc.SupersededAtUtcColumn)} DATETIME(6) NULL
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
             """;
     }
@@ -204,6 +214,38 @@ public sealed class MySqlSchemaScriptBuilder : ISchemaScriptBuilder
                 SELECT COUNT(*) FROM information_schema.COLUMNS
                 WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = '{tableLiteral}' AND COLUMN_NAME = '{columnLiteral}');
             SET @swlw_sql := IF(@swlw_exists = 0, '{alter}', 'DO 0');
+            PREPARE swlw_stmt FROM @swlw_sql;
+            EXECUTE swlw_stmt;
+            DEALLOCATE PREPARE swlw_stmt
+            """);
+    }
+
+    private static string BackfillInstalledAt(PcTableOptions pc) => $"""
+        UPDATE {Q(pc.TableName)}
+        SET {Q(pc.InstalledAtUtcColumn)} = TIMESTAMPADD(SECOND, CAST(JSON_UNQUOTE(JSON_EXTRACT({Q(pc.DeviceCertificateColumn)}, '$.iat')) AS SIGNED), '1970-01-01 00:00:00')
+        WHERE {Q(pc.InstalledAtUtcColumn)} IS NULL
+          AND JSON_VALID({Q(pc.DeviceCertificateColumn)})
+          AND JSON_EXTRACT({Q(pc.DeviceCertificateColumn)}, '$.iat') IS NOT NULL
+        """;
+
+    private static string BackfillDeviceKeySha256(PcTableOptions pc) => $"""
+        UPDATE {Q(pc.TableName)}
+        SET {Q(pc.DeviceKeySha256Column)} = LOWER(SHA2({Q(pc.DevicePublicKeyColumn)}, 256))
+        WHERE {Q(pc.DeviceKeySha256Column)} IS NULL
+          AND {Q(pc.DevicePublicKeyColumn)} IS NOT NULL
+          AND CHAR_LENGTH({Q(pc.DevicePublicKeyColumn)}) BETWEEN 1 AND 8000
+        """;
+
+    private static void DropIndexIfExists(List<string> statements, string table, string indexName)
+    {
+        var tableLiteral = EscapeLiteral(table);
+        var indexLiteral = EscapeLiteral(indexName);
+        var drop = EscapeLiteral($"ALTER TABLE {Q(table)} DROP INDEX {Q(indexName)}");
+        statements.Add($"""
+            SET @swlw_exists := (
+                SELECT COUNT(*) FROM information_schema.STATISTICS
+                WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = '{tableLiteral}' AND INDEX_NAME = '{indexLiteral}');
+            SET @swlw_sql := IF(@swlw_exists = 0, 'DO 0', '{drop}');
             PREPARE swlw_stmt FROM @swlw_sql;
             EXECUTE swlw_stmt;
             DEALLOCATE PREPARE swlw_stmt

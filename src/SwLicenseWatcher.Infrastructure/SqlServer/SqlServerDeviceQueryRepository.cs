@@ -25,14 +25,16 @@ internal sealed class SqlServerDeviceQueryRepository(RelationalDataContext conte
     public Task<DeviceAgentAssignment?> GetDeviceAssignmentAsync(
         string deviceCode,
         string? deviceId,
-        CancellationToken cancellationToken) =>
-        context.GetDeviceAssignmentAsync(deviceCode, deviceId, cancellationToken);
+        CancellationToken cancellationToken,
+        string? devicePublicKey = null) =>
+        context.GetDeviceAssignmentAsync(deviceCode, deviceId, cancellationToken, devicePublicKey);
 
     public Task<DeviceEnrollmentKeys?> GetDeviceEnrollmentKeysAsync(
         string deviceCode,
         string? deviceId,
-        CancellationToken cancellationToken) =>
-        context.GetDeviceEnrollmentKeysAsync(deviceCode, deviceId, cancellationToken);
+        CancellationToken cancellationToken,
+        string? devicePublicKey = null) =>
+        context.GetDeviceEnrollmentKeysAsync(deviceCode, deviceId, cancellationToken, devicePublicKey);
 
     public Task<DeviceProfileUpdateResult> UpdateDeviceProfileAsync(
         string deviceCode,
@@ -46,7 +48,8 @@ internal sealed class SqlServerDeviceQueryRepository(RelationalDataContext conte
         string devicePublicKey,
         string deviceCertificate,
         string issuedDeviceId,
-        CancellationToken cancellationToken) =>
+        CancellationToken cancellationToken,
+        DateTimeOffset? installedAtUtc = null) =>
         context.BindDeviceEnrollmentAsync(
-            deviceCode, deviceId, devicePublicKey, deviceCertificate, issuedDeviceId, cancellationToken);
+            deviceCode, deviceId, devicePublicKey, deviceCertificate, issuedDeviceId, cancellationToken, installedAtUtc);
 }

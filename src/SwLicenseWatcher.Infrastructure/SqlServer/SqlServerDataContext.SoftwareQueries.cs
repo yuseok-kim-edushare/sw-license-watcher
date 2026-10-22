@@ -55,10 +55,11 @@ public sealed partial class RelationalDataContext
     internal string BuildListSoftwareSql(string? sort = null, bool sortDescending = false)
     {
         var software = options.InstalledSoftwareTable;
-        var name = Name(software.DisplayNameColumn);
-        var version = Name(software.DisplayVersionColumn);
-        var classificationColumn = Name(software.ClassificationColumn);
-        var deviceCount = SoftwareDeviceCountSql(software);
+        var pc = options.PcTable;
+        var name = "s." + Name(software.DisplayNameColumn);
+        var version = "s." + Name(software.DisplayVersionColumn);
+        var classificationColumn = "s." + Name(software.ClassificationColumn);
+        var deviceCount = SoftwareDeviceCountSql(software, "s");
         var orderBy = SoftwareOrderBy(name, version, classificationColumn, deviceCount, sort, sortDescending);
         return $"""
             SELECT
@@ -66,7 +67,7 @@ public sealed partial class RelationalDataContext
                 {name}, {version},
                 {classificationColumn},
                 {deviceCount} AS device_count
-            FROM {Name(options.SchemaName, software.TableName)}
+            FROM {CurrentSoftwareSourceSql(software, pc)}
             WHERE (@search IS NULL OR {name} LIKE @search{LikeEscape})
               AND (@classification IS NULL OR {classificationColumn} = @classification)
             GROUP BY {name}, {version}, {classificationColumn}
@@ -100,6 +101,7 @@ public sealed partial class RelationalDataContext
             FROM {Name(options.SchemaName, software.TableName)} AS s
             INNER JOIN {Name(options.SchemaName, pc.TableName)} AS p
                 ON p.{Name(pc.PrimaryKeyColumn)} = s.{Name(software.PcForeignKeyColumn)}
+               AND {CurrentInstallationSql("p")}
             LEFT JOIN {Name(options.SchemaName, license.TableName)} AS l
                 ON l.{Name(license.PcForeignKeyColumn)} = s.{Name(software.PcForeignKeyColumn)}
                AND l.{Name(license.SoftwareNameColumn)} = s.{Name(software.DisplayNameColumn)}
@@ -238,22 +240,25 @@ public sealed partial class RelationalDataContext
         string? sort,
         bool sortDescending)
     {
-        var deviceCount = SoftwareDeviceCountSql(software);
+        var deviceCount = SoftwareDeviceCountSql(software, "s");
+        var sourceName = "s." + name;
+        var sourceVersion = "s." + version;
+        var sourceClassification = "s." + classificationColumn;
         // 페이지 그룹과 설치 PC를 SQL 안에서 짝지어 GROUP BY와 같은 비교 규칙(후행 공백, collation, NULL)을 그대로 쓴다.
         if (dialect.Provider == StorageProvider.SqlServer)
         {
-            var orderBy = SoftwareOrderBy(name, version, classificationColumn, deviceCount, sort, sortDescending);
+            var orderBy = SoftwareOrderBy(sourceName, sourceVersion, sourceClassification, deviceCount, sort, sortDescending);
             return $"""
                 WITH page AS (
                     SELECT
                         COUNT(*) OVER() AS total_count,
                         ROW_NUMBER() OVER(ORDER BY {orderBy}) AS row_index,
-                        {name}, {version}, {classificationColumn},
+                        {sourceName}, {sourceVersion}, {sourceClassification},
                         {deviceCount} AS device_count
-                    FROM {Name(options.SchemaName, software.TableName)}
-                    WHERE (@search IS NULL OR {name} LIKE @search{LikeEscape})
-                      AND (@classification IS NULL OR {classificationColumn} = @classification)
-                    GROUP BY {name}, {version}, {classificationColumn}
+                    FROM {CurrentSoftwareSourceSql(software, pc)}
+                    WHERE (@search IS NULL OR {sourceName} LIKE @search{LikeEscape})
+                      AND (@classification IS NULL OR {sourceClassification} = @classification)
+                    GROUP BY {sourceName}, {sourceVersion}, {sourceClassification}
                     ORDER BY {orderBy}
                     {Pagination}
                 )
@@ -268,6 +273,7 @@ public sealed partial class RelationalDataContext
                     FROM {Name(options.SchemaName, software.TableName)} AS s
                     INNER JOIN {Name(options.SchemaName, pc.TableName)} AS p
                         ON p.{Name(pc.PrimaryKeyColumn)} = s.{Name(software.PcForeignKeyColumn)}
+                       AND {CurrentInstallationSql("p")}
                     WHERE s.{name} = page.{name}
                       AND (s.{version} = page.{version} OR (s.{version} IS NULL AND page.{version} IS NULL))
                       AND (s.{classificationColumn} = page.{classificationColumn}
@@ -278,23 +284,23 @@ public sealed partial class RelationalDataContext
                 """;
         }
 
-        var versionKey = $"RTRIM({version})";
+        var versionKey = $"RTRIM({sourceVersion})";
         var versionOrder = dialect.Provider == StorageProvider.PostgreSql ? $"{versionKey} NULLS FIRST" : versionKey;
         var pageOrder = SoftwareOrderBy(
-            name, versionOrder, classificationColumn, deviceCount, sort, sortDescending, versionKey);
+            sourceName, versionOrder, sourceClassification, deviceCount, sort, sortDescending, versionKey);
         return $"""
             WITH page AS (
                 SELECT
                     COUNT(*) OVER() AS total_count,
                     ROW_NUMBER() OVER(ORDER BY {pageOrder}) AS row_index,
-                    {name},
-                    MIN({version}) AS {version},
-                    {classificationColumn},
+                    {sourceName},
+                    MIN({sourceVersion}) AS {version},
+                    {sourceClassification},
                     {deviceCount} AS device_count
-                FROM {Name(options.SchemaName, software.TableName)}
-                WHERE (@search IS NULL OR {name} LIKE @search{LikeEscape})
-                  AND (@classification IS NULL OR {classificationColumn} = @classification)
-                GROUP BY {name}, {versionKey}, {classificationColumn}
+                FROM {CurrentSoftwareSourceSql(software, pc)}
+                WHERE (@search IS NULL OR {sourceName} LIKE @search{LikeEscape})
+                  AND (@classification IS NULL OR {sourceClassification} = @classification)
+                GROUP BY {sourceName}, {versionKey}, {sourceClassification}
                 ORDER BY {pageOrder}
                 {Pagination}
             )
@@ -312,6 +318,7 @@ public sealed partial class RelationalDataContext
                 FROM {Name(options.SchemaName, software.TableName)} AS s
                 INNER JOIN {Name(options.SchemaName, pc.TableName)} AS p
                     ON p.{Name(pc.PrimaryKeyColumn)} = s.{Name(software.PcForeignKeyColumn)}
+                   AND {CurrentInstallationSql("p")}
                 WHERE (@search IS NULL OR s.{name} LIKE @search{LikeEscape})
             ) AS d
                 ON d.{name} = page.{name}
@@ -327,8 +334,15 @@ public sealed partial class RelationalDataContext
             """;
     }
 
-    private string SoftwareDeviceCountSql(InstalledSoftwareTableOptions software) =>
-        $"COUNT(DISTINCT {Name(software.PcForeignKeyColumn)})";
+    private string CurrentSoftwareSourceSql(InstalledSoftwareTableOptions software, PcTableOptions pc) => $"""
+        {Name(options.SchemaName, software.TableName)} AS s
+        INNER JOIN {Name(options.SchemaName, pc.TableName)} AS p
+            ON p.{Name(pc.PrimaryKeyColumn)} = s.{Name(software.PcForeignKeyColumn)}
+           AND {CurrentInstallationSql("p")}
+        """;
+
+    private string SoftwareDeviceCountSql(InstalledSoftwareTableOptions software, string alias) =>
+        $"COUNT(DISTINCT {alias}.{Name(software.PcForeignKeyColumn)})";
 
     private string SoftwareOrderBy(
         string name,
@@ -383,6 +397,9 @@ public sealed partial class RelationalDataContext
                    s.{Name(software.PublisherColumn)}, s.{Name(software.PcForeignKeyColumn)},
                    l.{Name(license.LicenseSourceColumn)}
             FROM {Name(options.SchemaName, software.TableName)} AS s
+            INNER JOIN {Name(options.SchemaName, options.PcTable.TableName)} AS p
+                ON p.{Name(options.PcTable.PrimaryKeyColumn)} = s.{Name(software.PcForeignKeyColumn)}
+               AND {CurrentInstallationSql("p")}
             LEFT JOIN {Name(options.SchemaName, license.TableName)} AS l
                 ON l.{Name(license.PcForeignKeyColumn)} = s.{Name(software.PcForeignKeyColumn)}
                AND l.{Name(license.SoftwareNameColumn)} = s.{Name(software.DisplayNameColumn)}

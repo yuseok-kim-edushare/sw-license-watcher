@@ -146,6 +146,30 @@ public class DeviceEnrollmentServiceTests
     }
 
     [Fact]
+    public async Task Ingestion_accepts_a_new_key_when_only_the_asset_code_matches()
+    {
+        var (publicKey, privateKey) = MldsaDeviceCrypto.GenerateKeyPair();
+        var publicKeyText = MldsaDeviceCrypto.ToBase64(publicKey);
+        var proof = MldsaDeviceCrypto.ToBase64(
+            MldsaDeviceCrypto.Sign(privateKey, DeviceProofs.Payload("", "ASSET-1")));
+        var devices = new StubDevices
+        {
+            Keys = new DeviceEnrollmentKeys("ASSET-1", null, "id-old", "stored-key", null)
+        };
+        var sut = new DeviceEnrollmentService(devices, new AcceptingAuthority());
+
+        var error = await sut.AuthorizeIngestionAsync(
+            "ASSET-1",
+            deviceId: null,
+            publicKeyText,
+            certificateJson: null,
+            proof,
+            CancellationToken.None);
+
+        Assert.Null(error);
+    }
+
+    [Fact]
     public async Task Enrolled_agent_call_rejects_a_missing_enrollment()
     {
         var sut = new DeviceEnrollmentService(new StubDevices(), new AcceptingAuthority());
@@ -174,12 +198,29 @@ public class DeviceEnrollmentServiceTests
             throw new NotSupportedException();
 
         public Task<DeviceAgentAssignment?> GetDeviceAssignmentAsync(
-            string deviceCode, string? deviceId, CancellationToken cancellationToken) =>
+            string deviceCode, string? deviceId, CancellationToken cancellationToken, string? devicePublicKey = null) =>
             throw new NotSupportedException();
 
         public Task<DeviceEnrollmentKeys?> GetDeviceEnrollmentKeysAsync(
-            string deviceCode, string? deviceId, CancellationToken cancellationToken) =>
-            Task.FromResult(Keys);
+            string deviceCode, string? deviceId, CancellationToken cancellationToken, string? devicePublicKey = null)
+        {
+            if (Keys is null)
+            {
+                return Task.FromResult<DeviceEnrollmentKeys?>(null);
+            }
+
+            var idMatches = !string.IsNullOrWhiteSpace(deviceId) &&
+                string.Equals(deviceId, Keys.DeviceId, StringComparison.Ordinal);
+            var keyMatches = !string.IsNullOrWhiteSpace(devicePublicKey) &&
+                string.Equals(devicePublicKey, Keys.DevicePublicKey, StringComparison.Ordinal);
+            if (idMatches || keyMatches ||
+                (string.IsNullOrWhiteSpace(deviceId) && string.IsNullOrWhiteSpace(devicePublicKey)))
+            {
+                return Task.FromResult<DeviceEnrollmentKeys?>(Keys);
+            }
+
+            return Task.FromResult<DeviceEnrollmentKeys?>(null);
+        }
 
         public Task<DeviceProfileUpdateResult> UpdateDeviceProfileAsync(
             string deviceCode, DeviceProfileWriteRequest request, CancellationToken cancellationToken) =>
@@ -191,7 +232,8 @@ public class DeviceEnrollmentServiceTests
             string devicePublicKey,
             string deviceCertificate,
             string issuedDeviceId,
-            CancellationToken cancellationToken) =>
+            CancellationToken cancellationToken,
+            DateTimeOffset? installedAtUtc = null) =>
             throw new NotSupportedException();
     }
 

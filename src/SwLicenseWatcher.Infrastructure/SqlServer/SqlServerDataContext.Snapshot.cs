@@ -171,14 +171,20 @@ public sealed partial class RelationalDataContext
         InventoryIngestionRequest snapshot,
         CancellationToken cancellationToken)
     {
+        var pcId = await FindPcIdForAgentAsync(connection, transaction, snapshot.Pc, cancellationToken);
+        if (pcId is null)
+        {
+            return false;
+        }
+
         var table = options.PcTable;
         var sql = $"""
             SELECT {Name(table.LastInventoryUtcColumn)}
             FROM {Name(options.SchemaName, table.TableName)}{LockFrom}
-            WHERE {Name(table.DeviceCodeColumn)} = @deviceCode{LockSuffix};
+            WHERE {Name(table.PrimaryKeyColumn)} = @pcId{LockSuffix};
             """;
         await using var command = CreateCommand(connection, transaction, sql);
-        Bind(command, ("@deviceCode", snapshot.Pc.DeviceCode));
+        Bind(command, ("@pcId", pcId.Value));
         var stored = await command.ExecuteScalarAsync(cancellationToken);
         return stored is not null and not DBNull && CoerceDateTimeOffset(stored) >= snapshot.CollectedAtUtc;
     }

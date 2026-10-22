@@ -346,6 +346,12 @@ public sealed class PcTableOptions
     public string DevicePublicKeyColumn { get; set; } = "device_public_key";
 
     public string DeviceCertificateColumn { get; set; } = "device_certificate";
+
+    public string DeviceKeySha256Column { get; set; } = "device_key_sha256";
+
+    public string InstalledAtUtcColumn { get; set; } = "installed_at_utc";
+
+    public string SupersededAtUtcColumn { get; set; } = "superseded_at_utc";
 }
 
 public sealed class DeviceEnrollmentOptions

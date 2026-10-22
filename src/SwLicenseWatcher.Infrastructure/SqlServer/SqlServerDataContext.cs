@@ -76,15 +76,17 @@ public sealed partial class RelationalDataContext
 
     private async Task<long?> FindPcIdAsync(
         DbConnection connection,
-        DbTransaction transaction,
+        DbTransaction? transaction,
         string deviceCode,
         CancellationToken cancellationToken)
     {
         var table = options.PcTable;
         var sql = $"""
-            SELECT {Name(table.PrimaryKeyColumn)}
-            FROM {Name(options.SchemaName, table.TableName)}
-            WHERE {PcLookupPredicate()};
+            SELECT {TakePrefix("1")} {Name(table.PrimaryKeyColumn)}
+            FROM {Name(options.SchemaName, table.TableName)} AS chosen
+            WHERE {PcLookupPredicate("chosen")}
+            ORDER BY {PreferredPcOrder("chosen")}
+            {TakeSuffix("1")};
             """;
         await using var command = CreateCommand(connection, transaction, sql);
         Bind(command, ("@deviceCode", deviceCode));
@@ -142,15 +144,21 @@ public sealed partial class RelationalDataContext
         {
             var insert = InsertReturningId(
                 Name(options.SchemaName, table.TableName),
-                $"{Name(table.DeviceCodeColumn)}, {Name(table.HostNameColumn)}, {Name(table.DomainNameColumn)}, {Name(table.OperatingSystemColumn)}, {Name(table.AgentVersionColumn)}, {Name(table.LastHeartbeatUtcColumn)}, {Name(table.LastInventoryUtcColumn)}",
-                "@deviceCode, @hostName, @domainName, @operatingSystem, @agentVersion, @heartbeatAt, @inventoryAt",
+                $"{Name(table.DeviceCodeColumn)}, {Name(table.HostNameColumn)}, {Name(table.DomainNameColumn)}, {Name(table.OperatingSystemColumn)}, {Name(table.AgentVersionColumn)}, {Name(table.LastHeartbeatUtcColumn)}, {Name(table.LastInventoryUtcColumn)}, {Name(table.DevicePublicKeyColumn)}, {Name(table.DeviceKeySha256Column)}",
+                "@deviceCode, @hostName, @domainName, @operatingSystem, @agentVersion, @heartbeatAt, @inventoryAt, @devicePublicKey, @deviceKeySha256",
                 table.PrimaryKeyColumn);
-            return await ExecuteInsertReturningIdAsync(
+            var insertedId = await ExecuteInsertReturningIdAsync(
                 connection,
                 transaction,
                 insert,
                 cancellationToken,
                 UpsertParameters(pc, heartbeatAt, inventoryAt));
+            if (!string.IsNullOrWhiteSpace(pc.DevicePublicKey))
+            {
+                await SupersedeOtherGenerationsAsync(connection, transaction, pc.DeviceCode, insertedId, cancellationToken);
+            }
+
+            return insertedId;
         }
 
         var update = $"""
@@ -165,7 +173,9 @@ public sealed partial class RelationalDataContext
                     ELSE @agentVersion
                 END,
                 {Name(table.LastHeartbeatUtcColumn)} = COALESCE(@heartbeatAt, {Name(table.LastHeartbeatUtcColumn)}),
-                {Name(table.LastInventoryUtcColumn)} = COALESCE(@inventoryAt, {Name(table.LastInventoryUtcColumn)})
+                {Name(table.LastInventoryUtcColumn)} = COALESCE(@inventoryAt, {Name(table.LastInventoryUtcColumn)}),
+                {Name(table.DevicePublicKeyColumn)} = COALESCE({Name(table.DevicePublicKeyColumn)}, @devicePublicKey),
+                {Name(table.DeviceKeySha256Column)} = COALESCE({Name(table.DeviceKeySha256Column)}, @deviceKeySha256)
             WHERE {Name(table.PrimaryKeyColumn)} = @pcId
              AND (@heartbeatAt IS NULL OR {Name(table.LastHeartbeatUtcColumn)} IS NULL OR @heartbeatAt >= {Name(table.LastHeartbeatUtcColumn)});
             """;
@@ -234,16 +244,70 @@ public sealed partial class RelationalDataContext
             }
         }
 
-        if (!string.IsNullOrWhiteSpace(pc.DevicePublicKey))
+        var hash = DeviceKeyFingerprint.Sha256Hex(pc.DevicePublicKey);
+        if (hash is not null)
         {
-            var byKey = await FindPcIdByColumnAsync(connection, transaction, options.PcTable.DevicePublicKeyColumn, pc.DevicePublicKey, cancellationToken);
+            var byHash = await FindPcIdByColumnAsync(connection, transaction, options.PcTable.DeviceKeySha256Column, hash, cancellationToken);
+            if (byHash is not null)
+            {
+                return byHash;
+            }
+
+            var byKey = await FindPcIdByColumnAsync(connection, transaction, options.PcTable.DevicePublicKeyColumn, pc.DevicePublicKey!.Trim(), cancellationToken);
             if (byKey is not null)
             {
                 return byKey;
             }
+
+            return await FindUnboundCurrentPcIdAsync(connection, transaction, pc.DeviceCode, cancellationToken);
         }
 
         return await FindPcIdAsync(connection, transaction, pc.DeviceCode, cancellationToken);
+    }
+
+    private async Task<long?> FindUnboundCurrentPcIdAsync(
+        DbConnection connection,
+        DbTransaction transaction,
+        string deviceCode,
+        CancellationToken cancellationToken)
+    {
+        var table = options.PcTable;
+        var sql = $"""
+            SELECT {TakePrefix("1")} {Name(table.PrimaryKeyColumn)}
+            FROM {Name(options.SchemaName, table.TableName)}
+            WHERE ({Name(table.DeviceCodeColumn)} = @deviceCode OR {Name(table.AssignedDeviceCodeColumn)} = @deviceCode)
+              AND {Name(table.SupersededAtUtcColumn)} IS NULL
+              AND {Name(table.DevicePublicKeyColumn)} IS NULL
+            ORDER BY {Name(table.PrimaryKeyColumn)} DESC
+            {TakeSuffix("1")};
+            """;
+        await using var command = CreateCommand(connection, transaction, sql);
+        Bind(command, ("@deviceCode", deviceCode));
+        var result = await command.ExecuteScalarAsync(cancellationToken);
+        return result is null or DBNull ? null : Convert.ToInt64(result, CultureInfo.InvariantCulture);
+    }
+
+    private async Task SupersedeOtherGenerationsAsync(
+        DbConnection connection,
+        DbTransaction transaction,
+        string deviceCode,
+        long pcId,
+        CancellationToken cancellationToken)
+    {
+        var table = options.PcTable;
+        var sql = $"""
+            UPDATE {Name(options.SchemaName, table.TableName)}
+            SET {Name(table.SupersededAtUtcColumn)} = @supersededAt
+            WHERE {Name(table.DeviceCodeColumn)} = @deviceCode
+              AND {Name(table.PrimaryKeyColumn)} <> @pcId
+              AND {Name(table.SupersededAtUtcColumn)} IS NULL;
+            """;
+        await ExecuteAsync(
+            connection,
+            transaction,
+            sql,
+            [("@deviceCode", deviceCode), ("@pcId", pcId), ("@supersededAt", DateTimeOffset.UtcNow)],
+            cancellationToken);
     }
 
     private async Task<long?> FindPcIdByColumnAsync(
@@ -269,7 +333,9 @@ public sealed partial class RelationalDataContext
     [
         ("@deviceCode", pc.DeviceCode), ("@hostName", pc.HostName), ("@domainName", pc.DomainName),
         ("@operatingSystem", pc.OperatingSystem), ("@agentVersion", pc.AgentVersion),
-        ("@heartbeatAt", DbValue(heartbeatAt)), ("@inventoryAt", DbValue(inventoryAt))
+        ("@heartbeatAt", DbValue(heartbeatAt)), ("@inventoryAt", DbValue(inventoryAt)),
+        ("@devicePublicKey", DbValue(NullIfWhiteSpace(pc.DevicePublicKey))),
+        ("@deviceKeySha256", DbValue(DeviceKeyFingerprint.Sha256Hex(pc.DevicePublicKey)))
     ];
 
     private async Task<int> ExecuteAsync(
@@ -385,6 +451,38 @@ public sealed partial class RelationalDataContext
             OR {prefix}{Name(table.AssignedDeviceCodeColumn)} = @deviceCode
             OR {prefix}{Name(table.DeviceIdColumn)} = @deviceCode
             """;
+    }
+
+    internal string PreferredPcOrder(string tableAlias)
+    {
+        var table = options.PcTable;
+        var prefix = tableAlias + ".";
+        return $"""
+            CASE WHEN {prefix}{Name(table.DeviceIdColumn)} = @deviceCode THEN 0 ELSE 1 END,
+            CASE WHEN {prefix}{Name(table.SupersededAtUtcColumn)} IS NULL THEN 0 ELSE 1 END,
+            CASE WHEN {prefix}{Name(table.InstalledAtUtcColumn)} IS NULL THEN 1 ELSE 0 END,
+            {prefix}{Name(table.InstalledAtUtcColumn)} DESC,
+            {prefix}{Name(table.PrimaryKeyColumn)} DESC
+            """;
+    }
+
+    internal string PreferredPcIdSql()
+    {
+        var table = options.PcTable;
+        return $"""
+            SELECT {TakePrefix("1")} chosen.{Name(table.PrimaryKeyColumn)}
+            FROM {Name(options.SchemaName, table.TableName)} AS chosen
+            WHERE {PcLookupPredicate("chosen")}
+            ORDER BY {PreferredPcOrder("chosen")}
+            {TakeSuffix("1")}
+            """;
+    }
+
+    internal string CurrentInstallationSql(string? tableAlias = null)
+    {
+        var table = options.PcTable;
+        var prefix = string.IsNullOrEmpty(tableAlias) ? "" : tableAlias + ".";
+        return $"{prefix}{Name(table.SupersededAtUtcColumn)} IS NULL";
     }
 
     internal string HostNameSearchSql(string? tableAlias = null)

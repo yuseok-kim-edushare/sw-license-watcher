@@ -13,7 +13,16 @@ public class SqlServerSchemaScriptBuilderTests
         Assert.Contains("CREATE TABLE [inventory].[pc_entity]", sql);
         Assert.Contains("[device_code] NVARCHAR(128) NOT NULL", sql);
         Assert.Contains("[agent_version] NVARCHAR(32) NOT NULL", sql);
-        Assert.Contains("CONSTRAINT [UX_pc_entity_device_code] UNIQUE ([device_code])", sql);
+        Assert.DoesNotContain("CONSTRAINT [UX_pc_entity_device_code] UNIQUE ([device_code])", sql);
+        Assert.Contains("IF EXISTS (SELECT 1 FROM sys.key_constraints WHERE name = N'UX_pc_entity_device_code'", sql);
+        Assert.Contains("DROP CONSTRAINT [UX_pc_entity_device_code];", sql);
+        Assert.Contains("[installed_at_utc] DATETIMEOFFSET NULL", sql);
+        Assert.Contains("[superseded_at_utc] DATETIMEOFFSET NULL", sql);
+        Assert.Contains("[device_key_sha256] CHAR(64) NULL", sql);
+        Assert.Contains("CREATE INDEX [IX_pc_entity_device_code] ON [inventory].[pc_entity]([device_code]);", sql);
+        Assert.Contains("CREATE UNIQUE INDEX [UX_pc_entity_device_key_sha256] ON [inventory].[pc_entity]([device_key_sha256]) WHERE [device_key_sha256] IS NOT NULL;", sql);
+        Assert.Contains("JSON_VALUE([device_certificate], '$.iat')", sql);
+        Assert.Contains("HASHBYTES('SHA2_256'", sql);
         Assert.Contains("CREATE TABLE [inventory].[pc_installed_sw]", sql);
         Assert.Contains("[display_name] NVARCHAR(256) NOT NULL", sql);
         Assert.Contains("[discovery_source] NVARCHAR(64) NOT NULL", sql);
@@ -96,7 +105,8 @@ public class SqlServerSchemaScriptBuilderTests
         var sql = new SqlServerSchemaScriptBuilder().Build(options);
 
         Assert.Contains("[ops_inventory].[machines]", sql);
-        Assert.Contains("CONSTRAINT [UX_machines_code] UNIQUE ([code])", sql);
+        Assert.Contains("DROP CONSTRAINT [UX_machines_code];", sql);
+        Assert.Contains("CREATE INDEX [IX_machines_code] ON [ops_inventory].[machines]([code]);", sql);
         Assert.Contains("REFERENCES [ops_inventory].[machines]([id])", sql);
         Assert.Contains("CREATE TABLE [ops_inventory].[stale_heartbeat_notification]", sql);
         Assert.Contains("CONSTRAINT [FK_stale_heartbeat_notification_machines] FOREIGN KEY ([pc_id]) REFERENCES [ops_inventory].[machines]([id]) ON DELETE CASCADE", sql);
@@ -121,7 +131,7 @@ public class SqlServerSchemaScriptBuilderTests
 
         var sql = new SqlServerSchemaScriptBuilder().Build(options);
 
-        const string prefix = "CONSTRAINT [";
+        const string prefix = "CREATE UNIQUE INDEX [";
         var start = sql.IndexOf(prefix, StringComparison.Ordinal);
         Assert.True(start >= 0);
         var nameStart = start + prefix.Length;

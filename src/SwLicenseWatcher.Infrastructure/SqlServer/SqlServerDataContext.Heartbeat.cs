@@ -13,7 +13,16 @@ public sealed partial class RelationalDataContext
         await using var connection = CreateConnection();
         await connection.OpenAsync(cancellationToken);
         await using var transaction = await connection.BeginTransactionAsync(IsolationLevel.Serializable, cancellationToken);
-        var identity = new PcIdentity(heartbeat.DeviceCode, heartbeat.HostName, string.Empty, string.Empty, heartbeat.Version);
+        var identity = new PcIdentity(
+            heartbeat.DeviceCode,
+            heartbeat.HostName,
+            string.Empty,
+            string.Empty,
+            heartbeat.Version,
+            heartbeat.DeviceId,
+            heartbeat.DevicePublicKey,
+            heartbeat.DeviceCertificate,
+            heartbeat.DeviceProof);
         var pcId = await UpsertPcAsync(connection, transaction, identity, null, heartbeat.ReportedAtUtc, cancellationToken);
         await ExecuteAsync(
             connection,
@@ -40,6 +49,12 @@ public sealed partial class RelationalDataContext
         await connection.OpenAsync(cancellationToken);
         await using var transaction = await connection.BeginTransactionAsync(IsolationLevel.Serializable, cancellationToken);
 
+        await ExecuteAsync(
+            connection,
+            transaction,
+            BuildDeleteSupersededStaleHeartbeatNotificationsSql(),
+            [],
+            cancellationToken);
         await ExecuteAsync(
             connection,
             transaction,
@@ -78,6 +93,7 @@ public sealed partial class RelationalDataContext
             FROM {Name(options.SchemaName, table.TableName)}
             WHERE {Name(table.LastHeartbeatUtcColumn)} IS NOT NULL
               AND {Name(table.LastHeartbeatUtcColumn)} < @cutoff
+              AND {CurrentInstallationSql()}
             ORDER BY {Name(table.LastHeartbeatUtcColumn)}, {Name(table.DeviceCodeColumn)};
             """;
     }
@@ -91,6 +107,29 @@ public sealed partial class RelationalDataContext
             FROM {Name(options.SchemaName, notification.TableName)} AS n
             INNER JOIN {Name(options.SchemaName, pc.TableName)} AS p
                 ON p.{Name(pc.PrimaryKeyColumn)} = n.{Name(notification.PcForeignKeyColumn)};
+            """;
+    }
+
+    internal string BuildDeleteSupersededStaleHeartbeatNotificationsSql()
+    {
+        var pc = options.PcTable;
+        var notification = options.StaleHeartbeatNotificationTable;
+        if (dialect.Provider == StorageProvider.PostgreSql)
+        {
+            return $"""
+                DELETE FROM {Name(options.SchemaName, notification.TableName)} AS n
+                USING {Name(options.SchemaName, pc.TableName)} AS p
+                WHERE p.{Name(pc.PrimaryKeyColumn)} = n.{Name(notification.PcForeignKeyColumn)}
+                  AND p.{Name(pc.SupersededAtUtcColumn)} IS NOT NULL;
+                """;
+        }
+
+        return $"""
+            DELETE n
+            FROM {Name(options.SchemaName, notification.TableName)} AS n
+            INNER JOIN {Name(options.SchemaName, pc.TableName)} AS p
+                ON p.{Name(pc.PrimaryKeyColumn)} = n.{Name(notification.PcForeignKeyColumn)}
+            WHERE p.{Name(pc.SupersededAtUtcColumn)} IS NOT NULL;
             """;
     }
 
@@ -129,6 +168,7 @@ public sealed partial class RelationalDataContext
             SELECT p.{Name(pc.PrimaryKeyColumn)}, @notifiedAt
             FROM {Name(options.SchemaName, pc.TableName)} AS p
             WHERE p.{Name(pc.DeviceCodeColumn)} = @deviceCode
+              AND {CurrentInstallationSql("p")}
               AND NOT EXISTS (
                   SELECT 1
                   FROM {Name(options.SchemaName, notification.TableName)} AS n
