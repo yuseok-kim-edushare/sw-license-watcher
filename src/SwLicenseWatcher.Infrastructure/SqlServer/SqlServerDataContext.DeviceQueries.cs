@@ -276,7 +276,7 @@ public sealed partial class RelationalDataContext
         var table = options.PcTable;
         var sql = $"""
             DELETE FROM {Name(options.SchemaName, table.TableName)}
-            WHERE {PcLookupPredicate()} = @deviceCode;
+            WHERE {PcLookupPredicate()};
             """;
         await using var command = CreateCommand(connection, null, sql);
         Bind(command, ("@deviceCode", deviceCode));
