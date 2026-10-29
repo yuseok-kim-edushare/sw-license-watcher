@@ -226,6 +226,9 @@ public class DeviceEnrollmentServiceTests
             string deviceCode, DeviceProfileWriteRequest request, CancellationToken cancellationToken) =>
             throw new NotSupportedException();
 
+        public Task<bool> DeleteDeviceAsync(string deviceCode, CancellationToken cancellationToken) =>
+            throw new NotSupportedException();
+
         public Task BindDeviceEnrollmentAsync(
             string deviceCode,
             string? deviceId,

@@ -42,6 +42,11 @@ internal sealed class SqlServerDeviceQueryRepository(RelationalDataContext conte
         CancellationToken cancellationToken) =>
         context.UpdateDeviceProfileAsync(deviceCode, request, cancellationToken);
 
+    public Task<bool> DeleteDeviceAsync(
+        string deviceCode,
+        CancellationToken cancellationToken) =>
+        context.DeleteDeviceAsync(deviceCode, cancellationToken);
+
     public Task BindDeviceEnrollmentAsync(
         string deviceCode,
         string? deviceId,

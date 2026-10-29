@@ -272,6 +272,21 @@ internal static class InventoryQueryApi
                 _ => Results.NotFound()
             };
         });
+
+        app.MapDelete("/api/inventory/devices/{deviceCode}", async (
+            string deviceCode,
+            IDeviceQuery repository,
+            CancellationToken cancellationToken) =>
+        {
+            if (string.IsNullOrWhiteSpace(deviceCode))
+            {
+                return Results.BadRequest("deviceCode is required.");
+            }
+
+            return await repository.DeleteDeviceAsync(deviceCode, cancellationToken)
+                ? Results.NoContent()
+                : Results.NotFound();
+        });
     }
 
     private static async Task<IResult> GetDeviceAsync(

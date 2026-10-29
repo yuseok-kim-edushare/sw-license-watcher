@@ -84,6 +84,9 @@ public sealed class AdminApiClient(HttpClient http, IJSRuntime js)
             request,
             cancellationToken);
 
+    public Task DeleteDeviceAsync(string deviceCode, CancellationToken cancellationToken = default) =>
+        SendAsync(HttpMethod.Delete, $"/api/inventory/devices/{Uri.EscapeDataString(deviceCode)}", body: null, cancellationToken);
+
     public Task<ViolationListResponse> GetViolationsAsync(string query, CancellationToken cancellationToken = default) =>
         GetAsync<ViolationListResponse>($"/api/violations?{query}", cancellationToken);
 

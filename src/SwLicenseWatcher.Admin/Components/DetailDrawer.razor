@@ -60,6 +60,7 @@
                     <button type="button" class="primary" @onclick="SaveDeviceProfileAsync">자산코드·PC 명·메모 저장</button>
                     <button type="button" @onclick="SendUserMessageAsync">이 PC에 알림 보내기</button>
                     <button type="button" class="danger" @onclick="DirectUninstallAsync">원격 제거 지시</button>
+                    <button type="button" class="danger" @onclick="DeleteDeviceAsync">DB에서 제거</button>
                     </div>
                 </div>
                 <table class="data">
@@ -337,6 +338,29 @@
             message => _error = message);
         if (succeeded)
         {
+            await Changed.InvokeAsync();
+        }
+    }
+
+    private async Task DeleteDeviceAsync()
+    {
+        _error = "";
+        if (_device is not { } detail)
+        {
+            return;
+        }
+
+        if (!await Js.InvokeAsync<bool>("confirm", $"{detail.DeviceCode} PC를 목록과 DB에서 완전히 제거할까요? 이 작업은 되돌릴 수 없습니다."))
+        {
+            return;
+        }
+
+        var succeeded = await Requests.RunAsync(
+            () => Api.DeleteDeviceAsync(detail.DeviceCode),
+            message => _error = message);
+        if (succeeded)
+        {
+            Close();
             await Changed.InvokeAsync();
         }
     }

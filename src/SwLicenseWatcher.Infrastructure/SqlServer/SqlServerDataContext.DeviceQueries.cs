@@ -269,6 +269,50 @@ public sealed partial class RelationalDataContext
             : DeviceProfileUpdateResult.NotFound;
     }
 
+    internal string BuildDeleteDeviceSql()
+    {
+        var table = options.PcTable;
+        return $"""
+            DELETE FROM {Name(options.SchemaName, table.TableName)}
+            WHERE {Name(table.PrimaryKeyColumn)} = @pcId;
+            """;
+    }
+
+    public async Task<bool> DeleteDeviceAsync(string deviceCode, CancellationToken cancellationToken)
+    {
+        await using var connection = CreateConnection();
+        await connection.OpenAsync(cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+
+        var pcId = await FindPcIdAsync(connection, transaction, deviceCode, cancellationToken);
+        if (pcId is null)
+        {
+            await transaction.RollbackAsync(cancellationToken);
+            return false;
+        }
+
+        await ExecuteAsync(
+            connection,
+            transaction,
+            BuildDeleteInstalledSoftwareSql(),
+            [("@pcId", pcId.Value)],
+            cancellationToken);
+        var deleted = await ExecuteAsync(
+            connection,
+            transaction,
+            BuildDeleteDeviceSql(),
+            [("@pcId", pcId.Value)],
+            cancellationToken);
+        if (deleted == 0)
+        {
+            await transaction.RollbackAsync(cancellationToken);
+            return false;
+        }
+
+        await transaction.CommitAsync(cancellationToken);
+        return true;
+    }
+
     public async Task BindDeviceEnrollmentAsync(
         string deviceCode,
         string? deviceId,
