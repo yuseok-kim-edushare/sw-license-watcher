@@ -25,10 +25,16 @@ deploy/
     Apply-DbSchema.ps1      SQL Server 스키마 적용 (API 또는 .sql 파일)
     Install-ApiServer.ps1   서버에 Kestrel Windows Service 설치
     Uninstall-ApiServer.ps1
+    Install-ApiUpdateHelper.ps1  Windows 서버 업데이트 도우미 (수동, API 설치와 별도)
+    Uninstall-ApiUpdateHelper.ps1
+    Apply-ApiUpdate.ps1     도우미가 실행하는 적용 스크립트
     Install-Agent.ps1       PC에 Worker + Watchdog만 설치
     Uninstall-Agent.ps1
   linux/
     sw-license-watcher-api.service   리눅스 Kestrel systemd 유닛
+    install-api-update-helper.sh     Linux 서버 업데이트 도우미 (수동, API 설치와 별도)
+    uninstall-api-update-helper.sh
+    apply-api-update.sh               도우미가 실행하는 적용 스크립트
 ```
 
 직원 PC에는 PowerShell 대신 전체 Release ZIP(`SwLicenseWatcher-{version}.zip`) 안의 `Packager.exe`로 만든 **회사 Setup.exe 하나**를 배포할 수 있습니다. API가 이미 있으면 더 작은 `SwLicenseWatcher.Packager-{version}.zip`만 받아도 됩니다. 패키저·직원 설치·제거 승인 순서는 [packager-setup.ko.md](packager-setup.ko.md)입니다. Intune/자동화가 있으면 아래 스크립트 경로를 그대로 씁니다.
@@ -198,6 +204,39 @@ Native AOT는 IIS in-process를 지원하지 않습니다. `api/iis/win-x64`를 
 6. 풀을 재순환한 뒤 사이트 URL로 `/health`를 확인하고, 브라우저에서 `/admin` 대시보드가 열리는지 봅니다.
 
 IIS가 TLS를 종료하므로 에이전트의 `ServerBaseUrl`은 사이트 HTTPS 주소입니다.
+
+### 서버 업데이트 도우미
+
+`/admin`의 **업데이트**에서 이 서버 패키지를 가져오고 적용하려면 도우미가 먼저 있어야 합니다. `Install-ApiServer.ps1`과 Linux `systemctl enable`은 도우미를 등록하지 않습니다. 서버 패치를 관리 화면에서 할 서버에만, 관리자가 직접 한 번 설치합니다.
+
+도우미는 설치 경로의 `appsettings*.json`과 `device-ca*.json`을 유지한 채 프로그램을 바꾸고 다시 시작합니다. 연결이 되면 HTTP 503도 성공으로 봅니다. `/health`는 DB가 없으면 503입니다. 연결이 안 되면 백업으로 되돌립니다.
+
+Windows 서비스:
+
+```powershell
+.\Install-ApiUpdateHelper.ps1 -InstallPath "C:\Program Files\SwLicenseWatcher\Api" -HealthUrl "https://127.0.0.1/health"
+```
+
+스크립트는 Release의 `api\win-x64\update-helper`에 있습니다. IIS는 같은 스크립트에 앱 풀 이름을 넘깁니다. 도우미 스크립트를 IIS 사이트 폴더에 넣지 마세요. 앱 풀이 그 파일을 내려받을 수 있습니다.
+
+```powershell
+.\Install-ApiUpdateHelper.ps1 -InstallPath "C:\inetpub\sw-license-watcher" -AppPool "SwLicenseWatcher" -HealthUrl "https://license-watcher.contoso.local/health"
+```
+
+Linux는 API 유닛과 계정을 만든 뒤에 root로 실행합니다. `curl`이 있으면 `--health-url`로 기동을 확인할 수 있습니다.
+
+```bash
+sudo bash ./install-api-update-helper.sh \
+  --install-path /opt/sw-license-watcher \
+  --service-user swlw \
+  --health-url https://127.0.0.1/health
+```
+
+스크립트는 `api/linux-x64/update-helper`에 있습니다. 서비스 계정은 `systemctl start sw-license-watcher-api-update.service`만 비밀번호 없이 실행할 수 있습니다. 적용 스크립트는 root 소유이고, 스테이징 디렉터리의 스크립트를 실행하지 않습니다.
+
+이 기능이 들어 있는 첫 릴리스는 지금처럼 API를 한 번 수동으로 올립니다. 그 다음 릴리스부터 `/admin`에서 이 서버의 패키지를 고릅니다. Windows 서비스는 `SwLicenseWatcher.Api.win-x64-{version}.zip`, IIS는 `SwLicenseWatcher.Api.iis-win-x64-{version}.zip`, Linux는 `SwLicenseWatcher.Api.linux-x64-{version}.zip`입니다. 도우미가 없으면 적용은 거절되고 화면에 설치 명령이 나옵니다.
+
+제거는 `Uninstall-ApiUpdateHelper.ps1` 또는 `sudo bash ./uninstall-api-update-helper.sh`입니다. API 설치는 지우지 않습니다. 스테이징 파일까지 지울 때만 `-RemoveStaging` 또는 `--remove-staging`을 붙입니다.
 
 스키마는 API가 백그라운드에서 맞춥니다. `/health`는 Bearer가 필요 없습니다. 테이블이 아직 없으면 `/health`는 503일 수 있고, 적용이 끝나면 200이 됩니다.
 

@@ -149,6 +149,19 @@ public sealed class AdminApiClient(HttpClient http, IJSRuntime js)
     public Task<GitHubUpdateSourceResponse> GetGitHubUpdateSourceAsync(CancellationToken cancellationToken = default) =>
         GetAsync<GitHubUpdateSourceResponse>("/api/updates/worker/github", cancellationToken);
 
+    public Task<ServerUpdateStatusResponse> GetServerUpdateStatusAsync(CancellationToken cancellationToken = default) =>
+        GetAsync<ServerUpdateStatusResponse>("/api/updates/server", cancellationToken);
+
+    public Task<ServerUpdateImportResponse> ImportServerUpdateAsync(
+        ServerUpdateImportRequest request,
+        CancellationToken cancellationToken = default) =>
+        SendJsonAsync<ServerUpdateImportResponse>(HttpMethod.Post, "/api/updates/server/github", request, cancellationToken);
+
+    public Task<ServerUpdateApplyResponse> ApplyServerUpdateAsync(
+        ServerUpdateApplyRequest request,
+        CancellationToken cancellationToken = default) =>
+        SendJsonAsync<ServerUpdateApplyResponse>(HttpMethod.Post, "/api/updates/server/apply", request, cancellationToken);
+
     public Task<GitHubWorkerUpdateImportResponse> ImportGitHubWorkerUpdateAsync(
         GitHubWorkerUpdateImportRequest request,
         CancellationToken cancellationToken = default) =>

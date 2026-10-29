@@ -247,6 +247,9 @@ API 호출에 IdP 로그인 HTML을 200으로 반환하지 않는다. Web의 인
 | GET | `/api/updates/worker/package/{version}` | 익명; 기존 패키지 검증·전달 계약 유지 |
 | GET | `/api/updates/worker/github` | 관리 읽기 |
 | POST | `/api/updates/worker/github` | 관리 쓰기 |
+| GET | `/api/updates/server` | 관리 읽기 |
+| POST | `/api/updates/server/github` | 관리 쓰기 |
+| POST | `/api/updates/server/apply` | 관리 쓰기 |
 | GET | `/api/inventory/devices` | 관리 읽기 |
 | GET | `/api/inventory/devices/{deviceCode}` | 관리 읽기 |
 | GET | `/api/inventory/snapshots/{deviceCode}` | 관리 읽기; 기존 상세 조회 별칭 |

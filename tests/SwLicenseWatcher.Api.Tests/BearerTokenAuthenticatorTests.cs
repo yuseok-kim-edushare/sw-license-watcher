@@ -167,6 +167,9 @@ public class BearerTokenAuthenticatorTests
     [InlineData("/api/uninstall-requests")]
     [InlineData("/api/uninstall-requests/3/approve")]
     [InlineData("/api/updates/worker/github")]
+    [InlineData("/api/updates/server")]
+    [InlineData("/api/updates/server/github")]
+    [InlineData("/api/updates/server/apply")]
     [InlineData("/health")]
     public void IsAgentEndpoint_rejects_non_agent_paths(string path)
     {
@@ -185,6 +188,12 @@ public class BearerTokenAuthenticatorTests
         Assert.False(EndpointPolicies.IsAgentEndpoint(AgentPaths.WorkerGitHub, HttpMethods.Get));
         Assert.True(EndpointPolicies.IsAdminEndpoint(AgentPaths.WorkerGitHub, HttpMethods.Get));
         Assert.True(EndpointPolicies.IsAdminEndpoint(AgentPaths.WorkerGitHub, HttpMethods.Post));
+        Assert.False(EndpointPolicies.IsAgentEndpoint(AgentPaths.ServerUpdate, HttpMethods.Get));
+        Assert.False(EndpointPolicies.IsAgentEndpoint(AgentPaths.ServerUpdateApply, HttpMethods.Post));
+        Assert.True(EndpointPolicies.IsAdminEndpoint(AgentPaths.ServerUpdate, HttpMethods.Get));
+        Assert.True(EndpointPolicies.IsAdminEndpoint(AgentPaths.ServerUpdateGitHub, HttpMethods.Post));
+        Assert.True(EndpointPolicies.IsAdminEndpoint(AgentPaths.ServerUpdateApply, HttpMethods.Post));
+        Assert.False(EndpointPolicies.IsAdminEndpoint(AgentPaths.ServerUpdateApply, HttpMethods.Delete));
     }
 
     [Fact]

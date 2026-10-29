@@ -67,6 +67,8 @@ internal static class ApiServiceCollectionExtensions
                 options => Uri.TryCreate(options.PackageUrl, UriKind.Absolute, out _),
                 "Updates:Worker:PackageUrl must be an absolute URI.")
             .ValidateOnStart();
+        services.AddOptions<ServerUpdateOptions>()
+            .Bind(configuration.GetSection("Updates:Server"));
         services.AddOptions<GitHubUpdateOptions>()
             .Bind(configuration.GetSection("Updates:GitHub"))
             .Validate(
@@ -156,6 +158,9 @@ internal static class ApiServiceCollectionExtensions
             }
         });
         services.AddTransient<GitHubWorkerUpdateImporter>();
+        services.AddSingleton<IServerUpdateEnvironment, RuntimeServerUpdateEnvironment>();
+        services.AddSingleton<IServerUpdateTrigger, ProcessServerUpdateTrigger>();
+        services.AddSingleton<ServerUpdateCoordinator>();
         services.AddSingleton<UserMessageEventHub>();
         services.AddHttpClient(WebhookNotificationSender.HttpClientName, (sp, client) =>
         {

@@ -7,6 +7,9 @@ internal static class AgentPaths
     internal const string WorkerManifest = "/api/updates/worker/manifest";
     internal const string WorkerPackage = "/api/updates/worker/package";
     internal const string WorkerGitHub = "/api/updates/worker/github";
+    internal const string ServerUpdate = "/api/updates/server";
+    internal const string ServerUpdateGitHub = "/api/updates/server/github";
+    internal const string ServerUpdateApply = "/api/updates/server/apply";
     internal const string UninstallRequests = "/api/agents/uninstall-requests";
     internal const string UserMessages = "/api/agents/user-messages";
     internal const string Events = "/api/agents/events";
@@ -20,6 +23,11 @@ internal static class EndpointPolicies
 
     internal static bool IsAgentEndpoint(PathString path, string httpMethod)
     {
+        if (path.StartsWithSegments(AgentPaths.ServerUpdate, StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
         if (path.Equals(AgentPaths.WorkerManifest, StringComparison.OrdinalIgnoreCase))
         {
             return HttpMethods.IsGet(httpMethod);
@@ -50,7 +58,8 @@ internal static class EndpointPolicies
             return HttpMethods.IsGet(httpMethod);
         }
 
-        if (path.StartsWithSegments(AgentPaths.WorkerGitHub, StringComparison.OrdinalIgnoreCase))
+        if (path.StartsWithSegments(AgentPaths.WorkerGitHub, StringComparison.OrdinalIgnoreCase) ||
+            path.StartsWithSegments(AgentPaths.ServerUpdate, StringComparison.OrdinalIgnoreCase))
         {
             return HttpMethods.IsGet(httpMethod) | HttpMethods.IsPost(httpMethod);
         }

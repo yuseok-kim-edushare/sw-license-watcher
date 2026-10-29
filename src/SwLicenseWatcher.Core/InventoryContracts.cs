@@ -157,6 +157,40 @@ public sealed record GitHubWorkerReleaseSummary(
     bool HasChecksums,
     bool Cached);
 
+public sealed record ServerUpdateReleaseSummary(
+    string Version,
+    DateTimeOffset? PublishedAtUtc,
+    bool HasPackage,
+    bool HasChecksums,
+    bool Staged);
+
+public sealed record ServerUpdateStatusResponse(
+    string Version,
+    string HostKind,
+    string PackageFileName,
+    bool HelperInstalled,
+    string? HelperInstallHint,
+    bool GitHubConfigured,
+    string Owner,
+    string Repository,
+    IReadOnlyList<ServerUpdateReleaseSummary> Releases,
+    string? StagedVersion,
+    string? LastApplyStatus,
+    string? LastApplyMessage,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    string? Error = null);
+
+public sealed record ServerUpdateImportRequest(string? Version = null);
+
+public sealed record ServerUpdateImportResponse(
+    string Version,
+    string Sha256,
+    string PackageFileName);
+
+public sealed record ServerUpdateApplyRequest(string? Version = null);
+
+public sealed record ServerUpdateApplyResponse(string Version, string Message);
+
 public sealed record GitHubUpdateSourceResponse(
     bool Configured,
     string Owner,

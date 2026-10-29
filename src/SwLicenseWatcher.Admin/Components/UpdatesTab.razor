@@ -1,6 +1,63 @@
 @inherits AdminTabComponent
 
 <section class="card">
+    <h2>이 서버 패치</h2>
+    <p class="hint">이 서버의 호스트에 맞는 패키지만 가져옵니다. Windows 서비스, IIS, Linux 패키지는 서로 다릅니다. 업데이트 도우미는 API 설치와 따로, 관리자가 직접 설치합니다.</p>
+    @if (!string.IsNullOrEmpty(_serverError))
+    {
+        <p class="error">@_serverError</p>
+    }
+    @if (!string.IsNullOrEmpty(_serverMessage))
+    {
+        <p class="meta">@_serverMessage</p>
+    }
+    @if (_server is not null)
+    {
+        <p class="meta">현재 @_server.Version · @HostLabel(_server.HostKind) · 패키지 <code>@_server.PackageFileName</code></p>
+        @if (!string.IsNullOrEmpty(_server.StagedVersion))
+        {
+            <p class="meta">가져온 패키지 @_server.StagedVersion</p>
+        }
+        @if (!string.IsNullOrEmpty(_server.LastApplyStatus))
+        {
+            <p class="meta">마지막 적용 @_server.LastApplyStatus @(_server.LastApplyMessage)</p>
+        }
+        @if (!_server.HelperInstalled)
+        {
+            <p class="hint">도우미가 없습니다. 서버에서 관리자 권한으로 한 번 설치한 뒤에 적용할 수 있습니다.</p>
+            @if (!string.IsNullOrEmpty(_server.HelperInstallHint))
+            {
+                <p><code>@_server.HelperInstallHint</code></p>
+            }
+        }
+        @if (!_server.GitHubConfigured)
+        {
+            <p class="hint">API <code>Updates:GitHub:Owner</code>와 <code>Updates:GitHub:Repository</code>를 설정하면 여기서 릴리스를 고를 수 있습니다.</p>
+        }
+        else
+        {
+            <p class="meta">@_server.Owner/@_server.Repository</p>
+            <div class="form-grid">
+                <label>릴리스
+                    <select @bind="_serverRelease">
+                        <option value="">최신 릴리스</option>
+                        @foreach (var release in _server.Releases)
+                        {
+                            <option value="@release.Version">@ServerReleaseLabel(release)</option>
+                        }
+                    </select>
+                </label>
+            </div>
+            <div class="form-actions">
+                <button type="button" class="primary" disabled="@(!_server.HelperInstalled || _serverBusy)" @onclick="ImportServerAsync">패키지 가져오기</button>
+                <button type="button" disabled="@(!_server.HelperInstalled || _serverBusy || string.IsNullOrEmpty(_server.StagedVersion))" @onclick="ApplyServerAsync">적용하고 재시작</button>
+                <button type="button" disabled="@_serverBusy" @onclick="RefreshServerAsync">다시 읽기</button>
+            </div>
+        }
+    }
+</section>
+
+<section class="card">
     <h2>GitHub Release에서 Worker 패키지 가져오기</h2>
     <p class="hint">서버가 Release의 Worker ZIP과 SHA256SUMS.txt를 받아 캐시합니다. 핀의 패키지 주소는 <code>GET /api/updates/worker/package/{version}</code>이고, 이 주소는 토큰 없이 ZIP을 돌려줍니다. Authenticode 필수는 가져올 때 켜지지 않습니다.</p>
     @if (!string.IsNullOrEmpty(_githubError))
@@ -77,6 +134,11 @@
     private string _selectedRelease = "";
     private bool _importing;
     private IReadOnlyList<GitHubWorkerReleaseSummary> _releases = [];
+    private ServerUpdateStatusResponse? _server;
+    private string _serverRelease = "";
+    private string _serverError = "";
+    private string _serverMessage = "";
+    private bool _serverBusy;
 
     public override async Task RefreshAsync()
     {
@@ -87,6 +149,7 @@
             Apply(await Api.GetWorkerUpdatePinAsync());
         }, message => Error = message);
         await RefreshGitHubAsync();
+        await RefreshServerAsync();
         if (succeeded)
         {
             await Refreshed.InvokeAsync();
@@ -162,6 +225,79 @@
         _sha256 = pin.Sha256;
         _requireAuthenticode = pin.RequireAuthenticode;
         _rollbackMinutes = pin.RollbackAfterMinutes;
+    }
+
+    private async Task RefreshServerAsync()
+    {
+        _serverError = "";
+        await Requests.RunAsync(async () =>
+        {
+            _server = await Api.GetServerUpdateStatusAsync();
+            if (!string.IsNullOrEmpty(_server.Error))
+            {
+                _serverError = _server.Error;
+            }
+        }, message => _serverError = message);
+    }
+
+    private async Task ImportServerAsync()
+    {
+        _serverError = "";
+        _serverMessage = "";
+        _serverBusy = true;
+        try
+        {
+            await Requests.RunAsync(async () =>
+            {
+                var imported = await Api.ImportServerUpdateAsync(
+                    new ServerUpdateImportRequest(string.IsNullOrWhiteSpace(_serverRelease) ? null : _serverRelease));
+                _server = await Api.GetServerUpdateStatusAsync();
+                if (!string.IsNullOrEmpty(_server.Error))
+                {
+                    _serverError = _server.Error;
+                }
+                _serverMessage = $"{imported.PackageFileName}을 가져왔습니다. 적용하면 이 서버가 재시작됩니다.";
+            }, message => _serverError = message);
+        }
+        finally
+        {
+            _serverBusy = false;
+        }
+    }
+
+    private async Task ApplyServerAsync()
+    {
+        _serverError = "";
+        _serverMessage = "";
+        _serverBusy = true;
+        try
+        {
+            await Requests.RunAsync(async () =>
+            {
+                var applied = await Api.ApplyServerUpdateAsync(
+                    new ServerUpdateApplyRequest(string.IsNullOrWhiteSpace(_server?.StagedVersion) ? null : _server.StagedVersion));
+                _serverMessage = $"{applied.Version} 적용을 시작했습니다. 서버가 곧 다시 시작됩니다. 잠시 후 이 페이지를 새로고침하세요.";
+            }, message => _serverError = message);
+        }
+        finally
+        {
+            _serverBusy = false;
+        }
+    }
+
+    private static string HostLabel(string hostKind) => hostKind switch
+    {
+        "windows-service" => "Windows 서비스",
+        "iis" => "IIS",
+        "linux" => "Linux",
+        _ => hostKind
+    };
+
+    private static string ServerReleaseLabel(ServerUpdateReleaseSummary release)
+    {
+        var staged = release.Staged ? " · 가져옴" : "";
+        var ready = release.HasPackage && release.HasChecksums ? "" : " · 자산 없음";
+        return $"{release.Version}{staged}{ready}";
     }
 
     private static string ReleaseLabel(GitHubWorkerReleaseSummary release)

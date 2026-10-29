@@ -411,7 +411,13 @@ jobs:
           }
 
           $utf8NoBom = New-Object System.Text.UTF8Encoding $false
-          foreach ($relative in @("publish\agent-worker\win-x64", "publish\agent-watchdog\win-x64")) {
+          foreach ($relative in @(
+            "publish\agent-worker\win-x64",
+            "publish\agent-watchdog\win-x64",
+            "publish\api\win-x64",
+            "publish\api\iis\win-x64",
+            "publish\api\linux-x64"
+          )) {
             $dir = Join-Path "${{ github.workspace }}" $relative
             if (!(Test-Path -LiteralPath $dir)) {
               throw "Publish output not found at: $dir"
@@ -426,6 +432,32 @@ jobs:
 
             Write-Host "Stamped $path as $written"
           }
+
+      - name: Add server update helper scripts
+        shell: pwsh
+        run: |
+          $root = "${{ github.workspace }}"
+          function Copy-Helper([string] $Destination, [string] $Source, [string[]] $Files) {
+            New-Item -Path $Destination -ItemType Directory -Force | Out-Null
+            foreach ($file in $Files) {
+              $from = Join-Path $Source $file
+              if (!(Test-Path -LiteralPath $from)) {
+                throw "Helper script not found: $from"
+              }
+              Copy-Item -LiteralPath $from -Destination (Join-Path $Destination $file) -Force
+            }
+          }
+
+          Copy-Helper (Join-Path $root "publish\api\win-x64\update-helper") (Join-Path $root "deploy\scripts") @(
+            "Apply-ApiUpdate.ps1",
+            "Install-ApiUpdateHelper.ps1",
+            "Uninstall-ApiUpdateHelper.ps1"
+          )
+          Copy-Helper (Join-Path $root "publish\api\linux-x64\update-helper") (Join-Path $root "deploy\linux") @(
+            "apply-api-update.sh",
+            "install-api-update-helper.sh",
+            "uninstall-api-update-helper.sh"
+          )
 
       - name: Prepare release files
         shell: pwsh
@@ -505,6 +537,7 @@ jobs:
             $releaseNotes += "- api/win-x64/ - ASP.NET Core API Native AOT (Kestrel)`n"
             $releaseNotes += "- api/linux-x64/ - ASP.NET Core API Native AOT for Linux (Kestrel, systemd unit)`n"
             $releaseNotes += "- api/iis/win-x64/ - ASP.NET Core API for IIS in-process hosting`n"
+            $releaseNotes += "- api/win-x64/update-helper/ and api/linux-x64/update-helper/ - manual server update helpers`n"
             $releaseNotes += "- Packager.exe - IT GUI to bake server URL and agent token into one Setup.exe`n"
             $releaseNotes += "- SwLicenseWatcher-Setup.exe - empty launcher stub (do not give to employees)`n"
             $releaseNotes += "- setup-ui/SwLicenseWatcher.Setup.exe - employee install/uninstall UI`n"
@@ -588,13 +621,34 @@ jobs:
           }
           Compress-Archive -Path (Join-Path $linuxApiDir "*") -DestinationPath $linuxZipPath -Force
 
+          function New-ApiZip([string] $SourceRelative, [string] $ZipFileName) {
+            $source = Join-Path "${{ github.workspace }}" $SourceRelative
+            if (!(Test-Path $source)) {
+              Write-Error "API publish output not found at $source"
+              exit 1
+            }
+            $zip = Join-Path $env:RELEASE_ROOT $ZipFileName
+            if (Test-Path $zip) {
+              Remove-Item -Path $zip -Force
+            }
+            Compress-Archive -Path (Join-Path $source "*") -DestinationPath $zip -Force
+            return $zip
+          }
+
+          $windowsZipName = "SwLicenseWatcher.Api.win-x64-$newVersionString.zip"
+          $iisZipName = "SwLicenseWatcher.Api.iis-win-x64-$newVersionString.zip"
+          $windowsZipPath = New-ApiZip "publish\api\win-x64" $windowsZipName
+          $iisZipPath = New-ApiZip "publish\api\iis\win-x64" $iisZipName
+
           $combinedSha = (Get-FileHash -Algorithm SHA256 -Path $zipPath).Hash.ToLowerInvariant()
           $workerSha = (Get-FileHash -Algorithm SHA256 -Path $workerZipPath).Hash.ToLowerInvariant()
           $packagerSha = (Get-FileHash -Algorithm SHA256 -Path $packagerZipPath).Hash.ToLowerInvariant()
           $linuxSha = (Get-FileHash -Algorithm SHA256 -Path $linuxZipPath).Hash.ToLowerInvariant()
+          $windowsSha = (Get-FileHash -Algorithm SHA256 -Path $windowsZipPath).Hash.ToLowerInvariant()
+          $iisSha = (Get-FileHash -Algorithm SHA256 -Path $iisZipPath).Hash.ToLowerInvariant()
           $sumsPath = Join-Path $env:RELEASE_ROOT "SHA256SUMS.txt"
           $utf8NoBom = New-Object System.Text.UTF8Encoding $false
-          $sums = "$combinedSha  $zipName`n$workerSha  $workerZipName`n$packagerSha  $packagerZipName`n$linuxSha  $linuxZipName`n"
+          $sums = "$combinedSha  $zipName`n$workerSha  $workerZipName`n$packagerSha  $packagerZipName`n$linuxSha  $linuxZipName`n$windowsSha  $windowsZipName`n$iisSha  $iisZipName`n"
           [System.IO.File]::WriteAllText($sumsPath, $sums, $utf8NoBom)
 
           $packageUrl = "https://github.com/${{ github.repository }}/releases/download/$newVersionString/$workerZipName"
@@ -615,12 +669,21 @@ jobs:
           $releaseNotes += "- Asset: $linuxZipName`n"
           $releaseNotes += "- Also inside the combined zip at api/linux-x64/, with sw-license-watcher-api.service`n"
           $releaseNotes += "- SHA-256: $linuxSha`n"
+          $releaseNotes += "`n`n### Server packages`n`n"
+          $releaseNotes += "- Windows service: $windowsZipName ($windowsSha)`n"
+          $releaseNotes += "- IIS in-process: $iisZipName ($iisSha). The update helper scripts are not in this zip; use api/win-x64/update-helper from the combined zip.`n"
+          $releaseNotes += "- Linux: $linuxZipName ($linuxSha)`n"
+          $releaseNotes += "- /admin stages the package for the host that is running and asks a manually installed helper to apply it.`n"
+          $releaseNotes += "- Windows helper: api/win-x64/update-helper/Install-ApiUpdateHelper.ps1`n"
+          $releaseNotes += "- Linux helper: api/linux-x64/update-helper/install-api-update-helper.sh`n"
 
           echo "zip_path=$zipPath" >> $env:GITHUB_ENV
           echo "zip_name=$zipName" >> $env:GITHUB_ENV
           echo "worker_zip_path=$workerZipPath" >> $env:GITHUB_ENV
           echo "packager_zip_path=$packagerZipPath" >> $env:GITHUB_ENV
           echo "linux_zip_path=$linuxZipPath" >> $env:GITHUB_ENV
+          echo "windows_zip_path=$windowsZipPath" >> $env:GITHUB_ENV
+          echo "iis_zip_path=$iisZipPath" >> $env:GITHUB_ENV
           echo "sha256sums_path=$sumsPath" >> $env:GITHUB_ENV
 
           $releaseNotes | Out-File -FilePath (Join-Path $env:RELEASE_ROOT "releaseNotes.txt") -Encoding utf8
@@ -637,6 +700,8 @@ jobs:
             ${{ env.worker_zip_path }}
             ${{ env.packager_zip_path }}
             ${{ env.linux_zip_path }}
+            ${{ env.windows_zip_path }}
+            ${{ env.iis_zip_path }}
             ${{ env.sha256sums_path }}
           tag_name: ${{ env.new_release }}
           name: Release ${{ env.new_release }}

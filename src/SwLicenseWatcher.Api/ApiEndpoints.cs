@@ -7,6 +7,7 @@ internal static class ApiEndpoints
         app.MapHealthEndpoints();
         app.MapDesignEndpoints();
         app.MapWorkerUpdateEndpoints();
+        app.MapServerUpdateEndpoints();
         app.MapInventoryIngestionEndpoints();
         app.MapInventoryQuery();
         app.MapPolicyQuery();
