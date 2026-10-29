@@ -269,6 +269,20 @@ public sealed partial class RelationalDataContext
             : DeviceProfileUpdateResult.NotFound;
     }
 
+    public async Task<bool> DeleteDeviceAsync(string deviceCode, CancellationToken cancellationToken)
+    {
+        await using var connection = CreateConnection();
+        await connection.OpenAsync(cancellationToken);
+        var table = options.PcTable;
+        var sql = $"""
+            DELETE FROM {Name(options.SchemaName, table.TableName)}
+            WHERE {PcLookupPredicate()} = @deviceCode;
+            """;
+        await using var command = CreateCommand(connection, null, sql);
+        Bind(command, ("@deviceCode", deviceCode));
+        return await command.ExecuteNonQueryAsync(cancellationToken) > 0;
+    }
+
     public async Task BindDeviceEnrollmentAsync(
         string deviceCode,
         string? deviceId,

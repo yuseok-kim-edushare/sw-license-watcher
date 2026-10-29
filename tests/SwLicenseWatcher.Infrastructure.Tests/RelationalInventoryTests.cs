@@ -151,6 +151,28 @@ public abstract class RelationalInventoryTests
     }
 
     [Fact]
+    public async Task DeleteDevice_removes_the_pc_and_its_current_inventory()
+    {
+        EnsureAvailable();
+        var token = TestContext.Current.CancellationToken;
+        var deviceCode = Unique("PC");
+        var software = "Notepad++";
+
+        Assert.True((await Context.SaveSnapshotAsync(
+            Snapshot(deviceCode, new DateTimeOffset(2026, 9, 12, 8, 0, 0, TimeSpan.Zero), Software(software, "8.6")),
+            token)).Applied);
+
+        Assert.True(await Context.DeleteDeviceAsync(deviceCode, token));
+
+        var deleted = await Context.GetDeviceAsync(deviceCode, classification: null, token);
+        Assert.Null(deleted);
+
+        var listed = await Context.ListDevicesAsync(0, 10, deviceCode, staleAfterHours: null, token);
+        Assert.Equal(0, listed.TotalCount);
+        Assert.Empty((await Context.ListSoftwareAsync(0, 10, software, classification: null, token)).Items);
+    }
+
+    [Fact]
     public async Task Heartbeat_updates_pc_and_clears_stale_notification_claim()
     {
         EnsureAvailable();

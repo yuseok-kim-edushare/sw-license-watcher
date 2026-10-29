@@ -61,6 +61,10 @@ public interface IDeviceQuery
         DeviceProfileWriteRequest request,
         CancellationToken cancellationToken);
 
+    Task<bool> DeleteDeviceAsync(
+        string deviceCode,
+        CancellationToken cancellationToken);
+
     Task BindDeviceEnrollmentAsync(
         string deviceCode,
         string? deviceId,
