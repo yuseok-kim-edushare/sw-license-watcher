@@ -282,16 +282,35 @@ public sealed partial class RelationalDataContext
     {
         await using var connection = CreateConnection();
         await connection.OpenAsync(cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
 
-        var pcId = await FindPcIdAsync(connection, transaction: null, deviceCode, cancellationToken);
+        var pcId = await FindPcIdAsync(connection, transaction, deviceCode, cancellationToken);
         if (pcId is null)
         {
+            await transaction.RollbackAsync(cancellationToken);
             return false;
         }
 
-        await using var command = CreateCommand(connection, null, BuildDeleteDeviceSql());
-        Bind(command, ("@pcId", pcId.Value));
-        return await command.ExecuteNonQueryAsync(cancellationToken) > 0;
+        await ExecuteAsync(
+            connection,
+            transaction,
+            BuildDeleteInstalledSoftwareSql(),
+            [("@pcId", pcId.Value)],
+            cancellationToken);
+        var deleted = await ExecuteAsync(
+            connection,
+            transaction,
+            BuildDeleteDeviceSql(),
+            [("@pcId", pcId.Value)],
+            cancellationToken);
+        if (deleted == 0)
+        {
+            await transaction.RollbackAsync(cancellationToken);
+            return false;
+        }
+
+        await transaction.CommitAsync(cancellationToken);
+        return true;
     }
 
     public async Task BindDeviceEnrollmentAsync(
