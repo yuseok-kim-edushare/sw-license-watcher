@@ -47,7 +47,7 @@ internal static class InventoryQueryApi
             {
                 return InventoryCsv.File(
                     "devices.csv",
-                    ["DeviceCode", "HostName", "AssignedHostName", "AdminNotes", "DomainName", "OperatingSystem", "AgentVersion", "LastHeartbeatUtc", "LastInventoryUtc", "InstalledAtUtc", "SupersededAtUtc"],
+                    ["DeviceCode", "HostName", "AssignedHostName", "AdminNotes", "DomainName", "OperatingSystem", "AgentVersion", "LastHeartbeatUtc", "LastInventoryUtc", "InstalledAtUtc", "SupersededAtUtc", "PcId"],
                     items.Select(device => new[]
                     {
                         device.DeviceCode,
@@ -60,7 +60,8 @@ internal static class InventoryQueryApi
                         InventoryCsv.Format(device.LastHeartbeatUtc),
                         InventoryCsv.Format(device.LastInventoryUtc),
                         InventoryCsv.Format(device.InstalledAtUtc),
-                        InventoryCsv.Format(device.SupersededAtUtc)
+                        InventoryCsv.Format(device.SupersededAtUtc),
+                        device.PcId.ToString(System.Globalization.CultureInfo.InvariantCulture)
                     }));
             }
 
@@ -69,6 +70,19 @@ internal static class InventoryQueryApi
 
         app.MapGet("/api/inventory/devices/{deviceCode}", GetDeviceAsync);
         app.MapGet("/api/inventory/snapshots/{deviceCode}", GetDeviceAsync);
+        app.MapGet("/api/inventory/pcs/{pcId:long}", GetDeviceByIdAsync);
+        app.MapGet("/api/inventory/pcs/{pcId:long}/installations", async (
+            long pcId,
+            IDeviceQuery repository,
+            CancellationToken cancellationToken) =>
+        {
+            if (pcId <= 0)
+            {
+                return Results.BadRequest("pcId is required.");
+            }
+
+            return Results.Ok(await repository.ListDeviceInstallationsAsync(pcId, cancellationToken));
+        });
 
         app.MapGet("/api/inventory/software", async (
             ISoftwareQuery repository,
@@ -104,7 +118,7 @@ internal static class InventoryQueryApi
                     normalizedSkip, normalizedTake, search, normalizedClassification, cancellationToken, sortColumn, sortDescending);
                 return InventoryCsv.File(
                     "software.csv",
-                    ["Name", "Version", "Classification", "DeviceCount", "CompanyCount", "ByoCount", "UnassignedCount", "DeviceCodes", "DeviceNames"],
+                    ["Name", "Version", "Classification", "DeviceCount", "CompanyCount", "ByoCount", "UnassignedCount", "DeviceCodes", "DeviceNames", "PcIds"],
                     rows.Select(SoftwareCsvRow));
             }
 
@@ -146,7 +160,7 @@ internal static class InventoryQueryApi
             {
                 return InventoryCsv.File(
                     $"software-{InventoryCsv.SafeFileName(name)}-devices.csv",
-                    ["Name", "DeviceCode", "HostName", "AssignedHostName", "DomainName", "OperatingSystem", "AgentVersion", "LastHeartbeatUtc", "LastInventoryUtc", "Version", "Publisher", "Classification", "LicenseSource", "LicenseSourceOverride"],
+                    ["Name", "DeviceCode", "HostName", "AssignedHostName", "DomainName", "OperatingSystem", "AgentVersion", "LastHeartbeatUtc", "LastInventoryUtc", "Version", "Publisher", "Classification", "LicenseSource", "LicenseSourceOverride", "PcId"],
                     items.Select(device => new[]
                     {
                         name,
@@ -162,7 +176,8 @@ internal static class InventoryQueryApi
                         device.Publisher,
                         device.Classification,
                         device.LicenseSource,
-                        device.LicenseSourceOverride
+                        device.LicenseSourceOverride,
+                        device.PcId.ToString(System.Globalization.CultureInfo.InvariantCulture)
                     }));
             }
 
@@ -273,17 +288,17 @@ internal static class InventoryQueryApi
             };
         });
 
-        app.MapDelete("/api/inventory/devices/{deviceCode}", async (
-            string deviceCode,
+        app.MapDelete("/api/inventory/pcs/{pcId:long}", async (
+            long pcId,
             IDeviceQuery repository,
             CancellationToken cancellationToken) =>
         {
-            if (string.IsNullOrWhiteSpace(deviceCode))
+            if (pcId <= 0)
             {
-                return Results.BadRequest("deviceCode is required.");
+                return Results.BadRequest("pcId is required.");
             }
 
-            return await repository.DeleteDeviceAsync(deviceCode, cancellationToken)
+            return await repository.DeleteDeviceAsync(pcId, cancellationToken)
                 ? Results.NoContent()
                 : Results.NotFound();
         });
@@ -307,23 +322,49 @@ internal static class InventoryQueryApi
         }
 
         var detail = await repository.GetDeviceAsync(deviceCode, normalizedClassification, cancellationToken);
-        if (detail is null)
-        {
-            return Results.NotFound();
-        }
+        return detail is null ? Results.NotFound() : DeviceResult(detail, format);
+    }
 
+    private static IResult DeviceResult(DeviceDetail detail, string? format)
+    {
         if (QueryList.WantsCsv(format))
         {
-            IEnumerable<string?[]> rows = detail.InstalledSoftware.Count == 0
-                ? [DeviceSoftwareRow(detail, null)]
-                : detail.InstalledSoftware.Select(entry => DeviceSoftwareRow(detail, entry));
-            return InventoryCsv.File(
-                $"device-{InventoryCsv.SafeFileName(detail.DeviceCode)}.csv",
-                ["DeviceCode", "HostName", "AssignedHostName", "AdminNotes", "DomainName", "OperatingSystem", "AgentVersion", "LastHeartbeatUtc", "LastInventoryUtc", "InstalledAtUtc", "SupersededAtUtc", "Name", "Version", "Publisher", "InstallLocation", "DiscoveryScope", "DiscoverySource", "Classification", "LicenseSource", "LicenseSourceOverride"],
-                rows);
+            return DeviceCsv(detail);
         }
 
         return Results.Ok(detail);
+    }
+
+    private static IResult DeviceCsv(DeviceDetail detail)
+    {
+        IEnumerable<string?[]> rows = detail.InstalledSoftware.Count == 0
+            ? [DeviceSoftwareRow(detail, null)]
+            : detail.InstalledSoftware.Select(entry => DeviceSoftwareRow(detail, entry));
+        return InventoryCsv.File(
+            $"device-{InventoryCsv.SafeFileName(detail.DeviceCode)}.csv",
+            ["DeviceCode", "HostName", "AssignedHostName", "AdminNotes", "DomainName", "OperatingSystem", "AgentVersion", "LastHeartbeatUtc", "LastInventoryUtc", "InstalledAtUtc", "SupersededAtUtc", "Name", "Version", "Publisher", "InstallLocation", "DiscoveryScope", "DiscoverySource", "Classification", "LicenseSource", "LicenseSourceOverride", "PcId"],
+            rows);
+    }
+
+    private static async Task<IResult> GetDeviceByIdAsync(
+        long pcId,
+        IDeviceQuery repository,
+        string? classification,
+        string? format,
+        CancellationToken cancellationToken)
+    {
+        if (pcId <= 0)
+        {
+            return Results.BadRequest("pcId is required.");
+        }
+
+        if (!TryNormalizeClassification(classification, out var normalizedClassification, out var classificationError))
+        {
+            return Results.BadRequest(classificationError);
+        }
+
+        var detail = await repository.GetDeviceByIdAsync(pcId, normalizedClassification, cancellationToken);
+        return detail is null ? Results.NotFound() : DeviceResult(detail, format);
     }
 
     private static string?[] DeviceSoftwareRow(DeviceDetail detail, InstalledSoftwareEntry? entry) =>
@@ -347,7 +388,8 @@ internal static class InventoryQueryApi
         entry?.DiscoverySource,
         entry?.Classification,
         entry?.LicenseSource,
-        entry?.LicenseSourceOverride
+        entry?.LicenseSourceOverride,
+        detail.PcId.ToString(System.Globalization.CultureInfo.InvariantCulture)
     ];
 
     internal static string?[] SoftwareCsvRow(SoftwareAggregateAssets row) =>
@@ -360,7 +402,8 @@ internal static class InventoryQueryApi
         row.Software.ByoCount.ToString(System.Globalization.CultureInfo.InvariantCulture),
         row.Software.UnassignedCount.ToString(System.Globalization.CultureInfo.InvariantCulture),
         string.Join("; ", row.Devices.Select(device => device.DeviceCode)),
-        string.Join("; ", row.Devices.Select(device => device.DeviceName))
+        string.Join("; ", row.Devices.Select(device => device.DeviceName)),
+        string.Join("; ", row.Devices.Select(device => device.PcId.ToString(System.Globalization.CultureInfo.InvariantCulture)))
     ];
 
     internal static bool TryNormalizeClassification(string? classification, out string? normalized, out string error)

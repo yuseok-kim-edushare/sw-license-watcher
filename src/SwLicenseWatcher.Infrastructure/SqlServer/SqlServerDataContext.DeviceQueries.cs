@@ -54,7 +54,8 @@ public sealed partial class RelationalDataContext
                 ReadNullableString(reader, table.DeviceIdColumn),
                 assignedCode,
                 ReadNullableDateTimeOffset(reader, table.InstalledAtUtcColumn),
-                ReadNullableDateTimeOffset(reader, table.SupersededAtUtcColumn)));
+                ReadNullableDateTimeOffset(reader, table.SupersededAtUtcColumn),
+                reader.GetInt64(reader.GetOrdinal(table.PrimaryKeyColumn))));
         }
 
         return (totalCount, items);
@@ -72,7 +73,8 @@ public sealed partial class RelationalDataContext
                 {Name(table.LastHeartbeatUtcColumn)}, {Name(table.LastInventoryUtcColumn)},
                 {Name(table.AssignedHostNameColumn)}, {Name(table.AdminNotesColumn)},
                 {Name(table.AssignedDeviceCodeColumn)}, {Name(table.DeviceIdColumn)},
-                {Name(table.InstalledAtUtcColumn)}, {Name(table.SupersededAtUtcColumn)}
+                {Name(table.InstalledAtUtcColumn)}, {Name(table.SupersededAtUtcColumn)},
+                {Name(table.PrimaryKeyColumn)}
             FROM {Name(options.SchemaName, table.TableName)}
             WHERE (@search IS NULL OR {HostNameSearchSql()})
               AND (@staleCutoff IS NULL
@@ -102,28 +104,119 @@ public sealed partial class RelationalDataContext
         return OrderByColumn(expression, descending, fallback);
     }
 
-    public async Task<DeviceDetail?> GetDeviceAsync(
+    public Task<DeviceDetail?> GetDeviceAsync(
         string deviceCode,
         string? classification,
         CancellationToken cancellationToken)
     {
-        await using var connection = CreateConnection();
-        await connection.OpenAsync(cancellationToken);
         var table = options.PcTable;
         var sql = $"""
-            SELECT {TakePrefix("1")} {Name(table.PrimaryKeyColumn)}, {Name(table.DeviceCodeColumn)}, {Name(table.HostNameColumn)},
-                   {Name(table.DomainNameColumn)}, {Name(table.OperatingSystemColumn)}, {Name(table.AgentVersionColumn)},
-                   {Name(table.LastHeartbeatUtcColumn)}, {Name(table.LastInventoryUtcColumn)},
-                   {Name(table.AssignedHostNameColumn)}, {Name(table.AdminNotesColumn)},
-                   {Name(table.AssignedDeviceCodeColumn)}, {Name(table.DeviceIdColumn)},
-                   {Name(table.InstalledAtUtcColumn)}, {Name(table.SupersededAtUtcColumn)}
+            SELECT {TakePrefix("1")} {DeviceDetailColumns()}
             FROM {Name(options.SchemaName, table.TableName)} AS chosen
             WHERE {PcLookupPredicate("chosen")}
             ORDER BY {PreferredPcOrder("chosen")}
             {TakeSuffix("1")};
             """;
+        return QueryDeviceAsync(sql, classification, cancellationToken, ("@deviceCode", deviceCode));
+    }
+
+    public Task<DeviceDetail?> GetDeviceByIdAsync(
+        long pcId,
+        string? classification,
+        CancellationToken cancellationToken)
+    {
+        if (pcId <= 0)
+        {
+            return Task.FromResult<DeviceDetail?>(null);
+        }
+
+        var table = options.PcTable;
+        var sql = $"""
+            SELECT {DeviceDetailColumns()}
+            FROM {Name(options.SchemaName, table.TableName)}
+            WHERE {Name(table.PrimaryKeyColumn)} = @pcId;
+            """;
+        return QueryDeviceAsync(sql, classification, cancellationToken, ("@pcId", pcId));
+    }
+
+    public async Task<List<DeviceInstallation>> ListDeviceInstallationsAsync(
+        long pcId,
+        CancellationToken cancellationToken)
+    {
+        if (pcId <= 0)
+        {
+            return [];
+        }
+
+        await using var connection = CreateConnection();
+        await connection.OpenAsync(cancellationToken);
+        var table = options.PcTable;
+        var official = $"COALESCE(NULLIF(anchor.{Name(table.AssignedDeviceCodeColumn)}, {Empty}), anchor.{Name(table.DeviceCodeColumn)})";
+        var sql = $"""
+            SELECT
+                candidate.{Name(table.PrimaryKeyColumn)},
+                candidate.{Name(table.DeviceCodeColumn)},
+                candidate.{Name(table.AssignedDeviceCodeColumn)},
+                candidate.{Name(table.HostNameColumn)},
+                candidate.{Name(table.AssignedHostNameColumn)},
+                candidate.{Name(table.InstalledAtUtcColumn)},
+                candidate.{Name(table.SupersededAtUtcColumn)}
+            FROM {Name(options.SchemaName, table.TableName)} AS candidate
+            INNER JOIN {Name(options.SchemaName, table.TableName)} AS anchor
+                ON anchor.{Name(table.PrimaryKeyColumn)} = @pcId
+            WHERE candidate.{Name(table.DeviceCodeColumn)} = anchor.{Name(table.DeviceCodeColumn)}
+               OR candidate.{Name(table.AssignedDeviceCodeColumn)} = {official}
+               OR candidate.{Name(table.DeviceCodeColumn)} = {official}
+            ORDER BY
+                CASE WHEN candidate.{Name(table.SupersededAtUtcColumn)} IS NULL THEN 0 ELSE 1 END,
+                CASE WHEN candidate.{Name(table.InstalledAtUtcColumn)} IS NULL THEN 1 ELSE 0 END,
+                candidate.{Name(table.InstalledAtUtcColumn)} DESC,
+                candidate.{Name(table.PrimaryKeyColumn)} DESC;
+            """;
         await using var command = CreateCommand(connection, null, sql);
-        Bind(command, ("@deviceCode", deviceCode));
+        Bind(command, ("@pcId", pcId));
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        var items = new List<DeviceInstallation>();
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            var storedCode = reader.GetString(reader.GetOrdinal(table.DeviceCodeColumn));
+            var assignedCode = ReadNullableString(reader, table.AssignedDeviceCodeColumn);
+            items.Add(new DeviceInstallation(
+                reader.GetInt64(reader.GetOrdinal(table.PrimaryKeyColumn)),
+                DeviceCodes.Official(storedCode, assignedCode),
+                reader.GetString(reader.GetOrdinal(table.HostNameColumn)),
+                ReadNullableString(reader, table.AssignedHostNameColumn),
+                ReadNullableDateTimeOffset(reader, table.InstalledAtUtcColumn),
+                ReadNullableDateTimeOffset(reader, table.SupersededAtUtcColumn)));
+        }
+
+        return items;
+    }
+
+    private string DeviceDetailColumns()
+    {
+        var table = options.PcTable;
+        return $"""
+            {Name(table.PrimaryKeyColumn)}, {Name(table.DeviceCodeColumn)}, {Name(table.HostNameColumn)},
+            {Name(table.DomainNameColumn)}, {Name(table.OperatingSystemColumn)}, {Name(table.AgentVersionColumn)},
+            {Name(table.LastHeartbeatUtcColumn)}, {Name(table.LastInventoryUtcColumn)},
+            {Name(table.AssignedHostNameColumn)}, {Name(table.AdminNotesColumn)},
+            {Name(table.AssignedDeviceCodeColumn)}, {Name(table.DeviceIdColumn)},
+            {Name(table.InstalledAtUtcColumn)}, {Name(table.SupersededAtUtcColumn)}
+            """;
+    }
+
+    private async Task<DeviceDetail?> QueryDeviceAsync(
+        string sql,
+        string? classification,
+        CancellationToken cancellationToken,
+        params (string Name, object? Value)[] parameters)
+    {
+        await using var connection = CreateConnection();
+        await connection.OpenAsync(cancellationToken);
+        var table = options.PcTable;
+        await using var command = CreateCommand(connection, null, sql);
+        Bind(command, parameters);
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         if (!await reader.ReadAsync(cancellationToken))
         {
@@ -147,7 +240,8 @@ public sealed partial class RelationalDataContext
             ReadNullableString(reader, table.DeviceIdColumn),
             assignedCode,
             ReadNullableDateTimeOffset(reader, table.InstalledAtUtcColumn),
-            ReadNullableDateTimeOffset(reader, table.SupersededAtUtcColumn));
+            ReadNullableDateTimeOffset(reader, table.SupersededAtUtcColumn),
+            pcId);
         await reader.CloseAsync();
 
         var installed = await ReadInstalledSoftwareAsync(connection, transaction: null, pcId, classification, cancellationToken);
@@ -278,30 +372,28 @@ public sealed partial class RelationalDataContext
             """;
     }
 
-    public async Task<bool> DeleteDeviceAsync(string deviceCode, CancellationToken cancellationToken)
+    public async Task<bool> DeleteDeviceAsync(long pcId, CancellationToken cancellationToken)
     {
+        if (pcId <= 0)
+        {
+            return false;
+        }
+
         await using var connection = CreateConnection();
         await connection.OpenAsync(cancellationToken);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
-
-        var pcId = await FindPcIdAsync(connection, transaction, deviceCode, cancellationToken);
-        if (pcId is null)
-        {
-            await transaction.RollbackAsync(cancellationToken);
-            return false;
-        }
 
         await ExecuteAsync(
             connection,
             transaction,
             BuildDeleteInstalledSoftwareSql(),
-            [("@pcId", pcId.Value)],
+            [("@pcId", pcId)],
             cancellationToken);
         var deleted = await ExecuteAsync(
             connection,
             transaction,
             BuildDeleteDeviceSql(),
-            [("@pcId", pcId.Value)],
+            [("@pcId", pcId)],
             cancellationToken);
         if (deleted == 0)
         {

@@ -183,7 +183,8 @@ public class PolicyQueryApiTests
             2, "PC-01", "host", "uTorrent", "3.5", null, 7, "*Torrent*",
             SoftwarePolicyClassification.Blacklist,
             new DateTimeOffset(2026, 1, 15, 0, 0, 0, TimeSpan.Zero),
-            new DateTimeOffset(2026, 1, 16, 0, 0, 0, TimeSpan.Zero));
+            new DateTimeOffset(2026, 1, 16, 0, 0, 0, TimeSpan.Zero),
+            PcId: 15);
         var row = PolicyQueryApi.ViolationCsvRow(violation);
         Assert.Equal("2", row[0]);
         Assert.Equal("PC-01", row[1]);
@@ -191,6 +192,7 @@ public class PolicyQueryApiTests
         Assert.Equal("7", row[6]);
         Assert.Equal("black", row[8]);
         Assert.Equal("2026-01-15T00:00:00.0000000+00:00", row[9]);
+        Assert.Equal("15", row[11]);
     }
 
     [Fact]

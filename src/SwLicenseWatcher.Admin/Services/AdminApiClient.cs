@@ -30,11 +30,14 @@ public sealed class AdminApiClient(HttpClient http, IJSRuntime js)
     public Task<DeviceListResponse> GetDevicesAsync(string query, CancellationToken cancellationToken = default) =>
         GetAsync<DeviceListResponse>($"/api/inventory/devices?{query}", cancellationToken);
 
-    public Task<DeviceDetail> GetDeviceAsync(string deviceCode, string? classification, CancellationToken cancellationToken = default)
+    public Task<DeviceDetail> GetDeviceByIdAsync(long pcId, string? classification, CancellationToken cancellationToken = default)
     {
         var query = string.IsNullOrEmpty(classification) ? "" : "?classification=" + Uri.EscapeDataString(classification);
-        return GetAsync<DeviceDetail>($"/api/inventory/devices/{Uri.EscapeDataString(deviceCode)}{query}", cancellationToken);
+        return GetAsync<DeviceDetail>($"/api/inventory/pcs/{pcId}{query}", cancellationToken);
     }
+
+    public Task<List<DeviceInstallation>> GetDeviceInstallationsAsync(long pcId, CancellationToken cancellationToken = default) =>
+        GetAsync<List<DeviceInstallation>>($"/api/inventory/pcs/{pcId}/installations", cancellationToken);
 
     public Task<SoftwareAggregateListResponse> GetSoftwareAsync(string query, CancellationToken cancellationToken = default) =>
         GetAsync<SoftwareAggregateListResponse>($"/api/inventory/software?{query}", cancellationToken);
@@ -84,8 +87,8 @@ public sealed class AdminApiClient(HttpClient http, IJSRuntime js)
             request,
             cancellationToken);
 
-    public Task DeleteDeviceAsync(string deviceCode, CancellationToken cancellationToken = default) =>
-        SendAsync(HttpMethod.Delete, $"/api/inventory/devices/{Uri.EscapeDataString(deviceCode)}", body: null, cancellationToken);
+    public Task DeleteDeviceAsync(long pcId, CancellationToken cancellationToken = default) =>
+        SendAsync(HttpMethod.Delete, $"/api/inventory/pcs/{pcId}", body: null, cancellationToken);
 
     public Task<ViolationListResponse> GetViolationsAsync(string query, CancellationToken cancellationToken = default) =>
         GetAsync<ViolationListResponse>($"/api/violations?{query}", cancellationToken);

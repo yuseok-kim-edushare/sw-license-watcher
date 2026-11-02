@@ -56,8 +56,8 @@
             @foreach (var row in _devices)
             {
                 <tr>
-                    <td><button type="button" class="linkish" @onclick="@(() => Drawer.OpenDeviceAsync(row.DeviceId ?? row.DeviceCode))">@Dash(row.DeviceCode)</button>@if (row.SupersededAtUtc is not null) { <span class="meta"> 이전 설치</span> }</td>
-                    <td><button type="button" class="linkish" @onclick="@(() => Drawer.OpenDeviceAsync(row.DeviceId ?? row.DeviceCode))">@Dash(PcName(row.HostName, row.AssignedHostName))</button></td><td>@Dash(row.DomainName)</td><td>@Dash(row.OperatingSystem)</td>
+                    <td><button type="button" class="linkish" @onclick="@(() => OpenPcAsync(row.PcId))">@Dash(row.DeviceCode)</button>@if (row.SupersededAtUtc is not null) { <span class="meta"> 이전 설치</span> }</td>
+                    <td><button type="button" class="linkish" @onclick="@(() => OpenPcAsync(row.PcId))">@Dash(PcName(row.HostName, row.AssignedHostName))</button></td><td>@Dash(row.DomainName)</td><td>@Dash(row.OperatingSystem)</td>
                     <td>@Dash(row.AgentVersion)</td><td>@FormatTime(row.LastHeartbeatUtc)</td><td>@FormatTime(row.LastInventoryUtc)</td><td>@FormatTime(row.InstalledAtUtc)</td>
                 </tr>
             }

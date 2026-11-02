@@ -44,6 +44,15 @@ public interface IDeviceQuery
         string? classification,
         CancellationToken cancellationToken);
 
+    Task<DeviceDetail?> GetDeviceByIdAsync(
+        long pcId,
+        string? classification,
+        CancellationToken cancellationToken);
+
+    Task<List<DeviceInstallation>> ListDeviceInstallationsAsync(
+        long pcId,
+        CancellationToken cancellationToken);
+
     Task<DeviceAgentAssignment?> GetDeviceAssignmentAsync(
         string deviceCode,
         string? deviceId,
@@ -62,7 +71,7 @@ public interface IDeviceQuery
         CancellationToken cancellationToken);
 
     Task<bool> DeleteDeviceAsync(
-        string deviceCode,
+        long pcId,
         CancellationToken cancellationToken);
 
     Task BindDeviceEnrollmentAsync(

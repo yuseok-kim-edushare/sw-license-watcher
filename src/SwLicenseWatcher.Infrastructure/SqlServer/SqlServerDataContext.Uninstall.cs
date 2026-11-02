@@ -157,7 +157,8 @@ public sealed partial class RelationalDataContext
                 ReadNullableDateTimeOffset(reader, uninstall.ApprovedAtUtcColumn),
                 ReadNullableDateTimeOffset(reader, uninstall.ConsumedAtUtcColumn),
                 expiresAtUtc,
-                ReadOrigin(reader, uninstall.OriginColumn)));
+                ReadOrigin(reader, uninstall.OriginColumn),
+                reader.GetInt64(reader.GetOrdinal(pc.PrimaryKeyColumn))));
         }
 
         return (totalCount, items);
@@ -403,7 +404,7 @@ public sealed partial class RelationalDataContext
         return $"""
             SELECT
                 COUNT(*) OVER() AS total_count,
-                r.{Name(table.PrimaryKeyColumn)}, p.{Name(pc.DeviceCodeColumn)},
+                r.{Name(table.PrimaryKeyColumn)}, p.{Name(pc.PrimaryKeyColumn)}, p.{Name(pc.DeviceCodeColumn)},
                 {DisplayHostNameSql("p")} AS {Name(pc.HostNameColumn)},
                 r.{Name(table.StatusColumn)}, r.{Name(table.RequestedAtUtcColumn)},
                 r.{Name(table.ApprovedAtUtcColumn)}, r.{Name(table.ConsumedAtUtcColumn)},

@@ -85,7 +85,7 @@ internal static class PolicyQueryApi
             {
                 return InventoryCsv.File(
                     "violations.csv",
-                    ["Id", "DeviceCode", "HostName", "SoftwareName", "SoftwareVersion", "Publisher", "PolicyId", "PolicyProductName", "Classification", "DetectedAtUtc", "LastSeenAtUtc"],
+                    ["Id", "DeviceCode", "HostName", "SoftwareName", "SoftwareVersion", "Publisher", "PolicyId", "PolicyProductName", "Classification", "DetectedAtUtc", "LastSeenAtUtc", "PcId"],
                     items.Select(ViolationCsvRow));
             }
 
@@ -139,6 +139,7 @@ internal static class PolicyQueryApi
         violation.PolicyProductName,
         SoftwarePolicyClassificationNames.ToStorage(violation.Classification),
         InventoryCsv.Format(violation.DetectedAtUtc),
-        InventoryCsv.Format(violation.LastSeenAtUtc)
+        InventoryCsv.Format(violation.LastSeenAtUtc),
+        violation.PcId.ToString(CultureInfo.InvariantCulture)
     ];
 }

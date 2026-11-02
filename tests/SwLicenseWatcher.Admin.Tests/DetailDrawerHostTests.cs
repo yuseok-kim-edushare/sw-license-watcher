@@ -9,7 +9,7 @@ public class DetailDrawerHostTests
     {
         var host = new DetailDrawerHost();
 
-        await host.OpenDeviceAsync("pc-1");
+        await host.OpenDeviceAsync(1);
         await host.RefreshAsync();
         host.Close();
 

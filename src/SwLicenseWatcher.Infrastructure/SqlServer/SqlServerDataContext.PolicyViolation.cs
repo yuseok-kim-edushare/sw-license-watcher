@@ -259,7 +259,8 @@ public sealed partial class RelationalDataContext
                 reader.GetString(reader.GetOrdinal("policyProductName")),
                 classification,
                 ReadDateTimeOffset(reader, reader.GetOrdinal("detectedAtUtc")),
-                ReadDateTimeOffset(reader, reader.GetOrdinal("lastSeenAtUtc"))));
+                ReadDateTimeOffset(reader, reader.GetOrdinal("lastSeenAtUtc")),
+                reader.GetInt64(reader.GetOrdinal("pcId"))));
         }
 
         return (totalCount, items);
@@ -663,7 +664,8 @@ public sealed partial class RelationalDataContext
                 pol.{Name(policy.ProductNameColumn)} AS {Name("policyProductName")},
                 pol.{Name(policy.ClassificationColumn)} AS classification,
                 v.{Name(violation.DetectedAtUtcColumn)} AS {Name("detectedAtUtc")},
-                v.{Name(violation.LastSeenAtUtcColumn)} AS {Name("lastSeenAtUtc")}
+                v.{Name(violation.LastSeenAtUtcColumn)} AS {Name("lastSeenAtUtc")},
+                p.{Name(pc.PrimaryKeyColumn)} AS {Name("pcId")}
             FROM {Name(options.SchemaName, violation.TableName)} AS v
             INNER JOIN {Name(options.SchemaName, pc.TableName)} AS p
                 ON p.{Name(pc.PrimaryKeyColumn)} = v.{Name(violation.PcForeignKeyColumn)}

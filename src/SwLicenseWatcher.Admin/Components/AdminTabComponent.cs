@@ -136,6 +136,17 @@ public abstract class AdminTabComponent : ComponentBase, IAdminTab
         parts.Add("dir=" + (SortDescending ? "desc" : "asc"));
     }
 
+    protected Task OpenPcAsync(long pcId)
+    {
+        if (pcId <= 0)
+        {
+            Error = "이 PC 행에는 식별자가 없어 열 수 없습니다.";
+            return Task.CompletedTask;
+        }
+
+        return Drawer.OpenDeviceAsync(pcId);
+    }
+
     protected async Task DownloadCsvAsync(string path, string fileName)
     {
         Error = "";

@@ -39,8 +39,8 @@
             @foreach (var row in _violations)
             {
                 <tr>
-                    <td><button type="button" class="linkish" @onclick="@(() => Drawer.OpenDeviceAsync(row.DeviceCode))">@Dash(row.DeviceCode)</button></td>
-                    <td><button type="button" class="linkish" @onclick="@(() => Drawer.OpenDeviceAsync(row.DeviceCode))">@Dash(row.HostName)</button></td>
+                    <td><button type="button" class="linkish" @onclick="@(() => OpenPcAsync(row.PcId))">@Dash(row.DeviceCode)</button></td>
+                    <td><button type="button" class="linkish" @onclick="@(() => OpenPcAsync(row.PcId))">@Dash(row.HostName)</button></td>
                     <td><button type="button" class="linkish" @onclick="@(() => Drawer.OpenSoftwareAsync(row.SoftwareName))">@Dash(row.SoftwareName)</button></td><td>@Dash(row.SoftwareVersion)</td>
                     <td>@Dash(row.PolicyProductName)</td><td>@Dash(ClassificationStorage(row.Classification))</td>
                     <td>@FormatTime(row.DetectedAtUtc)</td><td>@FormatTime(row.LastSeenAtUtc)</td>

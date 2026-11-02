@@ -38,8 +38,8 @@
             {
                 <tr>
                     <td>@row.Id</td>
-                    <td><button type="button" class="linkish" @onclick="@(() => Drawer.OpenDeviceAsync(row.DeviceCode))">@Dash(row.DeviceCode)</button></td>
-                    <td><button type="button" class="linkish" @onclick="@(() => Drawer.OpenDeviceAsync(row.DeviceCode))">@Dash(row.HostName)</button></td>
+                    <td><button type="button" class="linkish" @onclick="@(() => OpenPcAsync(row.PcId))">@Dash(row.DeviceCode)</button></td>
+                    <td><button type="button" class="linkish" @onclick="@(() => OpenPcAsync(row.PcId))">@Dash(row.HostName)</button></td>
                     <td>@UninstallOriginLabel(row.Origin)</td>
                     <td>@Dash(row.Status)</td>
                     <td>@FormatTime(row.RequestedAtUtc)</td><td>@FormatTime(row.ApprovedAtUtc)</td><td>@FormatTime(row.ExpiresAtUtc)</td>

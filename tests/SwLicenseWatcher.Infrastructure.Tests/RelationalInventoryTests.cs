@@ -35,9 +35,11 @@ public abstract class RelationalInventoryTests
         var summary = Assert.Single(devices.Items);
         Assert.Equal(deviceCode, summary.DeviceCode);
         Assert.Equal(collected, summary.LastInventoryUtc);
+        Assert.True(summary.PcId > 0);
 
         var detail = await Context.GetDeviceAsync(deviceCode, classification: null, token);
         Assert.NotNull(detail);
+        Assert.Equal(summary.PcId, detail.PcId);
         var installed = Assert.Single(detail.InstalledSoftware);
         Assert.Equal("Notepad++", installed.Name);
         Assert.Equal(SoftwarePolicyClassificationNames.Unclassified, installed.Classification);
@@ -84,6 +86,9 @@ public abstract class RelationalInventoryTests
         var row = Assert.Single(listed.Items, item => item.Id == created.Id);
         Assert.Equal(UninstallGrant.OriginAdmin, row.Origin);
         Assert.Equal(UninstallGrant.Approved, row.Status);
+        var device = await Context.GetDeviceAsync(deviceCode, classification: null, token);
+        Assert.True(row.PcId > 0);
+        Assert.Equal(device!.PcId, row.PcId);
 
         Assert.True(await Context.CancelDirectedUninstallRequestAsync(created.Id, token));
         Assert.Null(await Context.GetDirectedUninstallCommandAsync(deviceCode, token));
@@ -128,10 +133,13 @@ public abstract class RelationalInventoryTests
 
         var violations = await Context.ListViolationsAsync(0, 10, deviceCode, since: null, token);
         Assert.Equal(1, violations.TotalCount);
-        Assert.Equal(torrent + " 3.5", Assert.Single(violations.Items).SoftwareName);
+        var violation = Assert.Single(violations.Items);
+        Assert.Equal(torrent + " 3.5", violation.SoftwareName);
 
         var detail = await Context.GetDeviceAsync(deviceCode, classification: null, token);
         Assert.NotNull(detail);
+        Assert.True(violation.PcId > 0);
+        Assert.Equal(detail.PcId, violation.PcId);
         Assert.Equal(
             SoftwarePolicyClassificationNames.Black,
             detail.InstalledSoftware.Single(entry => entry.Name.StartsWith(torrent, StringComparison.Ordinal)).Classification);
@@ -162,7 +170,11 @@ public abstract class RelationalInventoryTests
             Snapshot(deviceCode, new DateTimeOffset(2026, 9, 12, 8, 0, 0, TimeSpan.Zero), Software(software, "8.6")),
             token)).Applied);
 
-        Assert.True(await Context.DeleteDeviceAsync(deviceCode, token));
+        var listedBefore = await Context.ListDevicesAsync(0, 10, deviceCode, staleAfterHours: null, token);
+        var pcId = Assert.Single(listedBefore.Items).PcId;
+        Assert.True(pcId > 0);
+        Assert.True(await Context.DeleteDeviceAsync(pcId, token));
+        Assert.False(await Context.DeleteDeviceAsync(pcId, token));
 
         var deleted = await Context.GetDeviceAsync(deviceCode, classification: null, token);
         Assert.Null(deleted);
@@ -255,24 +267,27 @@ public abstract class RelationalInventoryTests
         Assert.Null(nullGroup.Software.Version);
         Assert.Equal(SoftwarePolicyClassificationNames.Unclassified, nullGroup.Software.Classification);
         Assert.Equal(1, nullGroup.Software.DeviceCount);
-        Assert.Equal([new SoftwareAssetDevice(nullVersionPc, "host-" + nullVersionPc)], nullGroup.Devices);
+        var nullDevice = Assert.Single(nullGroup.Devices);
+        Assert.Equal(nullVersionPc, nullDevice.DeviceCode);
+        Assert.Equal("host-" + nullVersionPc, nullDevice.DeviceName);
+        Assert.True(nullDevice.PcId > 0);
 
         var emptyGroup = all.Items[1];
         Assert.Equal(nameA, emptyGroup.Software.Name);
         Assert.Equal(string.Empty, emptyGroup.Software.Version);
         Assert.Equal(1, emptyGroup.Software.DeviceCount);
-        Assert.Equal([new SoftwareAssetDevice(emptyVersionPc, "host-" + emptyVersionPc)], emptyGroup.Devices);
+        var emptyDevice = Assert.Single(emptyGroup.Devices);
+        Assert.Equal(emptyVersionPc, emptyDevice.DeviceCode);
+        Assert.Equal("host-" + emptyVersionPc, emptyDevice.DeviceName);
+        Assert.True(emptyDevice.PcId > 0);
 
         var grouped = all.Items[2];
         Assert.Equal(nameB, grouped.Software.Name);
         Assert.Equal("1.0", grouped.Software.Version?.TrimEnd());
         Assert.Equal(2, grouped.Software.DeviceCount);
-        Assert.Equal(
-            [
-                new SoftwareAssetDevice(assignedCode, assignedHost),
-                new SoftwareAssetDevice(trailingSpacePc, "host-" + trailingSpacePc)
-            ],
-            grouped.Devices);
+        Assert.Equal([assignedCode, trailingSpacePc], grouped.Devices.Select(device => device.DeviceCode));
+        Assert.Equal([assignedHost, "host-" + trailingSpacePc], grouped.Devices.Select(device => device.DeviceName));
+        Assert.All(grouped.Devices, device => Assert.True(device.PcId > 0));
 
         var page = await Context.ListSoftwareWithAssetsAsync(1, 1, prefix, classification: null, token);
         Assert.Equal(3, page.TotalCount);
@@ -280,7 +295,10 @@ public abstract class RelationalInventoryTests
         Assert.Equal(nameA, only.Software.Name);
         Assert.Equal(string.Empty, only.Software.Version);
         Assert.Equal(1, only.Software.DeviceCount);
-        Assert.Equal([new SoftwareAssetDevice(emptyVersionPc, "host-" + emptyVersionPc)], only.Devices);
+        var onlyDevice = Assert.Single(only.Devices);
+        Assert.Equal(emptyVersionPc, onlyDevice.DeviceCode);
+        Assert.Equal("host-" + emptyVersionPc, onlyDevice.DeviceName);
+        Assert.True(onlyDevice.PcId > 0);
     }
 
     [Fact]
@@ -375,6 +393,26 @@ public abstract class RelationalInventoryTests
             token)).Applied);
         listed = await Context.ListDevicesAsync(0, 10, deviceCode, staleAfterHours: null, token);
         Assert.Equal(2, listed.TotalCount);
+
+        var previousId = listed.Items.Single(device => device.SupersededAtUtc is not null).PcId;
+        var currentId = listed.Items.Single(device => device.SupersededAtUtc is null).PcId;
+        Assert.True(previousId > 0);
+        Assert.True(currentId > 0);
+        Assert.NotEqual(previousId, currentId);
+        var installations = await Context.ListDeviceInstallationsAsync(previousId, token);
+        Assert.Equal(2, installations.Count);
+        Assert.Contains(installations, item => item.PcId == currentId && item.SupersededAtUtc is null);
+        Assert.Contains(installations, item => item.PcId == previousId && item.SupersededAtUtc is not null);
+
+        Assert.True(await Context.DeleteDeviceAsync(previousId, token));
+        listed = await Context.ListDevicesAsync(0, 10, deviceCode, staleAfterHours: null, token);
+        var remaining = Assert.Single(listed.Items);
+        Assert.Equal(currentId, remaining.PcId);
+        Assert.Null(remaining.SupersededAtUtc);
+        current = await Context.GetDeviceByIdAsync(currentId, classification: null, token);
+        Assert.Equal(newSoftware, Assert.Single(current!.InstalledSoftware).Name);
+        Assert.Null(await Context.GetDeviceByIdAsync(previousId, classification: null, token));
+        Assert.False(await Context.DeleteDeviceAsync(previousId, token));
     }
 
     protected static string Unique(string prefix) => prefix + "-" + Guid.NewGuid().ToString("N")[..12];

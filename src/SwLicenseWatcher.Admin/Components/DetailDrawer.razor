@@ -62,6 +62,27 @@
                     <button type="button" class="danger" @onclick="DirectUninstallAsync">원격 제거 지시</button>
                     <button type="button" class="danger" @onclick="DeleteDeviceAsync">DB에서 제거</button>
                     </div>
+                    @if (_installations.Count > 1)
+                    {
+                        <fieldset class="stack">
+                            <legend>같은 자산코드의 설치가 여러 건입니다. 제거할 설치를 선택하세요.</legend>
+                            @foreach (var item in _installations)
+                            {
+                                <label>
+                                    <input type="radio" name="delete-installation" checked="@(_deletePcId == item.PcId)" @onclick="@(() => _deletePcId = item.PcId)" />
+                                    @Dash(item.DeviceCode) · @Dash(PcName(item.HostName, item.AssignedHostName)) · 설치 @FormatTime(item.InstalledAtUtc)
+                                    @if (item.SupersededAtUtc is not null)
+                                    {
+                                        <span class="meta"> 이전 설치</span>
+                                    }
+                                </label>
+                            }
+                            <div class="row-actions">
+                                <button type="button" class="danger" @onclick="ConfirmDeleteSelectedAsync">선택한 설치만 DB에서 제거</button>
+                                <button type="button" @onclick="CancelDeleteChoice">취소</button>
+                            </div>
+                        </fieldset>
+                    }
                 </div>
                 <table class="data">
                     <thead><tr><th>이름</th><th>버전</th><th>게시자</th><th>분류</th><th>라이선스</th><th>범위</th></tr></thead>
@@ -135,8 +156,8 @@
                             @foreach (var row in _softwareDevices)
                             {
                                 <tr>
-                                    <td><button type="button" class="linkish" @onclick="@(() => OpenDeviceAsync(row.DeviceCode))">@Dash(row.DeviceCode)</button></td>
-                                    <td><button type="button" class="linkish" @onclick="@(() => OpenDeviceAsync(row.DeviceCode))">@Dash(PcName(row.HostName, row.AssignedHostName))</button></td>
+                                    <td><button type="button" class="linkish" @onclick="@(() => OpenDeviceAsync(row.PcId))">@Dash(row.DeviceCode)</button></td>
+                                    <td><button type="button" class="linkish" @onclick="@(() => OpenDeviceAsync(row.PcId))">@Dash(PcName(row.HostName, row.AssignedHostName))</button></td>
                                     <td>@Dash(row.OperatingSystem)</td>
                                     <td>@Dash(row.Version)</td><td>@Dash(row.Publisher)</td><td>@Dash(row.Classification)</td>
                                     <td>
@@ -166,6 +187,8 @@
     [Parameter] public EventCallback Changed { get; set; }
 
     private string? _kind;
+    private long _pcId;
+    private long _deletePcId;
     private string _key = "";
     private string _title = "상세";
     private string _publisher = "";
@@ -180,6 +203,7 @@
     private string _messageBody = "";
     private string _softwareNotes = "";
     private DeviceDetail? _device;
+    private IReadOnlyList<DeviceInstallation> _installations = [];
     private IReadOnlyList<SoftwareDevice> _softwareDevices = [];
     private int _softwareTotal;
     private bool _loading;
@@ -196,15 +220,18 @@
         Host.Detach(this);
     }
 
-    public async Task OpenDeviceAsync(string deviceCode)
+    public async Task OpenDeviceAsync(long pcId)
     {
         _kind = "device";
-        _key = deviceCode;
-        _title = deviceCode;
+        _pcId = pcId;
+        _key = "";
+        _title = "상세";
         _classFilter = "";
         _error = "";
         _device = null;
-        _loading = true;
+        _installations = [];
+        _deletePcId = 0;
+        _loading = pcId > 0;
         await InvokeAsync(StateHasChanged);
         await RefreshAsync();
     }
@@ -240,11 +267,20 @@
         }
 
         _error = "";
+        if (_kind == "device" && _pcId <= 0)
+        {
+            _error = "이 PC 행에는 식별자가 없어 열 수 없습니다.";
+            _loading = false;
+            await InvokeAsync(StateHasChanged);
+            return;
+        }
+
         await Requests.RunAsync(async () =>
         {
             if (_kind == "device")
             {
-                _device = await Api.GetDeviceAsync(_key, EmptyToNull(_classFilter));
+                _device = await Api.GetDeviceByIdAsync(_pcId, EmptyToNull(_classFilter));
+                _key = _device.DeviceCode;
                 _title = PcName(_device.HostName, _device.AssignedHostName);
                 _assignedHostName = _device.AssignedHostName ?? "";
                 _assignedDeviceCode = _device.AssignedDeviceCode ?? _device.DeviceCode;
@@ -274,8 +310,11 @@
     public void Close()
     {
         _kind = null;
+        _pcId = 0;
+        _deletePcId = 0;
         _key = "";
         _device = null;
+        _installations = [];
         _softwareDevices = [];
         _error = "";
         _loading = false;
@@ -345,18 +384,75 @@
     private async Task DeleteDeviceAsync()
     {
         _error = "";
-        if (_device is not { } detail)
+        _installations = [];
+        if (_device is not { PcId: > 0 } detail)
+        {
+            _error = "이 PC 행에는 식별자가 없어 제거할 수 없습니다.";
+            return;
+        }
+
+        List<DeviceInstallation> installations = [];
+        var loaded = await Requests.RunAsync(async () =>
+        {
+            installations = await Api.GetDeviceInstallationsAsync(detail.PcId);
+        }, message => _error = message);
+        if (!loaded)
         {
             return;
         }
 
-        if (!await Js.InvokeAsync<bool>("confirm", $"{detail.DeviceCode} PC를 목록과 DB에서 완전히 제거할까요? 이 작업은 되돌릴 수 없습니다."))
+        if (installations.Count == 0 || installations.Any(item => item.PcId <= 0))
+        {
+            _error = "이 PC 행에는 식별자가 없어 제거할 수 없습니다.";
+            return;
+        }
+
+        if (installations.Count == 1)
+        {
+            await ConfirmDeleteAsync(installations[0], othersRemain: false);
+            return;
+        }
+
+        _installations = installations;
+        _deletePcId = installations.Any(item => item.PcId == detail.PcId) ? detail.PcId : installations[0].PcId;
+    }
+
+    private void CancelDeleteChoice()
+    {
+        _installations = [];
+        _deletePcId = 0;
+    }
+
+    private async Task ConfirmDeleteSelectedAsync()
+    {
+        var selected = _installations.FirstOrDefault(item => item.PcId == _deletePcId);
+        if (selected is null || selected.PcId <= 0)
+        {
+            _error = "이 PC 행에는 식별자가 없어 제거할 수 없습니다.";
+            return;
+        }
+
+        await ConfirmDeleteAsync(selected, othersRemain: true);
+    }
+
+    private async Task ConfirmDeleteAsync(DeviceInstallation installation, bool othersRemain)
+    {
+        if (installation.PcId <= 0)
+        {
+            _error = "이 PC 행에는 식별자가 없어 제거할 수 없습니다.";
+            return;
+        }
+
+        var previous = installation.SupersededAtUtc is null ? "" : ", 이전 설치";
+        var others = othersRemain ? " 같은 자산코드의 다른 설치는 남습니다." : "";
+        var message = $"자산코드 {installation.DeviceCode}, PC {PcName(installation.HostName, installation.AssignedHostName)}, 설치 {FormatTime(installation.InstalledAtUtc)}{previous} 만 DB에서 제거합니다.{others} 이 작업은 되돌릴 수 없습니다.";
+        if (!await Js.InvokeAsync<bool>("confirm", message))
         {
             return;
         }
 
         var succeeded = await Requests.RunAsync(
-            () => Api.DeleteDeviceAsync(detail.DeviceCode),
+            () => Api.DeleteDeviceAsync(installation.PcId),
             message => _error = message);
         if (succeeded)
         {

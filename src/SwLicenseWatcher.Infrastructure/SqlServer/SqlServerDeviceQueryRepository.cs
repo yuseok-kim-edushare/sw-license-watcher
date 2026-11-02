@@ -22,6 +22,17 @@ internal sealed class SqlServerDeviceQueryRepository(RelationalDataContext conte
         CancellationToken cancellationToken) =>
         context.GetDeviceAsync(deviceCode, classification, cancellationToken);
 
+    public Task<DeviceDetail?> GetDeviceByIdAsync(
+        long pcId,
+        string? classification,
+        CancellationToken cancellationToken) =>
+        context.GetDeviceByIdAsync(pcId, classification, cancellationToken);
+
+    public Task<List<DeviceInstallation>> ListDeviceInstallationsAsync(
+        long pcId,
+        CancellationToken cancellationToken) =>
+        context.ListDeviceInstallationsAsync(pcId, cancellationToken);
+
     public Task<DeviceAgentAssignment?> GetDeviceAssignmentAsync(
         string deviceCode,
         string? deviceId,
@@ -43,9 +54,9 @@ internal sealed class SqlServerDeviceQueryRepository(RelationalDataContext conte
         context.UpdateDeviceProfileAsync(deviceCode, request, cancellationToken);
 
     public Task<bool> DeleteDeviceAsync(
-        string deviceCode,
+        long pcId,
         CancellationToken cancellationToken) =>
-        context.DeleteDeviceAsync(deviceCode, cancellationToken);
+        context.DeleteDeviceAsync(pcId, cancellationToken);
 
     public Task BindDeviceEnrollmentAsync(
         string deviceCode,

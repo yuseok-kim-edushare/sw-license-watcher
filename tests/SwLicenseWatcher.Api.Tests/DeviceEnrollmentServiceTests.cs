@@ -197,6 +197,14 @@ public class DeviceEnrollmentServiceTests
             string deviceCode, string? classification, CancellationToken cancellationToken) =>
             throw new NotSupportedException();
 
+        public Task<DeviceDetail?> GetDeviceByIdAsync(
+            long pcId, string? classification, CancellationToken cancellationToken) =>
+            throw new NotSupportedException();
+
+        public Task<List<DeviceInstallation>> ListDeviceInstallationsAsync(
+            long pcId, CancellationToken cancellationToken) =>
+            throw new NotSupportedException();
+
         public Task<DeviceAgentAssignment?> GetDeviceAssignmentAsync(
             string deviceCode, string? deviceId, CancellationToken cancellationToken, string? devicePublicKey = null) =>
             throw new NotSupportedException();
@@ -226,7 +234,7 @@ public class DeviceEnrollmentServiceTests
             string deviceCode, DeviceProfileWriteRequest request, CancellationToken cancellationToken) =>
             throw new NotSupportedException();
 
-        public Task<bool> DeleteDeviceAsync(string deviceCode, CancellationToken cancellationToken) =>
+        public Task<bool> DeleteDeviceAsync(long pcId, CancellationToken cancellationToken) =>
             throw new NotSupportedException();
 
         public Task BindDeviceEnrollmentAsync(

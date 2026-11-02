@@ -19,8 +19,8 @@ public sealed class DetailDrawerHost
         }
     }
 
-    public Task OpenDeviceAsync(string deviceCode) =>
-        _drawer?.OpenDeviceAsync(deviceCode) ?? Task.CompletedTask;
+    public Task OpenDeviceAsync(long pcId) =>
+        _drawer?.OpenDeviceAsync(pcId) ?? Task.CompletedTask;
 
     public Task OpenSoftwareAsync(SoftwareAggregate row) =>
         _drawer?.OpenSoftwareAsync(row) ?? Task.CompletedTask;

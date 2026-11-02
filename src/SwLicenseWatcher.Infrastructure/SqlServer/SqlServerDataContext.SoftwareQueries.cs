@@ -97,7 +97,8 @@ public sealed partial class RelationalDataContext
                 s.{Name(software.DisplayVersionColumn)}, s.{Name(software.PublisherColumn)},
                 s.{Name(software.ClassificationColumn)},
                 l.{Name(license.LicenseSourceColumn)} AS license_source_override,
-                p.{Name(pc.AssignedHostNameColumn)}, p.{Name(pc.AssignedDeviceCodeColumn)}
+                p.{Name(pc.AssignedHostNameColumn)}, p.{Name(pc.AssignedDeviceCodeColumn)},
+                p.{Name(pc.PrimaryKeyColumn)}
             FROM {Name(options.SchemaName, software.TableName)} AS s
             INNER JOIN {Name(options.SchemaName, pc.TableName)} AS p
                 ON p.{Name(pc.PrimaryKeyColumn)} = s.{Name(software.PcForeignKeyColumn)}
@@ -142,7 +143,8 @@ public sealed partial class RelationalDataContext
                 storedClassification,
                 LicenseSource: null,
                 LicenseSourceOverride: overrideSource,
-                AssignedHostName: ReadNullableString(reader, pc.AssignedHostNameColumn)));
+                AssignedHostName: ReadNullableString(reader, pc.AssignedHostNameColumn),
+                PcId: reader.GetInt64(reader.GetOrdinal(pc.PrimaryKeyColumn))));
         }
 
         await reader.CloseAsync();
@@ -181,6 +183,7 @@ public sealed partial class RelationalDataContext
         var rowIndexOrdinal = reader.GetOrdinal("row_index");
         var deviceCodeOrdinal = reader.GetOrdinal("device_code");
         var deviceNameOrdinal = reader.GetOrdinal("device_name");
+        var pcIdOrdinal = reader.GetOrdinal("pc_id");
         while (await reader.ReadAsync(cancellationToken))
         {
             var rowIndex = Convert.ToInt64(reader.GetValue(rowIndexOrdinal), System.Globalization.CultureInfo.InvariantCulture);
@@ -200,11 +203,12 @@ public sealed partial class RelationalDataContext
                 devices.Add([]);
             }
 
-            if (!reader.IsDBNull(deviceCodeOrdinal))
+            if (!reader.IsDBNull(deviceCodeOrdinal) && !reader.IsDBNull(pcIdOrdinal))
             {
                 devices[^1].Add(new SoftwareAssetDevice(
                     reader.GetString(deviceCodeOrdinal),
-                    reader.GetString(deviceNameOrdinal)));
+                    reader.GetString(deviceNameOrdinal),
+                    reader.GetInt64(pcIdOrdinal)));
             }
         }
 
@@ -264,10 +268,11 @@ public sealed partial class RelationalDataContext
                 )
                 SELECT page.total_count, page.row_index,
                     page.{name}, page.{version}, page.{classificationColumn}, page.device_count,
-                    d.device_code, d.device_name
+                    d.pc_id, d.device_code, d.device_name
                 FROM page
                 OUTER APPLY (
                     SELECT DISTINCT
+                        p.{Name(pc.PrimaryKeyColumn)} AS pc_id,
                         {DisplayDeviceCodeSql("p")} AS device_code,
                         {DisplayHostNameSql("p")} AS device_name
                     FROM {Name(options.SchemaName, software.TableName)} AS s
@@ -306,13 +311,14 @@ public sealed partial class RelationalDataContext
             )
             SELECT page.total_count, page.row_index,
                 page.{name}, page.{version}, page.{classificationColumn}, page.device_count,
-                d.device_code, d.device_name
+                d.pc_id, d.device_code, d.device_name
             FROM page
             LEFT JOIN (
                 SELECT DISTINCT
                     s.{name} AS {name},
                     RTRIM(s.{version}) AS {version},
                     s.{classificationColumn} AS {classificationColumn},
+                    p.{Name(pc.PrimaryKeyColumn)} AS pc_id,
                     {DisplayDeviceCodeSql("p")} AS device_code,
                     {DisplayHostNameSql("p")} AS device_name
                 FROM {Name(options.SchemaName, software.TableName)} AS s

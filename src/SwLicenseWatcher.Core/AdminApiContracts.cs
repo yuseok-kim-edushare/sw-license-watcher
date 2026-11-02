@@ -21,7 +21,8 @@ public sealed record DeviceSummary(
     string? DeviceId = null,
     string? AssignedDeviceCode = null,
     DateTimeOffset? InstalledAtUtc = null,
-    DateTimeOffset? SupersededAtUtc = null);
+    DateTimeOffset? SupersededAtUtc = null,
+    long PcId = 0);
 
 public sealed record DeviceListResponse(
     int Skip,
@@ -43,7 +44,16 @@ public sealed record DeviceDetail(
     string? DeviceId = null,
     string? AssignedDeviceCode = null,
     DateTimeOffset? InstalledAtUtc = null,
-    DateTimeOffset? SupersededAtUtc = null);
+    DateTimeOffset? SupersededAtUtc = null,
+    long PcId = 0);
+
+public sealed record DeviceInstallation(
+    long PcId,
+    string DeviceCode,
+    string HostName,
+    string? AssignedHostName,
+    DateTimeOffset? InstalledAtUtc,
+    DateTimeOffset? SupersededAtUtc);
 
 public sealed record SoftwareAggregate(
     string Name,
@@ -56,7 +66,8 @@ public sealed record SoftwareAggregate(
 
 public sealed record SoftwareAssetDevice(
     string DeviceCode,
-    string DeviceName);
+    string DeviceName,
+    long PcId = 0);
 
 public sealed record SoftwareAggregateAssets(
     SoftwareAggregate Software,
@@ -81,7 +92,8 @@ public sealed record SoftwareDevice(
     string Classification,
     string? LicenseSource = null,
     string? LicenseSourceOverride = null,
-    string? AssignedHostName = null);
+    string? AssignedHostName = null,
+    long PcId = 0);
 
 public sealed record SoftwareDeviceListResponse(
     string Name,
@@ -111,7 +123,8 @@ public sealed record AdminUninstallRequest(
     DateTimeOffset? ApprovedAtUtc,
     DateTimeOffset? ConsumedAtUtc,
     DateTimeOffset? ExpiresAtUtc,
-    string Origin = UninstallGrant.OriginAgent);
+    string Origin = UninstallGrant.OriginAgent,
+    long PcId = 0);
 
 public sealed record AgentUninstallCommand(long Id, string Code);
 

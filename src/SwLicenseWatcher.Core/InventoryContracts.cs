@@ -121,7 +121,8 @@ public sealed record SoftwareViolationEntry(
     string PolicyProductName,
     SoftwarePolicyClassification Classification,
     DateTimeOffset DetectedAtUtc,
-    DateTimeOffset LastSeenAtUtc);
+    DateTimeOffset LastSeenAtUtc,
+    long PcId = 0);
 
 public sealed record WorkerHealthReport(
     string ServiceName,

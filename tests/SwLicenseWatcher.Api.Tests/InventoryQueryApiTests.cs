@@ -11,10 +11,10 @@ public class InventoryQueryApiTests
     {
         var row = InventoryQueryApi.SoftwareCsvRow(new SoftwareAggregateAssets(
             new SoftwareAggregate("Chrome", "120", "managed", 2, CompanyCount: 1, ByoCount: 1),
-            [new SoftwareAssetDevice("A001", "홍길동PC"), new SoftwareAssetDevice("A002", "PC-02")]));
+            [new SoftwareAssetDevice("A001", "홍길동PC", 11), new SoftwareAssetDevice("A002", "PC-02", 12)]));
 
         Assert.Equal(
-            ["Chrome", "120", "managed", "2", "1", "1", "0", "A001; A002", "홍길동PC; PC-02"],
+            ["Chrome", "120", "managed", "2", "1", "1", "0", "A001; A002", "홍길동PC; PC-02", "11; 12"],
             row);
     }
 
@@ -26,6 +26,7 @@ public class InventoryQueryApiTests
 
         Assert.Equal(string.Empty, row[7]);
         Assert.Equal(string.Empty, row[8]);
+        Assert.Equal(string.Empty, row[9]);
     }
 
     [Theory]
