@@ -18,7 +18,7 @@ public sealed class AdminApiClient(HttpClient http, IJSRuntime js)
 
     public async Task<HealthResponse?> GetHealthAsync(CancellationToken cancellationToken = default)
     {
-        using var response = await http.GetAsync("/health", cancellationToken);
+        using var response = await SendCoreAsync(HttpMethod.Get, "/health", body: null, cancellationToken);
         if (!response.IsSuccessStatusCode && response.StatusCode != HttpStatusCode.ServiceUnavailable)
         {
             return null;
@@ -42,20 +42,33 @@ public sealed class AdminApiClient(HttpClient http, IJSRuntime js)
     public Task<SoftwareAggregateListResponse> GetSoftwareAsync(string query, CancellationToken cancellationToken = default) =>
         GetAsync<SoftwareAggregateListResponse>($"/api/inventory/software?{query}", cancellationToken);
 
-    public Task<SoftwareDeviceListResponse> GetSoftwareDevicesAsync(string name, string query, CancellationToken cancellationToken = default) =>
-        GetAsync<SoftwareDeviceListResponse>(
-            $"/api/inventory/software/{Uri.EscapeDataString(name)}/devices?{query}",
-            cancellationToken);
+    public Task<SoftwareDeviceListResponse> GetSoftwareDevicesAsync(string name, string query, CancellationToken cancellationToken = default)
+    {
+        var nameQuery = "name=" + Uri.EscapeDataString(name);
+        var suffix = string.IsNullOrEmpty(query) ? nameQuery : nameQuery + "&" + query.TrimStart('?');
+        return GetAsync<SoftwareDeviceListResponse>($"/api/inventory/software/devices?{suffix}", cancellationToken);
+    }
 
-    public Task<SoftwarePolicyEntry> PutClassificationAsync(
+    public async Task<SoftwarePolicyEntry> PutClassificationAsync(
         string name,
         SoftwareClassificationWriteRequest request,
-        CancellationToken cancellationToken = default) =>
-        SendJsonAsync<SoftwarePolicyEntry>(
-            HttpMethod.Put,
-            $"/api/inventory/software/{Uri.EscapeDataString(name)}/classification",
-            request,
+        CancellationToken cancellationToken = default)
+    {
+        var saved = await PutClassificationsAsync(
+            new SoftwareClassificationBatchWriteRequest(
+            [
+                new SoftwareClassificationItemWriteRequest(
+                    name,
+                    request.Classification,
+                    Publisher: null,
+                    request.DefaultLicenseSource,
+                    request.Notes)
+            ]),
             cancellationToken);
+        return saved.Items.Count > 0
+            ? saved.Items[0]
+            : throw new AdminApiException("분류 저장 응답이 비어 있습니다.", (int)HttpStatusCode.OK);
+    }
 
     public Task<SoftwareClassificationBatchResponse> PutClassificationsAsync(
         SoftwareClassificationBatchWriteRequest request,
@@ -73,8 +86,8 @@ public sealed class AdminApiClient(HttpClient http, IJSRuntime js)
         CancellationToken cancellationToken = default) =>
         SendAsync(
             HttpMethod.Put,
-            $"/api/inventory/devices/{Uri.EscapeDataString(deviceCode)}/software/{Uri.EscapeDataString(softwareName)}/license-source",
-            request,
+            $"/api/inventory/devices/{Uri.EscapeDataString(deviceCode)}/software/license-source",
+            new DeviceSoftwareLicenseSourceWriteRequest(request.LicenseSource, softwareName),
             cancellationToken);
 
     public Task PutDeviceProfileAsync(
@@ -172,16 +185,31 @@ public sealed class AdminApiClient(HttpClient http, IJSRuntime js)
 
     public async Task DownloadCsvAsync(string path, string fileName, CancellationToken cancellationToken = default)
     {
-        using var response = await http.GetAsync(path, cancellationToken);
+        using var response = await SendCoreAsync(HttpMethod.Get, path, body: null, cancellationToken);
         await EnsureSuccessAsync(response);
         var bytes = await response.Content.ReadAsByteArrayAsync(cancellationToken);
         var contentType = response.Content.Headers.ContentType?.ToString() ?? "text/csv";
         await js.InvokeVoidAsync("swlwDownload", cancellationToken, fileName, contentType, bytes);
     }
 
+    internal static Uri CreateRequestUri(Uri? baseAddress, string path)
+    {
+        var options = new UriCreationOptions { DangerousDisablePathAndQueryCanonicalization = true };
+        if (baseAddress is null)
+        {
+            return new Uri(path, UriKind.Relative);
+        }
+
+        var relative = path.StartsWith('/') ? path : "/" + path;
+        return new Uri(baseAddress.GetLeftPart(UriPartial.Authority) + relative, options);
+    }
+
+    private Task<HttpResponseMessage> GetResponseAsync(string path, CancellationToken cancellationToken) =>
+        SendCoreAsync(HttpMethod.Get, path, body: null, cancellationToken);
+
     private async Task<T> GetAsync<T>(string path, CancellationToken cancellationToken)
     {
-        using var response = await http.GetAsync(path, cancellationToken);
+        using var response = await GetResponseAsync(path, cancellationToken);
         return await ReadJsonAsync<T>(response, cancellationToken);
     }
 
@@ -199,7 +227,7 @@ public sealed class AdminApiClient(HttpClient http, IJSRuntime js)
 
     private Task<HttpResponseMessage> SendCoreAsync(HttpMethod method, string path, object? body, CancellationToken cancellationToken)
     {
-        var request = new HttpRequestMessage(method, path);
+        var request = new HttpRequestMessage(method, CreateRequestUri(http.BaseAddress, path));
         if (body is not null)
         {
             request.Content = JsonContent.Create(body, body.GetType(), options: JsonOptions);
@@ -241,6 +269,12 @@ public sealed class AdminApiClient(HttpClient http, IJSRuntime js)
         if (string.IsNullOrEmpty(text))
         {
             return $"요청에 실패했습니다 ({(int)response.StatusCode})";
+        }
+
+        if (text.StartsWith("<!DOCTYPE", StringComparison.OrdinalIgnoreCase) ||
+            text.Contains("<html", StringComparison.OrdinalIgnoreCase))
+        {
+            return "요청 주소가 서버에서 거절되었습니다. 검색어나 제품명에 주소로 쓸 수 없는 문자가 있습니다.";
         }
 
         try

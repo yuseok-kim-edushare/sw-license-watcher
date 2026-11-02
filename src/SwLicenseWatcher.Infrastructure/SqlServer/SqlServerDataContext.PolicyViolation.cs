@@ -143,7 +143,7 @@ public sealed partial class RelationalDataContext
         LicenseSourceNames.TryParse(request.DefaultLicenseSource, out var defaultLicenseSource);
         var write = new SoftwarePolicyWriteRequest(
             productName.Trim(),
-            request.Publisher,
+            Publisher: null,
             VersionPattern: null,
             request.Classification,
             Notes: request.Notes,
@@ -161,7 +161,8 @@ public sealed partial class RelationalDataContext
             write = write with
             {
                 Notes = request.Notes is null ? existing.Notes : NullIfWhiteSpace(request.Notes),
-                VersionPattern = existing.VersionPattern
+                Publisher = null,
+                VersionPattern = null
             };
             saved = await UpdatePolicyRowAsync(connection, transaction, existing.Id, existing, write, cancellationToken)
                 ?? throw new InvalidOperationException("The software classification update did not return a row.");
@@ -540,6 +541,8 @@ public sealed partial class RelationalDataContext
             FROM {Name(options.SchemaName, table.TableName)}
             WHERE {Name(table.EnabledColumn)} = {TrueSql}
               AND {Name(table.ProductNameColumn)} = @productName
+              AND ({Name(table.VersionPatternColumn)} IS NULL OR {Name(table.VersionPatternColumn)} = {Empty})
+              AND ({Name(table.PublisherColumn)} IS NULL OR {Name(table.PublisherColumn)} = {Empty})
             ORDER BY {Name(table.PrimaryKeyColumn)};
             """;
     }

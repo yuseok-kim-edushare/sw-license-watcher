@@ -159,6 +159,48 @@ public abstract class RelationalInventoryTests
     }
 
     [Fact]
+    public async Task Software_classification_covers_the_product_name_and_keeps_a_version_policy()
+    {
+        EnsureAvailable();
+        var token = TestContext.Current.CancellationToken;
+        var deviceCode = Unique("PC");
+        var name = Unique("Office");
+
+        await Context.CreatePolicyAsync(
+            new SoftwarePolicyWriteRequest(
+                name,
+                Publisher: null,
+                VersionPattern: "1.*",
+                SoftwarePolicyClassification.Blacklist,
+                "old version"),
+            token);
+
+        Assert.True((await Context.SaveSnapshotAsync(
+            Snapshot(deviceCode, DateTimeOffset.UtcNow, Software(name, "1.2"), Software(name, "2.0")),
+            token)).Applied);
+
+        var saved = await Context.UpsertSoftwareClassificationAsync(
+            name,
+            new SoftwareClassificationWriteRequest(
+                SoftwarePolicyClassification.Managed,
+                Notes: "name wide"),
+            token);
+        Assert.Equal(SoftwarePolicyClassification.Managed, saved.Classification);
+        Assert.True(string.IsNullOrEmpty(saved.VersionPattern));
+        Assert.True(string.IsNullOrEmpty(saved.Publisher));
+
+        var policies = await Context.ListPoliciesAsync(0, 20, name, classification: null, token);
+        var exact = policies.Items.Where(item => item.ProductName == name).ToList();
+        Assert.Contains(exact, item => item.VersionPattern == "1.*" && item.Classification == SoftwarePolicyClassification.Blacklist);
+        Assert.Contains(exact, item => string.IsNullOrEmpty(item.VersionPattern) && item.Classification == SoftwarePolicyClassification.Managed);
+
+        var detail = await Context.GetDeviceAsync(deviceCode, classification: null, token);
+        var installs = detail!.InstalledSoftware.Where(item => item.Name == name).ToList();
+        Assert.Equal(SoftwarePolicyClassificationNames.Black, installs.Single(item => item.Version == "1.2").Classification);
+        Assert.Equal(SoftwarePolicyClassificationNames.Managed, installs.Single(item => item.Version == "2.0").Classification);
+    }
+
+    [Fact]
     public async Task DeleteDevice_removes_the_pc_and_its_current_inventory()
     {
         EnsureAvailable();

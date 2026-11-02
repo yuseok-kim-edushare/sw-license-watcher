@@ -316,6 +316,8 @@ public class SqlServerInventorySqlTests
         var sql = new RelationalDataContext(new SqlServerStorageOptions()).BuildFindEnabledExactNamePolicySql();
         Assert.Contains("[enabled] = 1", sql, StringComparison.Ordinal);
         Assert.Contains("[product_name] = @productName", sql, StringComparison.Ordinal);
+        Assert.Contains("[version_pattern] IS NULL OR [version_pattern] = N''", sql, StringComparison.Ordinal);
+        Assert.Contains("[publisher] IS NULL OR [publisher] = N''", sql, StringComparison.Ordinal);
         Assert.Contains("[default_license_source]", sql, StringComparison.Ordinal);
     }
 

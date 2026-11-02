@@ -127,8 +127,8 @@ internal static class InventoryQueryApi
             return Results.Ok(new SoftwareAggregateListResponse(normalizedSkip, normalizedTake, totalCount, items));
         });
 
-        app.MapGet("/api/inventory/software/{name}/devices", async (
-            string name,
+        app.MapGet("/api/inventory/software/devices", async (
+            string? name,
             ISoftwareQuery repository,
             int? skip,
             int? take,
@@ -136,14 +136,9 @@ internal static class InventoryQueryApi
             string? format,
             CancellationToken cancellationToken) =>
         {
-            if (string.IsNullOrWhiteSpace(name))
+            if (!SoftwarePolicyValidator.TryValidateSoftwareName(name, out var softwareName, out var nameError))
             {
-                return Results.BadRequest("Software name is required.");
-            }
-
-            if (name.Length > MaxSearchLength)
-            {
-                return Results.BadRequest($"Software name must be at most {MaxSearchLength} characters.");
+                return Results.BadRequest(nameError);
             }
 
             if (!TryNormalizeClassification(classification, out var normalizedClassification, out var classificationError))
@@ -154,16 +149,16 @@ internal static class InventoryQueryApi
             var csv = QueryList.WantsCsv(format);
             var (normalizedSkip, normalizedTake) = QueryList.NormalizePaging(skip, take, csv);
             var (totalCount, items) = await repository.ListSoftwareDevicesAsync(
-                name, normalizedSkip, normalizedTake, normalizedClassification, cancellationToken);
+                softwareName, normalizedSkip, normalizedTake, normalizedClassification, cancellationToken);
 
             if (csv)
             {
                 return InventoryCsv.File(
-                    $"software-{InventoryCsv.SafeFileName(name)}-devices.csv",
+                    $"software-{InventoryCsv.SafeFileName(softwareName)}-devices.csv",
                     ["Name", "DeviceCode", "HostName", "AssignedHostName", "DomainName", "OperatingSystem", "AgentVersion", "LastHeartbeatUtc", "LastInventoryUtc", "Version", "Publisher", "Classification", "LicenseSource", "LicenseSourceOverride", "PcId"],
                     items.Select(device => new[]
                     {
-                        name,
+                        softwareName,
                         device.DeviceCode,
                         device.HostName,
                         device.AssignedHostName,
@@ -181,7 +176,7 @@ internal static class InventoryQueryApi
                     }));
             }
 
-            return Results.Ok(new SoftwareDeviceListResponse(name, normalizedSkip, normalizedTake, totalCount, items));
+            return Results.Ok(new SoftwareDeviceListResponse(softwareName, normalizedSkip, normalizedTake, totalCount, items));
         });
 
         app.MapPut("/api/inventory/software/classifications", async (
@@ -198,39 +193,23 @@ internal static class InventoryQueryApi
             return Results.Ok(new SoftwareClassificationBatchResponse(saved.Count, saved));
         });
 
-        app.MapPut("/api/inventory/software/{name}/classification", async (
-            string name,
-            SoftwareClassificationWriteRequest request,
-            IPolicyStore repository,
-            CancellationToken cancellationToken) =>
-        {
-            if (!SoftwarePolicyValidator.TryValidateSoftwareName(name, out var productName, out var nameError))
-            {
-                return Results.BadRequest(nameError);
-            }
-
-            if (!SoftwarePolicyValidator.TryValidateClassification(request, out var validationError))
-            {
-                return Results.BadRequest(validationError);
-            }
-
-            var saved = await repository.UpsertSoftwareClassificationAsync(productName, request, cancellationToken);
-            return Results.Ok(saved);
-        });
-
-        app.MapPut("/api/inventory/devices/{deviceCode}/software/{name}/license-source", async (
+        app.MapPut("/api/inventory/devices/{deviceCode}/software/license-source", async (
             string deviceCode,
-            string name,
             DeviceSoftwareLicenseSourceWriteRequest request,
             IPolicyStore repository,
             CancellationToken cancellationToken) =>
         {
+            if (request is null)
+            {
+                return Results.BadRequest("The license source payload is required.");
+            }
+
             if (string.IsNullOrWhiteSpace(deviceCode))
             {
                 return Results.BadRequest("deviceCode is required.");
             }
 
-            if (!SoftwarePolicyValidator.TryValidateSoftwareName(name, out var softwareName, out var nameError))
+            if (!SoftwarePolicyValidator.TryValidateSoftwareName(request.Name, out var softwareName, out var nameError))
             {
                 return Results.BadRequest(nameError);
             }

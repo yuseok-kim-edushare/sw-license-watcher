@@ -98,7 +98,8 @@ public static class SoftwarePolicyValidator
             var write = new SoftwareClassificationWriteRequest(
                 item.Classification,
                 item.Publisher,
-                item.DefaultLicenseSource);
+                item.DefaultLicenseSource,
+                item.Notes);
             if (!TryValidateClassification(write, out error))
             {
                 return false;

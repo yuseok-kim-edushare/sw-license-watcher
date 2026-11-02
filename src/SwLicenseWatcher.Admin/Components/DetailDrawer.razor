@@ -141,6 +141,7 @@
                     <label class="wide">메모
                         <textarea maxlength="1024" @bind="_softwareNotes"></textarea>
                     </label>
+                    <p class="hint">분류는 이 제품 이름 전체에 적용됩니다. 특정 버전만 다르게 할 때는 정책의 버전 패턴을 씁니다.</p>
                     <button type="button" class="primary" @onclick="SaveClassificationAsync">분류·메모 저장</button>
                 </div>
                 <p class="meta">설치 PC @_softwareTotal 대</p>
