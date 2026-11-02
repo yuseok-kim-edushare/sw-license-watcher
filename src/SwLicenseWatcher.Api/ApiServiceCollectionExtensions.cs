@@ -69,6 +69,8 @@ internal static class ApiServiceCollectionExtensions
             .ValidateOnStart();
         services.AddOptions<ServerUpdateOptions>()
             .Bind(configuration.GetSection("Updates:Server"));
+        services.AddOptions<ArtifactSigningOptions>()
+            .Bind(configuration.GetSection("Signing:Artifact"));
         services.AddOptions<GitHubUpdateOptions>()
             .Bind(configuration.GetSection("Updates:GitHub"))
             .Validate(
@@ -157,6 +159,12 @@ internal static class ApiServiceCollectionExtensions
                     new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", github.Token);
             }
         });
+        services.AddSingleton<ArtifactUpdatePackageSigner>();
+        services.AddSingleton<IPackageFileSigner>(sp => sp.GetRequiredService<ArtifactUpdatePackageSigner>());
+        services.AddSingleton<PackageSigningWorker>();
+        services.AddSingleton<IUpdatePackageSigner>(sp => sp.GetRequiredService<PackageSigningWorker>());
+        services.AddHostedService(sp => sp.GetRequiredService<PackageSigningWorker>());
+        services.AddSingleton<IUnsignedPackageNotifier, UnsignedPackageNotifier>();
         services.AddTransient<GitHubWorkerUpdateImporter>();
         services.AddSingleton<IServerUpdateEnvironment, RuntimeServerUpdateEnvironment>();
         services.AddSingleton<IServerUpdateTrigger, ProcessServerUpdateTrigger>();

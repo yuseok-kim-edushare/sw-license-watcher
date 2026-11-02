@@ -31,6 +31,30 @@ public class ServerUpdateZipTests
     }
 
     [Fact]
+    public void Repacks_a_directory_with_the_same_relative_paths()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "slw-zip-" + Guid.NewGuid().ToString("N"));
+        var source = Path.Combine(root, "source");
+        Directory.CreateDirectory(Path.Combine(source, "watchdog-update"));
+        File.WriteAllText(Path.Combine(source, "worker.dll"), "worker");
+        File.WriteAllText(Path.Combine(source, "watchdog-update", "watchdog.exe"), "watchdog");
+        var packed = Path.Combine(root, "packed.zip");
+        var extracted = Path.Combine(root, "extracted");
+        try
+        {
+            ServerUpdateZip.CreateFromDirectory(source, packed);
+            using var file = File.OpenRead(packed);
+            ServerUpdateZip.Extract(file, extracted, 1024 * 1024);
+            Assert.Equal("worker", File.ReadAllText(Path.Combine(extracted, "worker.dll")));
+            Assert.Equal("watchdog", File.ReadAllText(Path.Combine(extracted, "watchdog-update", "watchdog.exe")));
+        }
+        finally
+        {
+            Directory.Delete(root, true);
+        }
+    }
+
+    [Fact]
     public void Stops_when_the_expanded_package_is_too_large()
     {
         var root = Path.Combine(Path.GetTempPath(), "slw-zip-" + Guid.NewGuid().ToString("N"));
@@ -105,6 +129,68 @@ public class ServerUpdateCoordinatorTests : IDisposable
         Assert.Contains("Install-ApiUpdateHelper.ps1", ex.Message, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public async Task Import_signs_the_payload_and_apply_stops_when_the_signature_is_not_trusted()
+    {
+        Assert.SkipUnless(OperatingSystem.IsWindows(), "signtool signs Windows PE files.");
+        var signTool = TestCodeSigning.FindSignTool();
+        Assert.SkipUnless(signTool is not null, "signtool.exe was not found under the Windows SDK.");
+        var install = Path.Combine(_root, "api");
+        var staging = Path.Combine(_root, "staging");
+        Directory.CreateDirectory(install);
+        Directory.CreateDirectory(_root);
+        var pfx = TestCodeSigning.WritePfx(_root, "test-password");
+        var zip = TestCodeSigning.ZipAssembly("SwLicenseWatcher.Api.dll");
+        var sha = Convert.ToHexString(SHA256.HashData(zip)).ToLowerInvariant();
+        var trigger = new RecordingTrigger();
+        var coordinator = Create(
+            install,
+            staging,
+            zip,
+            $"{sha}  SwLicenseWatcher.Api.win-x64-1.2.3.zip\n",
+            trigger,
+            ServerUpdateHostKind.WindowsService,
+            signer: new LocalCertificatePackageSigner(signTool!, pfx, "test-password", signServer: true),
+            maxPackageBytes: 64 * 1024 * 1024);
+
+        var imported = await coordinator.ImportAsync(new ServerUpdateImportRequest("1.2.3"), CancellationToken.None);
+        Assert.Equal(sha, imported.Sha256);
+        var signedDll = Path.Combine(staging, "payload", "SwLicenseWatcher.Api.dll");
+        Assert.True(SignedFileCertificate.HasCertificate(signedDll));
+
+        Assert.Contains("Signed=true", await File.ReadAllTextAsync(Path.Combine(staging, "ready.conf"), TestContext.Current.CancellationToken), StringComparison.Ordinal);
+        var ex = await Assert.ThrowsAsync<ServerUpdateException>(() =>
+            coordinator.ApplyAsync(new ServerUpdateApplyRequest("1.2.3"), CancellationToken.None));
+        Assert.Equal(StatusCodes.Status409Conflict, ex.StatusCode);
+        Assert.Contains("Authenticode", ex.Message, StringComparison.Ordinal);
+        Assert.Null(trigger.Config);
+    }
+
+    [Fact]
+    public async Task Import_reports_an_unsigned_server_package_when_server_signing_was_requested()
+    {
+        var install = Path.Combine(_root, "api");
+        var staging = Path.Combine(_root, "staging");
+        Directory.CreateDirectory(install);
+        var zip = ZipBytes(("SwLicenseWatcher.Api.exe", "new-binary"));
+        var sha = Convert.ToHexString(SHA256.HashData(zip)).ToLowerInvariant();
+        var unsigned = new GitHubWorkerUpdateImporterTests.RecordingUnsignedPackageNotifier();
+        var coordinator = Create(
+            install,
+            staging,
+            zip,
+            $"{sha}  SwLicenseWatcher.Api.win-x64-1.2.3.zip\n",
+            new RecordingTrigger(),
+            ServerUpdateHostKind.WindowsService,
+            signer: new ServerSigningRequestedSigner(),
+            unsignedPackages: unsigned);
+
+        await coordinator.ImportAsync(new ServerUpdateImportRequest("1.2.3"), CancellationToken.None);
+
+        Assert.Equal([("server", "1.2.3")], unsigned.Calls);
+        Assert.DoesNotContain("Signed=true", await File.ReadAllTextAsync(Path.Combine(staging, "ready.conf"), TestContext.Current.CancellationToken), StringComparison.Ordinal);
+    }
+
     public void Dispose()
     {
         if (Directory.Exists(_root))
@@ -120,7 +206,10 @@ public class ServerUpdateCoordinatorTests : IDisposable
         string sums,
         RecordingTrigger trigger,
         ServerUpdateHostKind kind,
-        bool writeHelper = true)
+        bool writeHelper = true,
+        IUpdatePackageSigner? signer = null,
+        long maxPackageBytes = 1024 * 1024,
+        GitHubWorkerUpdateImporterTests.RecordingUnsignedPackageNotifier? unsignedPackages = null)
     {
         if (writeHelper)
         {
@@ -143,7 +232,7 @@ public class ServerUpdateCoordinatorTests : IDisposable
             Owner = "org",
             Repository = "repo",
             PackageDirectory = _root,
-            MaxPackageBytes = 1024 * 1024
+            MaxPackageBytes = maxPackageBytes
         });
         var http = new HttpClient(new ServerPackageHandler(zip, sums)) { BaseAddress = new Uri("https://api.github.com/") };
         http.DefaultRequestHeaders.UserAgent.ParseAdd("SwLicenseWatcher.Api.Tests");
@@ -153,6 +242,8 @@ public class ServerUpdateCoordinatorTests : IDisposable
             Options.Create(new ServerUpdateOptions { HelperConfigPath = Path.Combine(_root, "helper.conf") }),
             new FixedServerEnvironment(install, kind),
             trigger,
+            signer ?? DisabledUpdatePackageSigner.Instance,
+            unsignedPackages ?? new GitHubWorkerUpdateImporterTests.RecordingUnsignedPackageNotifier(),
             NullLogger<ServerUpdateCoordinator>.Instance);
     }
 
@@ -178,6 +269,20 @@ public class ServerUpdateCoordinatorTests : IDisposable
         public string ContentRootPath => contentRoot;
         public string CurrentVersion => "1.0.0";
         public string? AppPoolName => kind == ServerUpdateHostKind.Iis ? "SwLicenseWatcher" : null;
+    }
+
+    private sealed class ServerSigningRequestedSigner : IUpdatePackageSigner
+    {
+        public bool SignClientPackages => false;
+
+        public bool SignServerPackages => true;
+
+        public bool ShouldSignClient => false;
+
+        public bool ShouldSignServer => false;
+
+        public Task SignBinariesAsync(string directory, CancellationToken cancellationToken) =>
+            Task.FromException(new UpdatePackageSignException("Signing was not supposed to run."));
     }
 
     private sealed class RecordingTrigger : IServerUpdateTrigger

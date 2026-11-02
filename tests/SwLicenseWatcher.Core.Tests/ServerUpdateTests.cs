@@ -71,4 +71,45 @@ public class ServerUpdateTests
         Assert.Contains("-AppPool", ServerUpdateConfigFile.InstallHint(ServerUpdateHostKind.Iis, @"C:\inetpub\sw", "SwLicenseWatcher"), StringComparison.Ordinal);
         Assert.Contains("install-api-update-helper.sh", ServerUpdateConfigFile.InstallHint(ServerUpdateHostKind.Linux, "/opt/sw-license-watcher", null), StringComparison.Ordinal);
     }
+
+    [Fact]
+    public void State_file_accepts_the_signed_flag()
+    {
+        var text = ServerUpdateConfigFile.FormatState(new Dictionary<string, string>
+        {
+            [ServerUpdateConfigFile.VersionKey] = "1.2.3",
+            [ServerUpdateConfigFile.Sha256Key] = new string('a', 64),
+            [ServerUpdateConfigFile.SignedKey] = "true"
+        });
+
+        Assert.True(ServerUpdateConfigFile.TryParseState(text, out var pairs, out var error), error);
+        Assert.Equal("true", pairs[ServerUpdateConfigFile.SignedKey]);
+    }
+
+    [Fact]
+    public void Artifact_signing_is_off_unless_every_value_is_set()
+    {
+        var unconfigured = new ArtifactSigningOptions();
+        Assert.False(unconfigured.IsConfigured);
+        Assert.False(unconfigured.SignClientPackages);
+        Assert.False(unconfigured.SignServerPackages);
+        Assert.False(unconfigured.ShouldSignClient);
+        Assert.False(unconfigured.ShouldSignServer);
+        Assert.False(new ArtifactSigningOptions { Enabled = true, Endpoint = "https://eus.codesigning.azure.net/" }.IsConfigured);
+        var configured = new ArtifactSigningOptions
+        {
+            Enabled = true,
+            Endpoint = "https://eus.codesigning.azure.net/",
+            AccountName = "contoso",
+            CertificateProfileName = "contoso-profile",
+            SignToolPath = @"C:\kit\signtool.exe",
+            DlibPath = @"C:\kit\Azure.CodeSigning.Dlib.dll"
+        };
+        Assert.True(configured.IsConfigured);
+        Assert.False(configured.ShouldSignClient);
+        Assert.False(configured.ShouldSignServer);
+        configured.SignClientPackages = true;
+        Assert.True(configured.ShouldSignClient);
+        Assert.Equal(TimeSpan.FromMinutes(10), new ArtifactSigningOptions { Timeout = TimeSpan.Zero }.EffectiveTimeout);
+    }
 }

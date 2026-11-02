@@ -72,6 +72,8 @@ CD는 다음 시크릿이 있으면 publish 산출물의 EXE/DLL에 Authenticode
 | `SIGNING_CERTIFICATE_PASSWORD` | 서명할 때 | PFX 암호 |
 | `SIGNING_TIMESTAMP_URL` | | 없으면 `http://timestamp.digicert.com` |
 
+회사가 GitHub에서 받은 에이전트·API 패키지를 서버에서 다시 서명할 때는 [artifact-signing.ko.md](artifact-signing.ko.md)의 Azure Artifact Signing 구성을 씁니다. 패치 적용 순서는 [patch-management.ko.md](patch-management.ko.md)에 있습니다. 이 구성이 없으면 서버는 받은 파일을 서명하지 않습니다.
+
 ## 3. 서버 API
 
 API는 서버에서만 호스팅합니다. PC 에이전트 설치 대상이 아닙니다. Windows Kestrel(Native AOT)은 `Install-ApiServer.ps1`로 Windows Service로 등록하고, Linux Kestrel은 systemd로 등록합니다. IIS in-process는 아래 수동 절차를 따릅니다.
@@ -108,7 +110,7 @@ API는 서버에서만 호스팅합니다. PC 에이전트 설치 대상이 아�
 | `Updates:GitHub:PackageDirectory` | | Worker ZIP 캐시 폴더. 기본은 API 콘텐츠 루트의 `update-packages` |
 | `Updates:Worker:Sha256` | | 시드용. 64자 hex 또는 플레이스홀더. 첫 패키지 전까지 플레이스홀더라도 API는 기동함 |
 | `Updates:Worker:Version` | | 시드용. Watchdog는 DB 핀의 Version을 Worker `.version`과 비교 |
-| `Updates:Worker:RequireAuthenticode` | | 시드용. 패키지 가져오기는 이 값을 `false`로 저장한다. 서명을 요구하려면 가져온 뒤 핀 저장에서 켠다 |
+| `Updates:Worker:RequireAuthenticode` | | 시드용. `Signing:Artifact`가 구성되지 않으면 패키지 가져오기가 이 값을 `false`로 저장한다. 구성되면 서명한 뒤 `true`로 저장한다 |
 | `Kestrel:Endpoints` | AOT만 | Kestrel 단독 호스트의 HTTPS 바인딩. **IIS에서는 넣지 않습니다.** 인증서와 포트는 IIS 사이트 바인딩으로 엽니다. |
 
 환경 변수 예: `Security__AgentToken`, `Security__AdminToken`, `Security__Jwt__Authority`, `Security__Jwt__Audience`, `Storage__SqlServer__ConnectionString`, `Database__ApplySchemaInBackground`.
@@ -380,23 +382,9 @@ Watchdog이 서버 `GET /api/updates/worker/manifest`를 읽고 Worker를 교체
 
 appsettings `Updates:Worker`는 **기동 시드**입니다. 테이블에 행이 없을 때만 복사되고, 이후 핀은 DB가 권위입니다. 파일을 고쳐도 이미 시드된 핀은 바뀌지 않습니다.
 
-운영 절차:
+가져오기, 서명, 핀, API 서버 패치, 롤백 순서는 [patch-management.ko.md](patch-management.ko.md)에 있습니다. Azure Artifact Signing 계정과 `signtool` 호출은 [artifact-signing.ko.md](artifact-signing.ko.md)에 있습니다. `Signing:Artifact`가 구성되지 않으면 서버는 받은 ZIP을 서명하지 않고, 에이전트 핀의 `RequireAuthenticode`는 `false`로 저장됩니다.
 
-1. API `Updates:GitHub:Owner`와 `Repository`에 CD가 올리는 저장소를 넣습니다. 비공개면 `Token`도 넣습니다.
-2. `/admin` **업데이트**에서 릴리스를 고르고 **패키지 가져오고 핀 저장**을 누릅니다. 서버가 `SHA256SUMS.txt`로 Worker ZIP을 검증한 뒤 `Updates:GitHub:PackageDirectory`에 캐시하고, 핀의 `PackageUrl`을 `https://<API>/api/updates/worker/package/{version}`으로 저장합니다. `RequireAuthenticode`는 가져오기에서 `false`가 됩니다.
-3. Watchdog은 `GET /api/updates/worker/manifest`의 `PackageUrl`을 따라갑니다. 그 주소는 `https://<API>/api/updates/worker/package/{version}`이고, 이 GET은 토큰 없이 ZIP을 돌려줍니다. 0.1.8을 포함한 구 클라이언트는 패키지 주소에 Authorization을 넣지 않습니다. PC가 GitHub에 나갈 필요가 없습니다.
-
-직접 GitHub 자산 URL을 핀에 넣을 수도 있습니다. PC가 GitHub에 닿을 때만 그렇게 하세요. 별도 회사 파일 서버에 ZIP을 올리는 절차는 더 이상 필요하지 않습니다.
-
-Watchdog은 설치 디렉터리를 패키지 내용으로 교체하기 전에 PC의 `appsettings.json`과 `appsettings.*.json`을 보존하고, 복사 후 다시 덮어씁니다. 패키지에 들어 있는 개발용 `appsettings.json`은 이미 설치된 PC에서는 쓰이지 않습니다.
-
-서명이 없는 릴리스(`SIGNING_CERTIFICATE_PFX_BASE64` 없음)는 ZIP 안의 EXE/DLL을 회사 인증서로 서명한 뒤 SHA-256을 다시 계산하거나, 핀의 `RequireAuthenticode`를 `false`로 둡니다. 후자는 권장하지 않습니다.
-
-```powershell
-(Get-FileHash -Algorithm SHA256 D:\packages\SwLicenseWatcher.Agent.Worker-1.0.2.zip).Hash
-```
-
-실패 시 Watchdog은 백업에서 Worker를 롤백합니다. API 프로세스 자체는 PC에 없습니다.
+Watchdog은 설치 디렉터리를 패키지 내용으로 교체하기 전에 PC의 `appsettings.json`과 `appsettings.*.json`을 보존하고, 복사 후 다시 덮어씁니다. 패키지에 들어 있는 개발용 `appsettings.json`은 이미 설치된 PC에서는 쓰이지 않습니다. 실패 시 Watchdog은 백업에서 Worker를 롤백합니다. API 프로세스 자체는 PC에 없습니다.
 
 ## 8. 문제 해결
 

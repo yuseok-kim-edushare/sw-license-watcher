@@ -147,6 +147,21 @@ function Wait-AppPool {
     throw "IIS app pool $Name did not reach $State."
 }
 
+function Test-PayloadSignatures {
+    param([Parameter(Mandatory)] [string] $Payload)
+    $binaries = @(Get-ChildItem -LiteralPath $Payload -Recurse -File | Where-Object { $_.Extension -in '.exe', '.dll' })
+    if ($binaries.Count -eq 0) {
+        throw "The staged payload contains no EXE or DLL to verify."
+    }
+
+    foreach ($file in $binaries) {
+        $signature = Get-AuthenticodeSignature -LiteralPath $file.FullName
+        if ($signature.Status -ne 'Valid') {
+            throw "Authenticode verification failed for $($file.Name): $($signature.Status)."
+        }
+    }
+}
+
 function Test-HealthEndpoint {
     param([string] $Url)
     if ([string]::IsNullOrWhiteSpace($Url)) {
@@ -237,6 +252,10 @@ if (-not (Test-SafeVersion $version)) {
 
 if (-not (Test-Path -LiteralPath $payload)) {
     throw "Staged payload is missing."
+}
+
+if ($request['Signed'] -eq 'true') {
+    Test-PayloadSignatures -Payload $payload
 }
 
 Start-Sleep -Seconds 3

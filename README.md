@@ -70,6 +70,8 @@
 - `/deploy/examples`: 서버 API·PC 에이전트용 `appsettings.json` 템플릿
 - `/deploy/scripts`: 서버 API(Kestrel Windows Service) 및 PC Worker·Watchdog 설치/제거 스크립트, SQL Server 스키마 적용 스크립트
 - `/docs/company-deployment.md`: 서버 설정 예시와 회사 PC 클라이언트 배포 절차
+- `/docs/patch-management.ko.md`: 에이전트·API 패치 가져오기, 서명, 적용, 롤백
+- `/docs/artifact-signing.ko.md`: 받은 패키지를 Azure Artifact Signing으로 서명하는 서버 구성. 아직 작업 중이며 기본 플래그는 꺼져 있음
 - `/docs/packager-setup.ko.md`: USB·그룹웨어용 회사 Setup 사용 안내 (패키저·직원 설치·제거 승인)
 - `/docs/hands-on-practice.ko.md`: 집 PC IIS+SQL 실습
 - `.github/workflows/ci.yaml`: CI (빌드/테스트, Native AOT publish 검증, Dependabot auto-merge 트리거)
@@ -140,7 +142,7 @@ SHA256SUMS.txt                                위 ZIP의 SHA-256
 
 ## 회사 배포
 
-서버 API는 [deploy/examples/appsettings.api.company.json](deploy/examples/appsettings.api.company.json)(Kestrel) 또는 [deploy/examples/appsettings.api.iis.company.json](deploy/examples/appsettings.api.iis.company.json)(IIS)으로 맞추고, 회사 PC에는 Worker·Watchdog만 설치합니다. 서버·Intune 절차는 [docs/company-deployment.md](docs/company-deployment.md), USB·그룹웨어용 설치 관리자는 [docs/packager-setup.ko.md](docs/packager-setup.ko.md), 집 PC 재현은 [docs/hands-on-practice.ko.md](docs/hands-on-practice.ko.md)를 참고하세요.
+서버 API는 [deploy/examples/appsettings.api.company.json](deploy/examples/appsettings.api.company.json)(Kestrel) 또는 [deploy/examples/appsettings.api.iis.company.json](deploy/examples/appsettings.api.iis.company.json)(IIS)으로 맞추고, 회사 PC에는 Worker·Watchdog만 설치합니다. 서버·Intune 절차는 [docs/company-deployment.md](docs/company-deployment.md), 패치는 [docs/patch-management.ko.md](docs/patch-management.ko.md), 받은 패키지의 Azure Artifact Signing은 [docs/artifact-signing.ko.md](docs/artifact-signing.ko.md), USB·그룹웨어용 설치 관리자는 [docs/packager-setup.ko.md](docs/packager-setup.ko.md), 집 PC 재현은 [docs/hands-on-practice.ko.md](docs/hands-on-practice.ko.md)를 참고하세요.
 
 Kestrel(Native AOT, `api/win-x64`)은 서버에서 [deploy/scripts/Install-ApiServer.ps1](deploy/scripts/Install-ApiServer.ps1)로 Windows Service(`SwLicenseWatcher.Api`)를 **LocalSystem**으로 등록합니다. Windows에서만 `AddWindowsService`로 SCM에 붙으므로, 서비스로 시작해도 콘텐츠 루트는 실행 파일 폴더이고 Application 이벤트 로그 원본은 `SwLicenseWatcher.Api`입니다. 같은 API의 linux-x64 빌드는 `api/linux-x64/`와 `SwLicenseWatcher.Api.linux-x64-{version}.zip`에 있으며, Kestrel만 띄우고 systemd 유닛 `sw-license-watcher-api.service`를 같이 넣습니다. 리눅스에서는 `Storage:Provider`를 `MySql` 또는 `PostgreSql`로 두는 구성이 자연스럽습니다. Native AOT slim builder에서도 `UseKestrelHttpsConfiguration`으로 `Kestrel:Endpoints:Https`가 적용됩니다. IIS in-process(`api/iis/win-x64`)는 Hosting Bundle과 사이트 바인딩을 쓰는 수동 절차입니다.
 
@@ -259,7 +261,7 @@ END
 
 회사 예시 매핑(`company_pc` / `company_stale_heartbeat_notification`)을 쓰는 기존 DB는 테이블·컬럼·FK 이름을 설정값에 맞게 바꿉니다.
 
-Watchdog에는 Worker 실행 파일이 설치된 `Watchdog__WorkerInstallDirectory`와 업데이트 후 확인할 `Watchdog__WorkerHealthFilePath`도 설정합니다. 이 경로는 Worker의 `Agent__HealthFilePath`와 동일해야 하며, Worker 서비스 계정이 쓰고 Watchdog 서비스 계정이 읽을 수 있어야 합니다. 자체 패치 ZIP(`SwLicenseWatcher.Agent.Worker-{version}.zip`)은 Worker 실행 파일이 있는 폴더에 `watchdog-update/`를 함께 넣습니다. Worker 실행 파일은 하나여야 합니다. Watchdog가 그 폴더로 Worker를 교체하고 health가 확인되면, Worker가 Watchdog를 백업한 뒤 교체하고 서비스를 다시 시작합니다. 두 서비스 모두 설치 폴더의 `appsettings.json`(및 `appsettings.*.json`)을 유지합니다. `RequireAuthenticode`가 `true`(기본)이면 ZIP의 모든 EXE/DLL이 신뢰된 Authenticode 서명을 가져야 합니다. CD에 서명 시크릿이 없으면 릴리스는 서명되지 않으므로, 회사 인증서로 ZIP 내용을 서명한 뒤 재해시하거나 `/admin` **업데이트** 탭에서 `RequireAuthenticode`를 끄세요(비권장).
+Watchdog에는 Worker 실행 파일이 설치된 `Watchdog__WorkerInstallDirectory`와 업데이트 후 확인할 `Watchdog__WorkerHealthFilePath`도 설정합니다. 이 경로는 Worker의 `Agent__HealthFilePath`와 동일해야 하며, Worker 서비스 계정이 쓰고 Watchdog 서비스 계정이 읽을 수 있어야 합니다. 자체 패치 ZIP(`SwLicenseWatcher.Agent.Worker-{version}.zip`)은 Worker 실행 파일이 있는 폴더에 `watchdog-update/`를 함께 넣습니다. Worker 실행 파일은 하나여야 합니다. Watchdog가 그 폴더로 Worker를 교체하고 health가 확인되면, Worker가 Watchdog를 백업한 뒤 교체하고 서비스를 다시 시작합니다. 두 서비스 모두 설치 폴더의 `appsettings.json`(및 `appsettings.*.json`)을 유지합니다. `RequireAuthenticode`가 `true`이면 ZIP의 모든 EXE/DLL이 신뢰된 Authenticode 서명을 가져야 합니다. Windows API에 `Signing:Artifact`가 구성되어 있으면 받은 패키지를 서명한 뒤 핀 해시를 다시 계산하고 `RequireAuthenticode`를 `true`로 저장합니다. 구성이 없으면 서명하지 않고 `false`로 저장합니다. 절차는 [docs/patch-management.ko.md](docs/patch-management.ko.md), Azure 호출 구성은 [docs/artifact-signing.ko.md](docs/artifact-signing.ko.md)에 있습니다.
 
 ## 서버 알림 (웹훅 / SMTP)
 
@@ -289,7 +291,8 @@ API 서버는 수집 결과를 바탕으로 Teams/Slack incoming webhook과 SMTP
     "Events": {
       "NewSoftware": true,
       "StaleHeartbeat": true,
-      "BlacklistViolation": true
+      "BlacklistViolation": true,
+      "UnsignedPackage": true
     },
     "StaleHeartbeatThreshold": "1.00:00:00",
     "StaleHeartbeatCheckInterval": "00:15:00"
@@ -310,6 +313,7 @@ API 서버는 수집 결과를 바탕으로 Teams/Slack incoming webhook과 SMTP
 | `Notifications:Events:NewSoftware` | 이전에 없던 소프트웨어가 스냅샷에 나타나면 알림 |
 | `Notifications:Events:StaleHeartbeat` | heartbeat 두절 PC 알림. 발송 여부는 DB에 영속화되어 API 재시작 후에도 같은 두절을 재알림하지 않음 |
 | `Notifications:Events:BlacklistViolation` | 해당 PC에 없던 블랙리스트 위반이 새로 적발되면 알림. 이미 기록된 위반은 재알림하지 않음 |
+| `Notifications:Events:UnsignedPackage` | `SignClientPackages` 또는 `SignServerPackages`가 켜진 상태에서 서명이 실패하면 알림. 플래그가 꺼져 있으면 보내지 않음 |
 | `Notifications:StaleHeartbeatThreshold` | 두절로 볼 경과 시간. 기본 24시간(`1.00:00:00`) |
 | `Notifications:StaleHeartbeatCheckInterval` | 백그라운드 검사 주기. 기본 15분 |
 

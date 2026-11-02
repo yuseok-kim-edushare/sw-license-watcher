@@ -135,6 +135,8 @@ internal sealed class ServerUpdateCoordinator(
     IOptions<ServerUpdateOptions> serverOptions,
     IServerUpdateEnvironment environment,
     IServerUpdateTrigger trigger,
+    IUpdatePackageSigner signer,
+    IUnsignedPackageNotifier unsignedPackages,
     ILogger<ServerUpdateCoordinator> logger)
 {
     private readonly SemaphoreSlim _gate = new(1, 1);
@@ -309,14 +311,43 @@ internal sealed class ServerUpdateCoordinator(
                     ServerUpdateZip.Extract(file, payload, gitHubOptions.Value.MaxPackageBytes);
                 }
 
+                var signed = false;
+                if (signer.ShouldSignServer && kind != ServerUpdateHostKind.Linux)
+                {
+                    try
+                    {
+                        await signer.SignBinariesAsync(payload, cancellationToken);
+                        signed = true;
+                    }
+                    catch (UpdatePackageSignException ex)
+                    {
+                        if (Directory.Exists(payload))
+                        {
+                            Directory.Delete(payload, recursive: true);
+                        }
+
+                        throw new ServerUpdateException(StatusCodes.Status502BadGateway, ex.Message);
+                    }
+                }
+
+                var ready = new Dictionary<string, string>
+                {
+                    [ServerUpdateConfigFile.VersionKey] = version,
+                    [ServerUpdateConfigFile.Sha256Key] = sha256
+                };
+                if (signed)
+                {
+                    ready[ServerUpdateConfigFile.SignedKey] = "true";
+                }
+
                 await File.WriteAllTextAsync(
                     StatePath(helper, ServerUpdateLayout.ReadyFileName),
-                    ServerUpdateConfigFile.FormatState(new Dictionary<string, string>
-                    {
-                        [ServerUpdateConfigFile.VersionKey] = version,
-                        [ServerUpdateConfigFile.Sha256Key] = sha256
-                    }),
+                    ServerUpdateConfigFile.FormatState(ready),
                     cancellationToken);
+                if (signer.SignServerPackages && !signed && kind != ServerUpdateHostKind.Linux)
+                {
+                    unsignedPackages.NotifyUnsigned("server", version);
+                }
             }
             finally
             {
@@ -368,18 +399,38 @@ internal sealed class ServerUpdateCoordinator(
                 throw new ServerUpdateException(StatusCodes.Status409Conflict, "The staged server package is missing.");
             }
 
+            var signed = ready.TryGetValue(ServerUpdateConfigFile.SignedKey, out var signedText) &&
+                signedText.Equals("true", StringComparison.OrdinalIgnoreCase);
+            if (signed)
+            {
+                try
+                {
+                    AuthenticodeTrust.RequireTrusted(UpdateBinaryFiles.Enumerate(payload));
+                }
+                catch (UpdatePackageSignException ex)
+                {
+                    throw new ServerUpdateException(StatusCodes.Status409Conflict, ex.Message);
+                }
+            }
+
             var resultPath = StatePath(helper, ServerUpdateLayout.ResultFileName);
             if (File.Exists(resultPath))
             {
                 File.Delete(resultPath);
             }
 
+            var requestState = new Dictionary<string, string>
+            {
+                [ServerUpdateConfigFile.VersionKey] = staged
+            };
+            if (signed)
+            {
+                requestState[ServerUpdateConfigFile.SignedKey] = "true";
+            }
+
             await File.WriteAllTextAsync(
                 StatePath(helper, ServerUpdateLayout.RequestFileName),
-                ServerUpdateConfigFile.FormatState(new Dictionary<string, string>
-                {
-                    [ServerUpdateConfigFile.VersionKey] = staged
-                }),
+                ServerUpdateConfigFile.FormatState(requestState),
                 cancellationToken);
             await trigger.TriggerAsync(helper, cancellationToken);
             logger.LogInformation("Started the API update helper for version {Version}.", staged);

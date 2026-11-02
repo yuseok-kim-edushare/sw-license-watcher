@@ -185,6 +185,7 @@ public static class ServerUpdateConfigFile
     public const string UpdateUnitNameKey = "UpdateUnitName";
     public const string VersionKey = "Version";
     public const string Sha256Key = "Sha256";
+    public const string SignedKey = "Signed";
     public const string StatusKey = "Status";
     public const string MessageKey = "Message";
 
@@ -397,9 +398,9 @@ public static class ServerUpdateConfigFile
     private static bool IsKnownKey(string key) => key is
         HostKindKey or InstallPathKey or ServiceNameKey or AppPoolNameKey or StagingPathKey or
         HealthUrlKey or ServiceUserKey or ServiceGroupKey or TaskNameKey or UpdateUnitNameKey or
-        VersionKey or Sha256Key or StatusKey or MessageKey;
+        VersionKey or Sha256Key or SignedKey or StatusKey or MessageKey;
 
-    private static bool IsStateKey(string key) => key is VersionKey or Sha256Key or StatusKey or MessageKey;
+    private static bool IsStateKey(string key) => key is VersionKey or Sha256Key or SignedKey or StatusKey or MessageKey;
 
     private static string Value(Dictionary<string, string> pairs, string key) =>
         pairs.TryGetValue(key, out var value) ? value : string.Empty;

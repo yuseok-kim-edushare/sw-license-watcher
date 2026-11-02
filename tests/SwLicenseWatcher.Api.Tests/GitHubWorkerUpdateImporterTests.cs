@@ -105,7 +105,8 @@ public class GitHubWorkerUpdateImporterTests : IDisposable
         var sums = $"{sha}  SwLicenseWatcher.Agent.Worker-1.2.3.zip{Environment.NewLine}";
         var handler = new GitHubHandler(zip, sums);
         var store = new MemoryPinStore();
-        var importer = CreateImporter(handler, store);
+        var unsigned = new RecordingUnsignedPackageNotifier();
+        var importer = CreateImporter(handler, store, unsignedPackages: unsigned);
 
         var imported = await importer.ImportAsync(
             new GitHubWorkerUpdateImportRequest("1.2.3"),
@@ -120,6 +121,7 @@ public class GitHubWorkerUpdateImporterTests : IDisposable
         Assert.Equal(sha, store.Pin?.Sha256);
         Assert.Equal("https://license.contoso.local/api/updates/worker/package/1.2.3", store.Pin?.PackageUrl);
         Assert.False(store.Pin?.RequireAuthenticode);
+        Assert.Empty(unsigned.Calls);
         Assert.True(File.Exists(Path.Combine(_root, "SwLicenseWatcher.Agent.Worker-1.2.3.zip")));
         Assert.Contains("/releases/tags/1.2.3", handler.Paths, StringComparison.Ordinal);
     }
@@ -147,6 +149,84 @@ public class GitHubWorkerUpdateImporterTests : IDisposable
         Assert.True(release.Cached);
     }
 
+    [Fact]
+    public async Task ImportAsync_signs_the_package_with_a_test_certificate_and_rehashes_the_pin()
+    {
+        Assert.SkipUnless(OperatingSystem.IsWindows(), "signtool signs Windows PE files.");
+        var signTool = TestCodeSigning.FindSignTool();
+        Assert.SkipUnless(signTool is not null, "signtool.exe was not found under the Windows SDK.");
+        var zip = TestCodeSigning.ZipAssembly("sample.dll");
+        var githubSha = Convert.ToHexString(SHA256.HashData(zip)).ToLowerInvariant();
+        var password = "test-password";
+        Directory.CreateDirectory(_root);
+        var pfx = TestCodeSigning.WritePfx(_root, password);
+        var signer = new LocalCertificatePackageSigner(signTool!, pfx, password);
+        var store = new MemoryPinStore();
+        var unsigned = new RecordingUnsignedPackageNotifier();
+        var importer = CreateImporter(
+            new GitHubHandler(zip, $"{githubSha}  SwLicenseWatcher.Agent.Worker-1.2.3.zip\n"),
+            store,
+            signer,
+            maxPackageBytes: 64 * 1024 * 1024,
+            unsignedPackages: unsigned);
+
+        var imported = await importer.ImportAsync(
+            new GitHubWorkerUpdateImportRequest("1.2.3"),
+            version => $"https://license.contoso.local/api/updates/worker/package/{version}",
+            CancellationToken.None);
+
+        Assert.NotEqual(githubSha, imported.Sha256);
+        Assert.True(store.Pin?.RequireAuthenticode);
+        var cached = Path.Combine(_root, "SwLicenseWatcher.Agent.Worker-1.2.3.zip");
+        await using (var cachedStream = File.OpenRead(cached))
+        {
+            var cachedSha = Convert.ToHexString(await SHA256.HashDataAsync(cachedStream, TestContext.Current.CancellationToken)).ToLowerInvariant();
+            Assert.Equal(imported.Sha256, cachedSha);
+        }
+        var signedDll = Path.Combine(_root, "signed-sample.dll");
+        using (var archive = System.IO.Compression.ZipFile.OpenRead(cached))
+        {
+            var entry = Assert.Single(archive.Entries);
+            using var input = entry.Open();
+            using var output = File.Create(signedDll);
+            input.CopyTo(output);
+        }
+
+        Assert.True(SignedFileCertificate.HasCertificate(signedDll));
+        Assert.Empty(unsigned.Calls);
+    }
+
+    [Fact]
+    public async Task ImportAsync_leaves_the_pin_unchanged_when_signing_fails()
+    {
+        Assert.SkipUnless(OperatingSystem.IsWindows(), "signtool signs Windows PE files.");
+        var signTool = TestCodeSigning.FindSignTool();
+        Assert.SkipUnless(signTool is not null, "signtool.exe was not found under the Windows SDK.");
+        var zip = TestCodeSigning.ZipAssembly("sample.dll");
+        var githubSha = Convert.ToHexString(SHA256.HashData(zip)).ToLowerInvariant();
+        Directory.CreateDirectory(_root);
+        var pfx = TestCodeSigning.WritePfx(_root, "test-password");
+        var signer = new LocalCertificatePackageSigner(signTool!, pfx, "wrong-password");
+        var store = new MemoryPinStore();
+        var unsigned = new RecordingUnsignedPackageNotifier();
+        var importer = CreateImporter(
+            new GitHubHandler(zip, $"{githubSha}  SwLicenseWatcher.Agent.Worker-1.2.3.zip\n"),
+            store,
+            signer,
+            maxPackageBytes: 64 * 1024 * 1024,
+            unsignedPackages: unsigned);
+
+        var ex = await Assert.ThrowsAsync<GitHubReleaseImportException>(() => importer.ImportAsync(
+            new GitHubWorkerUpdateImportRequest("1.2.3"),
+            version => $"https://license.contoso.local/api/updates/worker/package/{version}",
+            CancellationToken.None));
+
+        Assert.Contains("signtool", ex.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal("0.0.1", store.Pin?.Version);
+        Assert.Equal([("client", "1.2.3")], unsigned.Calls);
+        Assert.False(File.Exists(Path.Combine(_root, "SwLicenseWatcher.Agent.Worker-1.2.3.zip")));
+    }
+
     public void Dispose()
     {
         if (Directory.Exists(_root))
@@ -155,14 +235,19 @@ public class GitHubWorkerUpdateImporterTests : IDisposable
         }
     }
 
-    private GitHubWorkerUpdateImporter CreateImporter(HttpMessageHandler handler, IWorkerUpdatePinStore pins)
+    private GitHubWorkerUpdateImporter CreateImporter(
+        HttpMessageHandler handler,
+        IWorkerUpdatePinStore pins,
+        IUpdatePackageSigner? signer = null,
+        long maxPackageBytes = 1024 * 1024,
+        RecordingUnsignedPackageNotifier? unsignedPackages = null)
     {
         var githubOptions = Options.Create(new GitHubUpdateOptions
         {
             Owner = "org",
             Repository = "repo",
             PackageDirectory = _root,
-            MaxPackageBytes = 1024 * 1024
+            MaxPackageBytes = maxPackageBytes
         });
         var http = new HttpClient(handler) { BaseAddress = new Uri("https://api.github.com/") };
         http.DefaultRequestHeaders.UserAgent.ParseAdd("SwLicenseWatcher.Api.Tests");
@@ -184,6 +269,8 @@ public class GitHubWorkerUpdateImporterTests : IDisposable
             new WorkerUpdatePackageStore(githubOptions, new StubHostEnvironment(_root)),
             pinService,
             githubOptions,
+            signer ?? DisabledUpdatePackageSigner.Instance,
+            unsignedPackages ?? new RecordingUnsignedPackageNotifier(),
             NullLogger<GitHubWorkerUpdateImporter>.Instance);
     }
 
@@ -254,6 +341,13 @@ public class GitHubWorkerUpdateImporterTests : IDisposable
             {
                 Content = new ByteArrayContent(body)
             });
+    }
+
+    internal sealed class RecordingUnsignedPackageNotifier : IUnsignedPackageNotifier
+    {
+        public List<(string Target, string Version)> Calls { get; } = [];
+
+        public void NotifyUnsigned(string target, string version) => Calls.Add((target, version));
     }
 
     private sealed class MemoryPinStore : IWorkerUpdatePinStore

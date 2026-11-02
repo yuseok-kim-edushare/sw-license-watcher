@@ -5,6 +5,17 @@ using SwLicenseWatcher.Core;
 
 namespace SwLicenseWatcher.Api;
 
+internal interface IUnsignedPackageNotifier
+{
+    void NotifyUnsigned(string target, string version);
+}
+
+internal sealed class UnsignedPackageNotifier(NotificationPublisher publisher) : IUnsignedPackageNotifier
+{
+    public void NotifyUnsigned(string target, string version) =>
+        publisher.EnqueueUnsignedPackageIfNeeded(target, version);
+}
+
 public sealed class NotificationPublisher
 {
     private const int MaxListedSoftware = 50;
@@ -64,6 +75,25 @@ public sealed class NotificationPublisher
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "Failed to enqueue blacklist-violation notification for {DeviceCode}.", snapshot.Pc.DeviceCode);
+        }
+    }
+
+    public void EnqueueUnsignedPackageIfNeeded(string target, string version)
+    {
+        try
+        {
+            var options = _options.Value;
+            if (!options.Events.UnsignedPackage || !options.HasEnabledChannel ||
+                string.IsNullOrWhiteSpace(target) || string.IsNullOrWhiteSpace(version))
+            {
+                return;
+            }
+
+            Enqueue(ForUnsignedPackage(target, version));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to enqueue unsigned-package notification for {Target} {Version}.", target, version);
         }
     }
 
@@ -207,6 +237,17 @@ public sealed class NotificationPublisher
         }
 
         return builder.ToString();
+    }
+
+    internal static NotificationMessage ForUnsignedPackage(string target, string version)
+    {
+        var server = string.Equals(target, "server", StringComparison.OrdinalIgnoreCase);
+        var kind = server ? "서버" : "클라이언트";
+        var subject = $"{kind} 패키지 서명 실패 — {version}";
+        var body = server
+            ? $"{version} 서버 패키지 서명이 켜져 있으나 서명에 실패했습니다. 패키지는 적용 준비로 넘기지 않았거나 서명되지 않은 채 남았습니다."
+            : $"{version} 클라이언트 패키지 서명이 켜져 있으나 서명에 실패했습니다. 핀은 바뀌지 않았습니다.";
+        return new NotificationMessage(subject, body);
     }
 
     private static NotificationMessage ForStaleHeartbeats(IReadOnlyList<StalePcHeartbeat> stalePcs, TimeSpan threshold)

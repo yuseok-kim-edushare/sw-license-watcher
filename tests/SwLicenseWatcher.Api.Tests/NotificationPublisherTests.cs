@@ -173,11 +173,30 @@ public class NotificationPublisherTests
         Assert.False(noChannel.Reader.TryRead(out _));
     }
 
+    [Fact]
+    public void EnqueueUnsignedPackageIfNeeded_requires_the_event_and_a_channel()
+    {
+        var enabled = CreatePublisher(webhookEnabled: true, unsignedPackage: true);
+        enabled.EnqueueUnsignedPackageIfNeeded("client", "1.2.3");
+        Assert.True(enabled.Reader.TryRead(out var message));
+        Assert.Equal("클라이언트 패키지 서명 실패 — 1.2.3", message.Subject);
+        Assert.Contains("1.2.3", message.Body, StringComparison.Ordinal);
+
+        var disabledEvent = CreatePublisher(webhookEnabled: true, unsignedPackage: false);
+        disabledEvent.EnqueueUnsignedPackageIfNeeded("client", "1.2.3");
+        Assert.False(disabledEvent.Reader.TryRead(out _));
+
+        var noChannel = CreatePublisher(webhookEnabled: false, unsignedPackage: true);
+        noChannel.EnqueueUnsignedPackageIfNeeded("server", "1.2.3");
+        Assert.False(noChannel.Reader.TryRead(out _));
+    }
+
     private static NotificationPublisher CreatePublisher(
         bool webhookEnabled = false,
         bool smtpEnabled = false,
         bool newSoftware = false,
-        bool staleHeartbeat = false)
+        bool staleHeartbeat = false,
+        bool unsignedPackage = true)
     {
         var options = new NotificationOptions
         {
@@ -193,7 +212,8 @@ public class NotificationPublisherTests
             Events =
             {
                 NewSoftware = newSoftware,
-                StaleHeartbeat = staleHeartbeat
+                StaleHeartbeat = staleHeartbeat,
+                UnsignedPackage = unsignedPackage
             }
         };
         return new NotificationPublisher(Options.Create(options), NullLogger<NotificationPublisher>.Instance);

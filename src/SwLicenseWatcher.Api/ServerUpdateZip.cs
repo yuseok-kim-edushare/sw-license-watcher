@@ -70,4 +70,44 @@ internal static class ServerUpdateZip
 
         return combined;
     }
+
+    public static void CreateFromDirectory(string sourceDirectory, string destinationFile)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(sourceDirectory);
+        ArgumentException.ThrowIfNullOrWhiteSpace(destinationFile);
+        var root = Path.GetFullPath(sourceDirectory)
+            .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)
+            + Path.DirectorySeparatorChar;
+        if (!Directory.Exists(root))
+        {
+            throw new DirectoryNotFoundException($"The package directory '{sourceDirectory}' does not exist.");
+        }
+
+        var parent = Path.GetDirectoryName(destinationFile);
+        if (!string.IsNullOrEmpty(parent))
+        {
+            Directory.CreateDirectory(parent);
+        }
+
+        if (File.Exists(destinationFile))
+        {
+            File.Delete(destinationFile);
+        }
+
+        using var archive = ZipFile.Open(destinationFile, ZipArchiveMode.Create);
+        foreach (var file in Directory.EnumerateFiles(root, "*", SearchOption.AllDirectories))
+        {
+            var full = Path.GetFullPath(file);
+            if (!full.StartsWith(root, StringComparison.OrdinalIgnoreCase))
+            {
+                throw new InvalidDataException($"The file '{file}' escapes the package directory.");
+            }
+
+            var relative = full[root.Length..].Replace(Path.DirectorySeparatorChar, '/').Replace(Path.AltDirectorySeparatorChar, '/');
+            var entry = archive.CreateEntry(relative, CompressionLevel.Optimal);
+            using var input = File.OpenRead(full);
+            using var output = entry.Open();
+            input.CopyTo(output);
+        }
+    }
 }

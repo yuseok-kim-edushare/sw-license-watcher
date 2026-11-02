@@ -9,6 +9,8 @@ internal sealed class GitHubWorkerUpdateImporter(
     WorkerUpdatePackageStore packages,
     WorkerUpdatePinService workerPin,
     IOptions<GitHubUpdateOptions> options,
+    IUpdatePackageSigner signer,
+    IUnsignedPackageNotifier unsignedPackages,
     ILogger<GitHubWorkerUpdateImporter> logger)
 {
     public async Task<GitHubUpdateSourceResponse> GetSourceAsync(CancellationToken cancellationToken)
@@ -106,6 +108,27 @@ internal sealed class GitHubWorkerUpdateImporter(
                 }
             }
 
+            if (signer.SignClientPackages && !signer.ShouldSignClient)
+            {
+                unsignedPackages.NotifyUnsigned("client", version);
+                throw new GitHubReleaseImportException(
+                    System.Net.HttpStatusCode.BadGateway,
+                    "Client package signing is enabled, but Artifact Signing is not configured.");
+            }
+
+            if (signer.ShouldSignClient)
+            {
+                try
+                {
+                    sha256 = await SignDownloadedPackageAsync(tempPackage, cancellationToken);
+                }
+                catch (GitHubReleaseImportException)
+                {
+                    unsignedPackages.NotifyUnsigned("client", version);
+                    throw;
+                }
+            }
+
             await using (var file = new FileStream(tempPackage, FileMode.Open, FileAccess.Read, FileShare.Read))
             {
                 await packages.SavePackageAsync(version, file, cancellationToken);
@@ -129,7 +152,7 @@ internal sealed class GitHubWorkerUpdateImporter(
             Version = version,
             PackageUrl = packageUrl,
             Sha256 = sha256,
-            RequireAuthenticode = false
+            RequireAuthenticode = signer.ShouldSignClient
         };
         var pinned = request.UpdatePin;
         if (pinned)
@@ -150,6 +173,51 @@ internal sealed class GitHubWorkerUpdateImporter(
             sourceUrl,
             pinned,
             ServedByApi: !string.Equals(packageUrl, sourceUrl, StringComparison.Ordinal));
+    }
+
+    private async Task<string> SignDownloadedPackageAsync(string packagePath, CancellationToken cancellationToken)
+    {
+        var work = Path.Combine(Path.GetTempPath(), "slw-sign-" + Guid.NewGuid().ToString("N"));
+        var extract = Path.Combine(work, "extract");
+        var signedZip = Path.Combine(work, "signed.zip");
+        try
+        {
+            Directory.CreateDirectory(extract);
+            await using (var file = new FileStream(packagePath, FileMode.Open, FileAccess.Read, FileShare.Read))
+            {
+                ServerUpdateZip.Extract(file, extract, options.Value.MaxPackageBytes);
+            }
+
+            try
+            {
+                await signer.SignBinariesAsync(extract, cancellationToken);
+            }
+            catch (UpdatePackageSignException ex)
+            {
+                throw new GitHubReleaseImportException(System.Net.HttpStatusCode.BadGateway, ex.Message);
+            }
+
+            ServerUpdateZip.CreateFromDirectory(extract, signedZip);
+            File.Copy(signedZip, packagePath, overwrite: true);
+            await using var signed = new FileStream(packagePath, FileMode.Open, FileAccess.Read, FileShare.Read);
+            return Convert.ToHexString(await SHA256.HashDataAsync(signed, cancellationToken)).ToLowerInvariant();
+        }
+        finally
+        {
+            try
+            {
+                if (Directory.Exists(work))
+                {
+                    Directory.Delete(work, recursive: true);
+                }
+            }
+            catch (IOException)
+            {
+            }
+            catch (UnauthorizedAccessException)
+            {
+            }
+        }
     }
 
     private async Task<GitHubReleaseDocument> ResolveReleaseAsync(string? version, CancellationToken cancellationToken)

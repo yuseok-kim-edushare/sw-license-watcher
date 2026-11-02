@@ -210,6 +210,46 @@ public sealed class GitHubUpdateOptions
         !string.IsNullOrWhiteSpace(Owner) && !string.IsNullOrWhiteSpace(Repository);
 }
 
+public sealed class ArtifactSigningOptions
+{
+    public bool Enabled { get; set; }
+
+    public bool SignClientPackages { get; set; }
+
+    public bool SignServerPackages { get; set; }
+
+    public string Endpoint { get; set; } = string.Empty;
+
+    public string AccountName { get; set; } = string.Empty;
+
+    public string CertificateProfileName { get; set; } = string.Empty;
+
+    public string TimestampUrl { get; set; } = "http://timestamp.acs.microsoft.com";
+
+    public string SignToolPath { get; set; } = string.Empty;
+
+    public string DlibPath { get; set; } = string.Empty;
+
+    public TimeSpan Timeout { get; set; } = TimeSpan.FromMinutes(10);
+
+    public bool IsConfigured =>
+        Enabled &&
+        !string.IsNullOrWhiteSpace(Endpoint) &&
+        !string.IsNullOrWhiteSpace(AccountName) &&
+        !string.IsNullOrWhiteSpace(CertificateProfileName) &&
+        !string.IsNullOrWhiteSpace(SignToolPath) &&
+        !string.IsNullOrWhiteSpace(DlibPath);
+
+    public bool ShouldSignClient => SignClientPackages && IsConfigured;
+
+    public bool ShouldSignServer => SignServerPackages && IsConfigured;
+
+    public TimeSpan EffectiveTimeout => Timeout > TimeSpan.Zero ? Timeout : TimeSpan.FromMinutes(10);
+
+    public string EffectiveTimestampUrl =>
+        string.IsNullOrWhiteSpace(TimestampUrl) ? "http://timestamp.acs.microsoft.com" : TimestampUrl.Trim();
+}
+
 public enum StorageProvider
 {
     SqlServer,
@@ -580,4 +620,6 @@ public sealed class NotificationEventOptions
     public bool StaleHeartbeat { get; set; } = true;
 
     public bool BlacklistViolation { get; set; } = true;
+
+    public bool UnsignedPackage { get; set; } = true;
 }
