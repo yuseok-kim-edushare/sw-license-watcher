@@ -219,7 +219,7 @@ Windows 서비스:
 .\Install-ApiUpdateHelper.ps1 -InstallPath "C:\Program Files\SwLicenseWatcher\Api" -HealthUrl "https://127.0.0.1/health"
 ```
 
-스크립트는 Release의 `api\win-x64\update-helper`에 있습니다. IIS는 같은 스크립트에 앱 풀 이름을 넘깁니다. 도우미 스크립트를 IIS 사이트 폴더에 넣지 마세요. 앱 풀이 그 파일을 내려받을 수 있습니다.
+스크립트는 Release의 `api\win-x64\update-helper`에 있습니다. IIS는 같은 스크립트에 앱 풀 이름을 넘깁니다. 도우미 스크립트를 IIS 사이트 폴더에 넣지 마세요. 앱 풀이 그 파일을 내려받을 수 있습니다. 설치는 그 앱 풀에 예약된 작업을 실행할 권한만 줍니다. 사이트 폴더에 대한 쓰기 권한은 주지 않습니다. 적용할 때 `액세스가 거부되었습니다`가 나오면 앱 풀이 작업을 실행하지 못하는 것이니, 같은 명령을 관리자 권한으로 다시 실행하세요.
 
 ```powershell
 .\Install-ApiUpdateHelper.ps1 -InstallPath "C:\inetpub\sw-license-watcher" -AppPool "SwLicenseWatcher" -HealthUrl "https://license-watcher.contoso.local/health"

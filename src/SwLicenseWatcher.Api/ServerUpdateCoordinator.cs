@@ -121,11 +121,17 @@ internal sealed class ProcessServerUpdateTrigger : IServerUpdateTrigger
             error = (await process.StandardOutput.ReadToEndAsync(cancellationToken)).Trim();
         }
 
-        throw new ServerUpdateException(
-            StatusCodes.Status502BadGateway,
-            string.IsNullOrWhiteSpace(error)
-                ? "The update helper did not start. Run the helper installer on this server, then try again."
-                : error);
+        if (string.IsNullOrWhiteSpace(error))
+        {
+            error = "The update helper did not start. Run the helper installer on this server, then try again.";
+        }
+        else if (error.Contains("Access is denied", StringComparison.OrdinalIgnoreCase) ||
+                 error.Contains("액세스가 거부", StringComparison.Ordinal))
+        {
+            error = "The update task refused to start. Run Install-ApiUpdateHelper.ps1 again as administrator with the same -InstallPath and -AppPool so this IIS application pool can run the task.";
+        }
+
+        throw new ServerUpdateException(StatusCodes.Status502BadGateway, error);
     }
 }
 

@@ -51,6 +51,36 @@ function Write-Failure {
     Write-Host "FAILED: $Message" -ForegroundColor Red
 }
 
+function Grant-ScheduledTaskRun {
+    param(
+        [Parameter(Mandatory)] [string] $TaskName,
+        [Parameter(Mandatory)] [string] $Identity
+    )
+
+    $account = New-Object System.Security.Principal.NTAccount($Identity)
+    try {
+        $sid = $account.Translate([System.Security.Principal.SecurityIdentifier]).Value
+    }
+    catch {
+        throw "Could not resolve $Identity. Create that IIS application pool before installing the helper."
+    }
+
+    $scheduler = New-Object -ComObject Schedule.Service
+    $scheduler.Connect()
+    $task = $scheduler.GetFolder("\").GetTask($TaskName)
+    # DACL only. schtasks /Run checks this descriptor, not the XML file's NTFS ACL.
+    $sddl = [string] $task.GetSecurityDescriptor(4)
+    if ($sddl -match [regex]::Escape($sid)) {
+        return
+    }
+
+    if ($sddl -notmatch '^D:') {
+        throw "The update task did not return a DACL."
+    }
+
+    $task.SetSecurityDescriptor($sddl.TrimEnd() + "(A;;FRFX;;;$sid)", 0)
+}
+
 function Grant-Directory {
     param(
         [Parameter(Mandatory)] [string] $Path,
@@ -145,10 +175,7 @@ $settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoi
 Register-ScheduledTask -TaskName $TaskName -Action $action -Principal $principal -Settings $settings -Force | Out-Null
 
 if ($hostKind -eq "iis") {
-    $taskFile = Join-Path $env:SystemRoot "System32\Tasks\$TaskName"
-    if (Test-Path -LiteralPath $taskFile) {
-        & icacls.exe $taskFile /grant "IIS APPPOOL\${AppPool}:(RX)" | Out-Null
-    }
+    Grant-ScheduledTaskRun -TaskName $TaskName -Identity "IIS APPPOOL\$AppPool"
 }
 
 Write-Host "OK: Update helper installed for $resolvedInstall ($hostKind)." -ForegroundColor Green
