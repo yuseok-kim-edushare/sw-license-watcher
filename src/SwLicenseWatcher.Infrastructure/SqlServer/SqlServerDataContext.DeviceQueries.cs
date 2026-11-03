@@ -383,12 +383,16 @@ public sealed partial class RelationalDataContext
         await connection.OpenAsync(cancellationToken);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
 
-        await ExecuteAsync(
-            connection,
-            transaction,
-            BuildDeleteInstalledSoftwareSql(),
-            [("@pcId", pcId)],
-            cancellationToken);
+        foreach (var sql in BuildDeletePcChildRowsSql())
+        {
+            await ExecuteAsync(
+                connection,
+                transaction,
+                sql,
+                [("@pcId", pcId)],
+                cancellationToken);
+        }
+
         var deleted = await ExecuteAsync(
             connection,
             transaction,

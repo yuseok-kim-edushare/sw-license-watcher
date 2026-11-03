@@ -21,6 +21,8 @@ internal static class ApiPipeline
     {
         await app.Services.GetRequiredService<RelationalSchemaApplicator>()
             .ApplyIfEnabledAsync(CancellationToken.None);
+        await app.Services.GetRequiredService<DeletedPcRowCleanup>()
+            .TrySweepAsync(CancellationToken.None);
         await app.Services.GetRequiredService<WorkerUpdatePinService>()
             .SeedIfEmptyAsync(CancellationToken.None);
     }

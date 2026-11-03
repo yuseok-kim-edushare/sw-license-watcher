@@ -82,6 +82,27 @@ public class RelationalDialectSqlTests
         Assert.Contains("ADD COLUMN IF NOT EXISTS", sql, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void Orphan_row_delete_uses_the_engine_delete_shape()
+    {
+        var mySql = Context(MySqlDialect.Instance).BuildRemoveRowsLeftByDeletedPcsSql();
+        Assert.Contains("DELETE target", mySql[0], StringComparison.Ordinal);
+        Assert.Contains("NOT EXISTS", mySql[0], StringComparison.Ordinal);
+        Assert.DoesNotContain("`inventory`", mySql[0], StringComparison.Ordinal);
+        Assert.Contains("`display_name`", mySql[^1], StringComparison.Ordinal);
+
+        var postgreSql = Context(PostgreSqlDialect.Instance).BuildRemoveRowsLeftByDeletedPcsSql();
+        Assert.StartsWith("DELETE FROM", postgreSql[0].Trim(), StringComparison.Ordinal);
+        Assert.Contains("\"inventory\".\"pc_installed_sw\"", postgreSql[0], StringComparison.Ordinal);
+        Assert.Contains("NOT EXISTS", postgreSql[^1], StringComparison.Ordinal);
+        Assert.DoesNotContain("DELETE target", postgreSql[0], StringComparison.Ordinal);
+
+        var sqlServer = Context(SqlServerDialect.Instance).BuildRemoveRowsLeftByDeletedPcsSql();
+        Assert.Contains("DELETE target", sqlServer[0], StringComparison.Ordinal);
+        Assert.Contains("[inventory].[pc_entity]", sqlServer[0], StringComparison.Ordinal);
+        Assert.Contains("[display_name]", sqlServer[^1], StringComparison.Ordinal);
+    }
+
     private static RelationalDataContext Context(IRelationalDialect dialect) =>
         new(new SqlServerStorageOptions(), dialect);
 }

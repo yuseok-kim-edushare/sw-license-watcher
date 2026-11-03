@@ -487,6 +487,102 @@ public abstract class RelationalInventoryTests
         Assert.False(await Context.DeleteDeviceAsync(previousId, token));
     }
 
+    [Fact]
+    public async Task DeleteDevice_removes_that_pcs_violation_and_leaves_another_pc()
+    {
+        EnsureAvailable();
+        var token = TestContext.Current.CancellationToken;
+        var removedCode = Unique("PC");
+        var keptCode = Unique("PC");
+        var software = Unique("BadApp");
+        var collected = new DateTimeOffset(2026, 10, 2, 8, 0, 0, TimeSpan.Zero);
+
+        await Context.CreatePolicyAsync(Blacklist(software), token);
+        Assert.True((await Context.SaveSnapshotAsync(Snapshot(removedCode, collected, Software(software, "1")), token)).Applied);
+        Assert.True((await Context.SaveSnapshotAsync(Snapshot(keptCode, collected, Software(software, "1")), token)).Applied);
+
+        var removed = await Context.GetDeviceAsync(removedCode, classification: null, token);
+        Assert.NotNull(removed);
+        Assert.True(await Context.DeleteDeviceAsync(removed.PcId, token));
+
+        Assert.Equal(0, (await Context.ListViolationsAsync(0, 10, removedCode, since: null, token)).TotalCount);
+        var kept = await Context.ListViolationsAsync(0, 10, keptCode, since: null, token);
+        Assert.Equal(software, Assert.Single(kept.Items).SoftwareName);
+    }
+
+    [Fact]
+    public async Task Snapshot_drops_a_removed_programs_violation_without_a_new_detection()
+    {
+        EnsureAvailable();
+        var token = TestContext.Current.CancellationToken;
+        var droppedCode = Unique("PC");
+        var keptCode = Unique("PC");
+        var software = Unique("BadApp");
+        var keptSoftware = Unique("Keep");
+        var first = new DateTimeOffset(2026, 10, 3, 8, 0, 0, TimeSpan.Zero);
+
+        await Context.CreatePolicyAsync(Blacklist(software), token);
+        Assert.True((await Context.SaveSnapshotAsync(
+            Snapshot(droppedCode, first, Software(software, "1"), Software(keptSoftware, "1")),
+            token)).Applied);
+        Assert.True((await Context.SaveSnapshotAsync(Snapshot(keptCode, first, Software(software, "1")), token)).Applied);
+
+        var second = await Context.SaveSnapshotAsync(Snapshot(droppedCode, first.AddHours(1), Software(keptSoftware, "1")), token);
+        Assert.True(second.Applied);
+        Assert.Empty(second.NewViolations);
+        Assert.Equal(0, (await Context.ListViolationsAsync(0, 10, droppedCode, since: null, token)).TotalCount);
+        Assert.Equal(software, Assert.Single((await Context.ListViolationsAsync(0, 10, keptCode, since: null, token)).Items).SoftwareName);
+    }
+
+    [Fact]
+    public async Task RemoveRowsLeftByDeletedPcs_drops_orphans_and_uninstalled_program_violations_only()
+    {
+        EnsureAvailable();
+        var token = TestContext.Current.CancellationToken;
+        var orphanCode = Unique("PC");
+        var uninstalledCode = Unique("PC");
+        var keptCode = Unique("PC");
+        var orphanSoftware = Unique("BadApp");
+        var uninstalledSoftware = Unique("BadApp");
+        var keptSoftware = Unique("BadApp");
+        var collected = new DateTimeOffset(2026, 10, 4, 8, 0, 0, TimeSpan.Zero);
+
+        await Context.CreatePolicyAsync(Blacklist(orphanSoftware), token);
+        await Context.CreatePolicyAsync(Blacklist(uninstalledSoftware), token);
+        await Context.CreatePolicyAsync(Blacklist(keptSoftware), token);
+        Assert.True((await Context.SaveSnapshotAsync(Snapshot(orphanCode, collected, Software(orphanSoftware, "1")), token)).Applied);
+        Assert.True((await Context.SaveSnapshotAsync(Snapshot(uninstalledCode, collected, Software(uninstalledSoftware, "1")), token)).Applied);
+        Assert.True((await Context.SaveSnapshotAsync(Snapshot(keptCode, collected, Software(keptSoftware, "1")), token)).Applied);
+
+        Assert.True(await Context.SetDeviceSoftwareLicenseSourceAsync(orphanCode, orphanSoftware, LicenseSourceNames.Company, token));
+        Assert.NotNull(await Context.CreateUninstallRequestAsync(orphanCode, token));
+        Assert.NotNull(await Context.EnqueueUserMessageAsync(orphanCode, "notice", "body", token));
+        var heartbeatAt = collected.AddHours(-30);
+        await Context.SaveHeartbeatAsync(
+            new AgentHeartbeat(orphanCode, "host-" + orphanCode, "Worker", "1.0.0", heartbeatAt, "Healthy"),
+            token);
+        var claimed = await Context.ClaimNewlyStaleHeartbeatsAsync(heartbeatAt.AddHours(24), heartbeatAt.AddHours(25), token);
+        Assert.Contains(claimed, pc => pc.DeviceCode == orphanCode);
+
+        var orphan = await Context.GetDeviceAsync(orphanCode, classification: null, token);
+        var uninstalled = await Context.GetDeviceAsync(uninstalledCode, classification: null, token);
+        Assert.NotNull(orphan);
+        Assert.NotNull(uninstalled);
+        await Context.DeleteInstalledSoftwareAsync(uninstalled.PcId, token);
+        Assert.Equal(uninstalledSoftware, Assert.Single((await Context.ListViolationsAsync(0, 10, uninstalledCode, since: null, token)).Items).SoftwareName);
+
+        var orphanRows = await Context.CountPcChildRowsAsync(orphan.PcId, token);
+        Assert.True(orphanRows >= 6);
+        await Context.DeletePcKeepingChildRowsAsync(orphan.PcId, token);
+
+        var removed = await Context.RemoveRowsLeftByDeletedPcsAsync(token);
+        Assert.True(removed >= orphanRows);
+        Assert.Equal(0, await Context.CountPcChildRowsAsync(orphan.PcId, token));
+        Assert.Equal(0, (await Context.ListViolationsAsync(0, 10, uninstalledCode, since: null, token)).TotalCount);
+        Assert.Equal(keptSoftware, Assert.Single((await Context.ListViolationsAsync(0, 10, keptCode, since: null, token)).Items).SoftwareName);
+        Assert.Equal(0, await Context.RemoveRowsLeftByDeletedPcsAsync(token));
+    }
+
     protected static string Unique(string prefix) => prefix + "-" + Guid.NewGuid().ToString("N")[..12];
 
     protected static InventoryIngestionRequest Snapshot(
@@ -507,4 +603,7 @@ public abstract class RelationalInventoryTests
 
     protected static InstalledSoftwareEntry Software(string name, string? version) =>
         new(name, version, "Publisher", @"C:\Program Files\" + name, "HKLM Uninstall", "UninstallRegistry");
+
+    private static SoftwarePolicyWriteRequest Blacklist(string productName) =>
+        new(productName, Publisher: null, VersionPattern: null, SoftwarePolicyClassification.Blacklist, Notes: null);
 }

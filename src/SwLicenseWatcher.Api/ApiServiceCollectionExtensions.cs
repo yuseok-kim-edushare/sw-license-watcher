@@ -180,6 +180,7 @@ internal static class ApiServiceCollectionExtensions
         services.AddSingleton<NotificationPublisher>();
         services.AddHostedService<NotificationDispatchService>();
         services.AddHostedService<StaleHeartbeatMonitor>();
+        services.AddSingleton<DeletedPcRowCleanup>();
         services.AddHostedService<SchemaReconcileService>();
         services.AddHttpClient(JwtAccessTokenAuthenticator.HttpClientName, client =>
         {

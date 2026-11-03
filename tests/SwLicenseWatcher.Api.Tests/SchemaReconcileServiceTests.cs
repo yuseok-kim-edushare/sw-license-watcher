@@ -23,6 +23,7 @@ public class SchemaReconcileServiceTests
         var sut = new SchemaReconcileService(
             applicator,
             Options.Create(new DatabaseOptions()),
+            Cleanup(),
             NullLogger<SchemaReconcileService>.Instance);
 
         Assert.False(await sut.TryApplyAsync(CancellationToken.None));
@@ -42,6 +43,7 @@ public class SchemaReconcileServiceTests
         var sut = new SchemaReconcileService(
             applicator,
             Options.Create(new DatabaseOptions { ApplySchemaInBackground = false }),
+            Cleanup(),
             NullLogger<SchemaReconcileService>.Instance);
 
         await sut.StartAsync(CancellationToken.None);
@@ -49,4 +51,9 @@ public class SchemaReconcileServiceTests
 
         Assert.Null(applicator.Last.Succeeded);
     }
+
+    private static DeletedPcRowCleanup Cleanup() =>
+        new(
+            new RelationalDataContext(new SqlServerStorageOptions { ConnectionString = "Server=(local);Database=missing;" }),
+            NullLogger<DeletedPcRowCleanup>.Instance);
 }

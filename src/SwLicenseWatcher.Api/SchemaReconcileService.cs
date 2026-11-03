@@ -7,6 +7,7 @@ namespace SwLicenseWatcher.Api;
 public sealed class SchemaReconcileService(
     RelationalSchemaApplicator applicator,
     IOptions<DatabaseOptions> database,
+    DeletedPcRowCleanup cleanup,
     ILogger<SchemaReconcileService> logger) : BackgroundService
 {
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -42,6 +43,11 @@ public sealed class SchemaReconcileService(
             logger.LogInformation(
                 "Background SQL schema reconcile applied {BatchCount} batch(es).",
                 batchCount);
+            if (!database.Value.ApplySchemaOnStartup && !await cleanup.TrySweepAsync(cancellationToken))
+            {
+                return false;
+            }
+
             return true;
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
