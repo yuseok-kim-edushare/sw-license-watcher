@@ -67,7 +67,7 @@ public sealed partial class RelationalDataContext
             return;
         }
 
-        foreach (var (table, _) in PcChildTables())
+        foreach (var table in ForeignKeyToggleTables())
         {
             await ExecuteAsync(connection, null, ForeignKeyToggleSql(table, enabled: false), [], cancellationToken);
         }
@@ -78,7 +78,7 @@ public sealed partial class RelationalDataContext
         }
         finally
         {
-            foreach (var (table, _) in PcChildTables())
+            foreach (var table in ForeignKeyToggleTables())
             {
                 await ExecuteAsync(connection, null, ForeignKeyToggleSql(table, enabled: true), [], cancellationToken);
             }
@@ -157,6 +157,19 @@ public sealed partial class RelationalDataContext
         return enabled
             ? $"ALTER TABLE {qualified} WITH NOCHECK CHECK CONSTRAINT ALL"
             : $"ALTER TABLE {qualified} NOCHECK CONSTRAINT ALL";
+    }
+
+    private IEnumerable<string> ForeignKeyToggleTables()
+    {
+        if (dialect.Provider == StorageProvider.PostgreSql)
+        {
+            yield return options.PcTable.TableName;
+        }
+
+        foreach (var (table, _) in PcChildTables())
+        {
+            yield return table;
+        }
     }
 
     private IEnumerable<(string Table, string PcColumn)> PcChildTables()
