@@ -138,10 +138,13 @@
                             </label>
                         }
                     </div>
+                    <label class="wide">정책 이름
+                        <input maxlength="256" @bind="_policyPattern" />
+                    </label>
                     <label class="wide">메모
                         <textarea maxlength="1024" @bind="_softwareNotes"></textarea>
                     </label>
-                    <p class="hint">분류는 이 제품 이름 전체에 적용됩니다. 특정 버전만 다르게 할 때는 정책의 버전 패턴을 씁니다.</p>
+                    <p class="hint">이름을 그대로 두면 이 제품 전체에 적용됩니다. `*` `?` 또는 `re:`로 바꾸면 그 패턴의 정책으로 저장됩니다. 예: re:^알집 (10\.94|12\.13)$</p>
                     <button type="button" class="primary" @onclick="SaveClassificationAsync">분류·메모 저장</button>
                 </div>
                 <p class="meta">설치 PC @_softwareTotal 대</p>
@@ -203,6 +206,7 @@
     private string _messageTitle = "";
     private string _messageBody = "";
     private string _softwareNotes = "";
+    private string _policyPattern = "";
     private DeviceDetail? _device;
     private IReadOnlyList<DeviceInstallation> _installations = [];
     private IReadOnlyList<SoftwareDevice> _softwareDevices = [];
@@ -242,6 +246,7 @@
         _kind = "software";
         _key = name;
         _title = name;
+        _policyPattern = name;
         _publisher = publisher ?? "";
         _classFilter = "";
         _classifyAs = SoftwarePolicyClassificationNames.TryParse(classification, out var parsed)
@@ -490,13 +495,53 @@
             return;
         }
 
+        var pattern = _policyPattern.Trim();
+        if (string.IsNullOrEmpty(pattern))
+        {
+            _error = "정책 이름을 입력하세요.";
+            return;
+        }
+
         var succeeded = await Requests.RunAsync(async () =>
         {
-            await Api.PutClassificationAsync(_key, new SoftwareClassificationWriteRequest(
+            if (string.Equals(pattern, _key, StringComparison.OrdinalIgnoreCase))
+            {
+                await Api.PutClassificationAsync(_key, new SoftwareClassificationWriteRequest(
+                    classification,
+                    EmptyToNull(_publisher),
+                    LicenseSourceNames.ForManagedPolicy(classification, EmptyToNull(_license)),
+                    _softwareNotes ?? ""));
+                return;
+            }
+
+            if (!SoftwarePolicyMatcher.IsPattern(pattern))
+            {
+                await Api.PutClassificationAsync(pattern, new SoftwareClassificationWriteRequest(
+                    classification,
+                    Publisher: null,
+                    LicenseSourceNames.ForManagedPolicy(classification, EmptyToNull(_license)),
+                    _softwareNotes ?? ""));
+                return;
+            }
+
+            var request = new SoftwarePolicyWriteRequest(
+                pattern,
+                Publisher: null,
+                VersionPattern: null,
                 classification,
-                EmptyToNull(_publisher),
-                LicenseSourceNames.ForManagedPolicy(classification, EmptyToNull(_license)),
-                _softwareNotes ?? ""));
+                EmptyToNull(_softwareNotes),
+                Enabled: true,
+                LicenseSourceNames.ForManagedPolicy(classification, EmptyToNull(_license)));
+            var listed = await Api.GetPoliciesAsync("search=" + Uri.EscapeDataString(pattern) + "&take=50");
+            var existing = listed.Items?.FirstOrDefault(row => string.Equals(row.ProductName, pattern, StringComparison.Ordinal));
+            if (existing is null)
+            {
+                await Api.CreatePolicyAsync(request);
+            }
+            else
+            {
+                await Api.UpdatePolicyAsync(existing.Id, request);
+            }
         }, message => _error = message);
         if (succeeded)
         {

@@ -201,6 +201,36 @@ public abstract class RelationalInventoryTests
     }
 
     [Fact]
+    public async Task Regex_policy_recolors_the_named_versions_it_matches()
+    {
+        EnsureAvailable();
+        var token = TestContext.Current.CancellationToken;
+        var deviceCode = Unique("PC");
+        var family = Unique("Alzip");
+        var oldName = family + " 10.94";
+        var newName = family + " 12.13";
+        var viewer = family + " Viewer";
+
+        Assert.True((await Context.SaveSnapshotAsync(
+            Snapshot(deviceCode, DateTimeOffset.UtcNow, Software(oldName, "10.94"), Software(newName, "12.13"), Software(viewer, "1")),
+            token)).Applied);
+
+        await Context.CreatePolicyAsync(
+            new SoftwarePolicyWriteRequest(
+                "re:^" + family + @" (10\.94|12\.13)$",
+                Publisher: null,
+                VersionPattern: null,
+                SoftwarePolicyClassification.Blacklist,
+                Notes: null),
+            token);
+
+        var detail = await Context.GetDeviceAsync(deviceCode, classification: null, token);
+        Assert.Equal(SoftwarePolicyClassificationNames.Black, detail!.InstalledSoftware.Single(item => item.Name == oldName).Classification);
+        Assert.Equal(SoftwarePolicyClassificationNames.Black, detail.InstalledSoftware.Single(item => item.Name == newName).Classification);
+        Assert.Equal(SoftwarePolicyClassificationNames.Unclassified, detail.InstalledSoftware.Single(item => item.Name == viewer).Classification);
+    }
+
+    [Fact]
     public async Task DeleteDevice_removes_the_pc_and_its_current_inventory()
     {
         EnsureAvailable();

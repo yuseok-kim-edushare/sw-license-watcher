@@ -34,6 +34,12 @@ public static class SoftwarePolicyValidator
             return false;
         }
 
+        if (!SoftwarePolicyMatcher.TryValidatePattern(request.ProductName, out error) ||
+            !SoftwarePolicyMatcher.TryValidatePattern(request.Publisher, out error))
+        {
+            return false;
+        }
+
         error = string.Empty;
         return true;
     }

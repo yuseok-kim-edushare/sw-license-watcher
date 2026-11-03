@@ -1,7 +1,14 @@
+using System.Collections.Concurrent;
+using System.Text.RegularExpressions;
+
 namespace SwLicenseWatcher.Core;
 
 public static class SoftwarePolicyMatcher
 {
+    public const string RegexPrefix = "re:";
+
+    private static readonly TimeSpan RegexMatchTimeout = TimeSpan.FromMilliseconds(100);
+    private static readonly ConcurrentDictionary<string, Regex?> CompiledPatterns = new(StringComparer.Ordinal);
     public static SoftwarePolicyMatch Match(InstalledSoftwareEntry software, IReadOnlyList<SoftwarePolicyEntry> policies)
     {
         ArgumentNullException.ThrowIfNull(software);
@@ -65,6 +72,38 @@ public static class SoftwarePolicyMatcher
         return MatchesVersion(software.Version, policy.VersionPattern);
     }
 
+    public static bool IsPattern(string? pattern)
+    {
+        if (string.IsNullOrWhiteSpace(pattern))
+        {
+            return false;
+        }
+
+        var trimmed = pattern.Trim();
+        return trimmed.StartsWith(RegexPrefix, StringComparison.Ordinal) || trimmed.IndexOfAny(['*', '?']) >= 0;
+    }
+
+    public static bool Applies(InstalledSoftwareEntry software, SoftwarePolicyEntry policy) =>
+        policy.Enabled && Matches(software, policy);
+
+    public static bool TryValidatePattern(string? pattern, out string error)
+    {
+        error = string.Empty;
+        if (string.IsNullOrWhiteSpace(pattern) || !pattern.Trim().StartsWith(RegexPrefix, StringComparison.Ordinal))
+        {
+            return true;
+        }
+
+        var expression = pattern.Trim()[RegexPrefix.Length..];
+        if (expression.Length == 0 || !TryGetRegex(expression, out _))
+        {
+            error = "The regular expression is invalid or uses an unsupported feature.";
+            return false;
+        }
+
+        return true;
+    }
+
     internal static bool MatchesPattern(string value, string pattern)
     {
         value = value.Trim();
@@ -72,6 +111,11 @@ public static class SoftwarePolicyMatcher
         if (pattern.Length == 0)
         {
             return false;
+        }
+
+        if (pattern.StartsWith(RegexPrefix, StringComparison.Ordinal))
+        {
+            return MatchesRegex(value, pattern[RegexPrefix.Length..]);
         }
 
         if (pattern.IndexOfAny(['*', '?']) < 0)
@@ -216,7 +260,12 @@ public static class SoftwarePolicyMatcher
     private static int Specificity(SoftwarePolicyEntry policy)
     {
         var score = 0;
-        if (policy.ProductName.IndexOfAny(['*', '?']) < 0)
+        var regexName = policy.ProductName.Trim().StartsWith(RegexPrefix, StringComparison.Ordinal);
+        if (regexName)
+        {
+            score += 1;
+        }
+        else if (policy.ProductName.IndexOfAny(['*', '?']) < 0)
         {
             score += 4;
         }
@@ -235,8 +284,48 @@ public static class SoftwarePolicyMatcher
             score += 1;
         }
 
-        score += Math.Min(policy.ProductName.Length, 64);
+        if (!regexName)
+        {
+            score += Math.Min(policy.ProductName.Length, 64);
+        }
+
         return score;
+    }
+
+    private static bool MatchesRegex(string value, string expression)
+    {
+        if (expression.Length == 0 || !TryGetRegex(expression, out var regex) || regex is null)
+        {
+            return false;
+        }
+
+        try
+        {
+            return regex.IsMatch(value);
+        }
+        catch (RegexMatchTimeoutException)
+        {
+            return false;
+        }
+    }
+
+    private static bool TryGetRegex(string expression, out Regex? regex)
+    {
+        regex = CompiledPatterns.GetOrAdd(expression, static value =>
+        {
+            try
+            {
+                return new Regex(
+                    value,
+                    RegexOptions.IgnoreCase | RegexOptions.CultureInvariant | RegexOptions.NonBacktracking,
+                    RegexMatchTimeout);
+            }
+            catch (Exception ex) when (ex is ArgumentException or NotSupportedException)
+            {
+                return null;
+            }
+        });
+        return regex is not null;
     }
 
     private static bool MatchGlob(string value, string pattern)

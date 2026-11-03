@@ -57,7 +57,11 @@ public sealed partial class RelationalDataContext
     {
         await using var connection = CreateConnection();
         await connection.OpenAsync(cancellationToken);
-        return await InsertPolicyAsync(connection, transaction: null, request, cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+        var created = await InsertPolicyAsync(connection, transaction, request, cancellationToken);
+        await RecolorPatternMatchesAsync(connection, transaction, previous: null, created, cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+        return created;
     }
 
     public async Task<SoftwarePolicyEntry?> UpdatePolicyAsync(long id, SoftwarePolicyWriteRequest request, CancellationToken cancellationToken)
@@ -80,6 +84,7 @@ public sealed partial class RelationalDataContext
             return null;
         }
 
+        await RecolorPatternMatchesAsync(connection, transaction, existing, updated, cancellationToken);
         await transaction.CommitAsync(cancellationToken);
         return updated;
     }
@@ -491,6 +496,67 @@ public sealed partial class RelationalDataContext
                 cancellationToken);
         }
     }
+
+    private async Task RecolorPatternMatchesAsync(
+        DbConnection connection,
+        DbTransaction transaction,
+        SoftwarePolicyEntry? previous,
+        SoftwarePolicyEntry current,
+        CancellationToken cancellationToken)
+    {
+        if (!AffectsPattern(previous) && !AffectsPattern(current))
+        {
+            return;
+        }
+
+        var policies = await ListEnabledPoliciesAsync(connection, transaction, cancellationToken);
+        var software = options.InstalledSoftwareTable;
+        var sql = $"""
+            SELECT {Name(software.PrimaryKeyColumn)}, {Name(software.DisplayNameColumn)}, {Name(software.DisplayVersionColumn)},
+                   {Name(software.PublisherColumn)}, {Name(software.InstallLocationColumn)},
+                   {Name(software.DiscoveryScopeColumn)}, {Name(software.DiscoverySourceColumn)}
+            FROM {Name(options.SchemaName, software.TableName)};
+            """;
+        var rows = new List<(long Id, InstalledSoftwareEntry Entry)>();
+        await using (var command = CreateCommand(connection, transaction, sql))
+        await using (var reader = await command.ExecuteReaderAsync(cancellationToken))
+        {
+            while (await reader.ReadAsync(cancellationToken))
+            {
+                rows.Add((
+                    reader.GetInt64(reader.GetOrdinal(software.PrimaryKeyColumn)),
+                    new InstalledSoftwareEntry(
+                        reader.GetString(reader.GetOrdinal(software.DisplayNameColumn)),
+                        ReadNullableString(reader, software.DisplayVersionColumn),
+                        ReadNullableString(reader, software.PublisherColumn),
+                        ReadNullableString(reader, software.InstallLocationColumn),
+                        reader.GetString(reader.GetOrdinal(software.DiscoveryScopeColumn)),
+                        reader.GetString(reader.GetOrdinal(software.DiscoverySourceColumn)))));
+            }
+        }
+
+        foreach (var (id, entry) in rows)
+        {
+            var affected = SoftwarePolicyMatcher.Applies(entry, current) ||
+                (previous is not null && SoftwarePolicyMatcher.Applies(entry, previous));
+            if (!affected)
+            {
+                continue;
+            }
+
+            var match = SoftwarePolicyMatcher.Match(entry, policies);
+            await ExecuteAsync(
+                connection,
+                transaction,
+                BuildUpdateInstalledClassificationSql(),
+                [("@id", id), ("@classification", Truncate(match.StoredClassification, 32)!)],
+                cancellationToken);
+        }
+    }
+
+    private static bool AffectsPattern(SoftwarePolicyEntry? policy) =>
+        policy is not null &&
+        (SoftwarePolicyMatcher.IsPattern(policy.ProductName) || SoftwarePolicyMatcher.IsPattern(policy.Publisher));
 
     internal string BuildInsertPolicySql()
     {

@@ -2,6 +2,42 @@
 @using static DashboardPresentation
 @inject IJSRuntime Js
 
+<section class="card">
+    <h2>@(_id is null ? "정책 생성" : "정책 수정")</h2>
+    @if (!string.IsNullOrEmpty(_policyError))
+    {
+        <p class="error">@_policyError</p>
+    }
+    <div class="form-grid">
+        <label>제품 이름<input maxlength="256" @bind="_product" /></label>
+        <p class="hint">`*`와 `?`로 이름을 묶습니다. 고른 이름만 묶을 때는 `re:^알집 (10\.94|12\.13)$`처럼 적습니다. 버전 패턴은 설치 이름의 버전이 아니라 버전 칸에 씁니다.</p>
+        <label>게시자<input maxlength="256" @bind="_publisher" /></label>
+        <label>버전 패턴<input maxlength="64" @bind="_version" /></label>
+        <label>분류
+            <select @bind="_classification">
+                <option value="@SoftwarePolicyClassificationNames.White">white</option>
+                <option value="@SoftwarePolicyClassificationNames.Managed">managed</option>
+                <option value="@SoftwarePolicyClassificationNames.Black">black</option>
+            </select>
+        </label>
+        @if (_classification == SoftwarePolicyClassificationNames.Managed)
+        {
+            <label>기본 라이선스(managed)
+                <select @bind="_license">
+                    <option value="">미지정</option><option value="@LicenseSourceNames.Company">회사</option><option value="@LicenseSourceNames.Byo">BYO</option>
+                </select>
+            </label>
+        }
+        <label class="wide">메모<input maxlength="1024" @bind="_notes" /></label>
+        <label class="check"><input type="checkbox" @bind="_enabled" />사용</label>
+    </div>
+    <div class="form-actions">
+        <button type="button" class="primary" @onclick="SaveAsync">저장</button>
+        <button type="button" @onclick="ResetForm">새로 만들기</button>
+        <button type="button" class="danger" disabled="@(_id is null)" @onclick="DeleteAsync">삭제</button>
+    </div>
+</section>
+
 <div class="toolbar">
     <label>검색
         <input type="search" maxlength="256" @bind="Search" @bind:event="oninput" @onkeydown="OnSearchKey" />
@@ -56,41 +92,6 @@
 </table>
 <Pagination From="PageFrom" To="PageTo" Total="TotalCount" CanPrev="CanPrev" CanNext="CanNext"
             Previous="PrevPageAsync" Next="NextPageAsync" />
-
-<section class="card">
-    <h2>@(_id is null ? "정책 생성" : "정책 수정")</h2>
-    @if (!string.IsNullOrEmpty(_policyError))
-    {
-        <p class="error">@_policyError</p>
-    }
-    <div class="form-grid">
-        <label>제품 이름<input maxlength="256" @bind="_product" /></label>
-        <label>게시자<input maxlength="256" @bind="_publisher" /></label>
-        <label>버전 패턴<input maxlength="64" @bind="_version" /></label>
-        <label>분류
-            <select @bind="_classification">
-                <option value="@SoftwarePolicyClassificationNames.White">white</option>
-                <option value="@SoftwarePolicyClassificationNames.Managed">managed</option>
-                <option value="@SoftwarePolicyClassificationNames.Black">black</option>
-            </select>
-        </label>
-        @if (_classification == SoftwarePolicyClassificationNames.Managed)
-        {
-            <label>기본 라이선스(managed)
-                <select @bind="_license">
-                    <option value="">미지정</option><option value="@LicenseSourceNames.Company">회사</option><option value="@LicenseSourceNames.Byo">BYO</option>
-                </select>
-            </label>
-        }
-        <label class="wide">메모<input maxlength="1024" @bind="_notes" /></label>
-        <label class="check"><input type="checkbox" @bind="_enabled" />사용</label>
-    </div>
-    <div class="form-actions">
-        <button type="button" class="primary" @onclick="SaveAsync">저장</button>
-        <button type="button" @onclick="ResetForm">새로 만들기</button>
-        <button type="button" class="danger" disabled="@(_id is null)" @onclick="DeleteAsync">삭제</button>
-    </div>
-</section>
 
 @code {
     private string _classFilter = "";

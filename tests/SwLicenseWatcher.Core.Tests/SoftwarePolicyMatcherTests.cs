@@ -134,6 +134,48 @@ public class SoftwarePolicyMatcherTests
         string? versionPattern = null,
         bool enabled = true) =>
         new(1, productName, publisher, versionPattern, classification, null, enabled, DateTimeOffset.UtcNow);
+
+    [Fact]
+    public void Match_groups_named_versions_with_one_regular_expression()
+    {
+        var policies = new[] { Policy(@"re:^알집 (10\.94|12\.13)$", SoftwarePolicyClassification.Blacklist) };
+
+        Assert.Equal(
+            SoftwarePolicyClassification.Blacklist,
+            SoftwarePolicyMatcher.Match(Software("알집 10.94", "10.94"), policies).Classification);
+        Assert.Equal(
+            SoftwarePolicyClassification.Blacklist,
+            SoftwarePolicyMatcher.Match(Software("알집 12.13", "12.13"), policies).Classification);
+        Assert.True(SoftwarePolicyMatcher.Match(Software("알집 9.0", "9.0"), policies).IsUnclassified);
+        Assert.True(SoftwarePolicyMatcher.Match(Software("알집 뷰어", "1.0"), policies).IsUnclassified);
+        Assert.Equal(
+            SoftwarePolicyClassification.Blacklist,
+            SoftwarePolicyMatcher.Match(Software("alzip", "1"), [Policy("re:^AlZip$", SoftwarePolicyClassification.Blacklist)]).Classification);
+    }
+
+    [Fact]
+    public void Match_prefers_exact_name_over_regular_expression_for_the_same_classification()
+    {
+        var match = SoftwarePolicyMatcher.Match(
+            Software("알집 10.94", "10.94"),
+            [
+                Policy(@"re:^알집 (10\.94|12\.13)$", SoftwarePolicyClassification.Managed),
+                Policy("알집 10.94", SoftwarePolicyClassification.Managed)
+            ]);
+
+        Assert.Equal("알집 10.94", match.Policy!.ProductName);
+    }
+
+    [Fact]
+    public void Match_applies_a_publisher_regular_expression()
+    {
+        var policy = Policy("Editor", SoftwarePolicyClassification.Blacklist, publisher: "re:^ESTsoft$");
+
+        Assert.Equal(
+            SoftwarePolicyClassification.Blacklist,
+            SoftwarePolicyMatcher.Match(Software("Editor", "1", "ESTsoft"), [policy]).Classification);
+        Assert.True(SoftwarePolicyMatcher.Match(Software("Editor", "1", "Other"), [policy]).IsUnclassified);
+    }
 }
 
 public class SoftwarePolicyValidatorTests
@@ -255,5 +297,24 @@ public class SoftwarePolicyValidatorTests
             out var error));
         Assert.Equal(string.Empty, error);
         Assert.Null(LicenseSourceNames.ForManagedPolicy(SoftwarePolicyClassification.Whitelist, "company"));
+    }
+
+    [Fact]
+    public void TryValidate_rejects_invalid_regular_expressions()
+    {
+        Assert.False(SoftwarePolicyValidator.TryValidate(
+            new SoftwarePolicyWriteRequest("re:[", null, null, SoftwarePolicyClassification.Blacklist, null),
+            out var error));
+        Assert.Equal("The regular expression is invalid or uses an unsupported feature.", error);
+
+        Assert.False(SoftwarePolicyValidator.TryValidate(
+            new SoftwarePolicyWriteRequest("알집", @"re:(a)\1", null, SoftwarePolicyClassification.Blacklist, null),
+            out error));
+        Assert.Equal("The regular expression is invalid or uses an unsupported feature.", error);
+
+        Assert.True(SoftwarePolicyValidator.TryValidate(
+            new SoftwarePolicyWriteRequest(@"re:^알집 (10\.94|12\.13)$", null, null, SoftwarePolicyClassification.Blacklist, null),
+            out error));
+        Assert.Equal(string.Empty, error);
     }
 }
