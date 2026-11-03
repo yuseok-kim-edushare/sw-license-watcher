@@ -35,4 +35,17 @@ public class UserMessageEventHubTests
 
         Assert.False(await next.WaitAsync(TimeSpan.FromSeconds(2), cts.Token));
     }
+
+    [Fact]
+    public async Task Cancelled_subscription_disposes_after_the_pending_read_finishes()
+    {
+        var hub = new UserMessageEventHub();
+        using var cts = new CancellationTokenSource();
+        var received = hub.Subscribe("PC-01", cts.Token).GetAsyncEnumerator(cts.Token);
+        var move = received.MoveNextAsync().AsTask();
+        cts.Cancel();
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(async () => await move);
+        await received.DisposeAsync();
+    }
 }

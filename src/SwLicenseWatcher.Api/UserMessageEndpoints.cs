@@ -133,10 +133,10 @@ internal static class UserMessageEndpoints
                 http.RequestAborted,
                 lifetime.ApplicationStopping);
             var ct = linked.Token;
-            await using var enumerator = hub.Subscribe(normalizedDeviceCode, ct).GetAsyncEnumerator(ct);
+            var enumerator = hub.Subscribe(normalizedDeviceCode, ct).GetAsyncEnumerator(ct);
+            var move = enumerator.MoveNextAsync().AsTask();
             try
             {
-                var move = enumerator.MoveNextAsync().AsTask();
                 while (!ct.IsCancellationRequested)
                 {
                     var ping = Task.Delay(TimeSpan.FromSeconds(20), ct);
@@ -163,6 +163,19 @@ internal static class UserMessageEndpoints
             }
             catch (OperationCanceledException) when (ct.IsCancellationRequested)
             {
+            }
+            finally
+            {
+                // DisposeAsync throws NotSupportedException while MoveNextAsync is still running.
+                try
+                {
+                    await move;
+                }
+                catch (OperationCanceledException)
+                {
+                }
+
+                await enumerator.DisposeAsync();
             }
 
             return Results.Empty;
