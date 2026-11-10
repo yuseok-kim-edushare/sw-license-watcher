@@ -158,7 +158,7 @@ jobs:
       - name: Setup .NET
         uses: actions/setup-dotnet@v6
         with:
-          dotnet-version: 10.0.x
+          dotnet-version: 11.0.x
           dotnet-quality: ga
 
       - name: Publish Api (linux-x64, Native AOT)
@@ -230,7 +230,7 @@ jobs:
       - name: Setup .NET
         uses: actions/setup-dotnet@v6
         with:
-          dotnet-version: 10.0.x
+          dotnet-version: 11.0.x
           dotnet-quality: ga
 
       - name: Restore dependencies

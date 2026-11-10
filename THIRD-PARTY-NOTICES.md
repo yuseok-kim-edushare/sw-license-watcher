@@ -20,7 +20,7 @@ sw-license-watcher는 아래의 서드파티 소프트웨어를 사용합니다.
 
 | 구성 요소 | 라이선스 | 저작권 | 출처 |
 | --- | --- | --- | --- |
-| .NET Runtime / SDK (.NET 10) | MIT | © .NET Foundation and Contributors | https://github.com/dotnet/runtime |
+| .NET Runtime / SDK (.NET 11) | MIT | © .NET Foundation and Contributors | https://github.com/dotnet/runtime |
 | ASP.NET Core | MIT | © .NET Foundation and Contributors | https://github.com/dotnet/aspnetcore |
 
 ## MIT License (위 구성 요소들에 적용)

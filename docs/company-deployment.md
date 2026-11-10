@@ -198,7 +198,7 @@ curl -k https://127.0.0.1/health
 
 Native AOT는 IIS in-process를 지원하지 않습니다. `api/iis/win-x64`를 사용합니다.
 
-1. 서버에 [.NET 10 ASP.NET Core Hosting Bundle](https://dotnet.microsoft.com/download/dotnet/10.0)을 설치합니다. (AspNetCoreModuleV2 + 공유 런타임)
+1. 서버에 [.NET 11 ASP.NET Core Hosting Bundle](https://dotnet.microsoft.com/download/dotnet/11.0)을 설치합니다. (AspNetCoreModuleV2 + 공유 런타임)
 2. IIS에서 애플리케이션 풀을 만듭니다. **.NET CLR 버전: No Managed Code**, 32비트 사용 안 함.
 3. 사이트를 만들고 실제 경로를 `api/iis/win-x64` 폴더로 지정합니다. HTTPS 바인딩과 인증서는 IIS에서 설정합니다.
 4. [appsettings.api.iis.company.json](../deploy/examples/appsettings.api.iis.company.json)을 해당 폴더의 `appsettings.json`으로 복사하고 토큰·연결 문자열을 넣습니다. `Kestrel:Endpoints`는 넣지 않습니다.
@@ -397,7 +397,7 @@ Watchdog은 설치 디렉터리를 패키지 내용으로 교체하기 전에 PC
 | Watchdog이 업데이트를 안 함 | `/admin` 업데이트 핀 `Version`이 이미 `.version`과 같음, `PackageUrl`이 HTTP, SHA-256 불일치, 또는 DB 핀이 아직 플레이스홀더 |
 | Authenticode 실패 | ZIP 안의 EXE/DLL이 회사 신뢰 루트로 서명되지 않음 |
 | 업데이트 후 롤백 | Worker가 `HealthFilePath`에 버전을 못 씀. 경로가 Worker/Watchdog JSON에서 같은지 |
-| IIS `500.30` / `500.31` | Hosting Bundle(.NET 10) 설치, 앱 풀 No Managed Code, `api/iis`를 쓰는지(AOT 폴더 아님) |
+| IIS `500.30` / `500.31` | Hosting Bundle(.NET 11) 설치, 앱 풀 No Managed Code, `api/iis`를 쓰는지(AOT 폴더 아님) |
 | IIS에서 Kestrel 포트 충돌 | IIS용 JSON에 `Kestrel:Endpoints`가 있으면 제거. HTTPS는 사이트 바인딩만 사용 |
 | API 서비스가 바로 종료 | Event Log. 빈/짧은 토큰, AgentToken=AdminToken, 남아 있는 `Security:Token`, 연결 문자열, `Kestrel` 인증서 Subject가 LocalMachine\My와 다른지 |
 | 서비스 시작 1053 오류 | Application 이벤트 로그(원본 `SwLicenseWatcher.Api`). `appsettings.json`이 실행 파일과 같은 폴더(`C:\Program Files\SwLicenseWatcher\Api`)에 있는지, 토큰·연결 문자열·Kestrel HTTPS 인증서를 확인 |

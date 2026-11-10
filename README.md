@@ -1,6 +1,6 @@
 # sw-license-watcher
 
-.NET 10 기반의 기업용 소프트웨어 라이선스 감시 서비스입니다. 로컬 PC 에이전트는 **Watchdog + Worker**의 투 프로세스 Windows Service 구조를 사용하고, 서버는 **ASP.NET Core API**와 관계형 DB로 소프트웨어 수집과 업데이트 메타데이터를 제공합니다. 기본 엔진은 SQL Server이고, MySQL/MariaDB와 PostgreSQL도 같은 API로 쓸 수 있습니다.
+.NET 11 기반의 기업용 소프트웨어 라이선스 감시 서비스입니다. 로컬 PC 에이전트는 **Watchdog + Worker**의 투 프로세스 Windows Service 구조를 사용하고, 서버는 **ASP.NET Core API**와 관계형 DB로 소프트웨어 수집과 업데이트 메타데이터를 제공합니다. 기본 엔진은 SQL Server이고, MySQL/MariaDB와 PostgreSQL도 같은 API로 쓸 수 있습니다.
 
 ## 구현된 핵심 요구사항
 

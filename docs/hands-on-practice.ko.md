@@ -30,7 +30,7 @@
 | 항목 | 집 테스트에서 |
 | --- | --- |
 | Windows | IIS는 Pro가 편합니다. Home이면 "Windows 기능"에서 IIS를 켜세요. |
-| [.NET 10 ASP.NET Core Hosting Bundle](https://dotnet.microsoft.com/download/dotnet/10.0) | **IIS에 필수.** AspNetCoreModuleV2 + 공유 런타임 |
+| [.NET 11 ASP.NET Core Hosting Bundle](https://dotnet.microsoft.com/download/dotnet/11.0) | **IIS에 필수.** AspNetCoreModuleV2 + 공유 런타임 |
 | SQL Server Express + SSMS | LocalDB도 가능하지만 Express가 IIS(LocalSystem)와 맞추기 쉽습니다 |
 | 산출물 | GitHub Release ZIP, 또는 소스에서 publish |
 | 관리자 PowerShell | 서비스 설치, IIS, 인증서 |
