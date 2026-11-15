@@ -5,6 +5,8 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <IsAotCompatible>true</IsAotCompatible>
+    <!-- Referenced by the Blazor WASM admin host. Mono cannot run runtime-async IL. -->
+    <UseRuntimeAsync>false</UseRuntimeAsync>
     <PublishAot>false</PublishAot>
     <PublishTrimmed>false</PublishTrimmed>
   </PropertyGroup>

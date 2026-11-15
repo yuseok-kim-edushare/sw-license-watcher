@@ -12,6 +12,8 @@
     <SelfContained>false</SelfContained>
     <PublishAot>false</PublishAot>
     <PublishTrimmed>false</PublishTrimmed>
+    <!-- browser-wasm runs on Mono, which cannot execute runtime-async methods. -->
+    <UseRuntimeAsync>false</UseRuntimeAsync>
   </PropertyGroup>
 
   <ItemGroup>

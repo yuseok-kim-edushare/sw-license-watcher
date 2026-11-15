@@ -1,0 +1,25 @@
+<Project>
+  <!--
+    .NET 11 runtime async is a preview compiler lowering: task-returning async
+    methods suspend through the runtime instead of a generated state machine.
+    CoreCLR and NativeAOT (the API, agents, and setup tools) can run that IL.
+    Mono cannot, and the admin UI is Blazor WebAssembly on Mono. Core is loaded
+    by that UI, so it stays on the classic lowering together with the admin
+    project. Any other project can opt out with <UseRuntimeAsync>false</UseRuntimeAsync>.
+  -->
+  <PropertyGroup>
+    <UseRuntimeAsync Condition="'$(MSBuildProjectName)' == 'SwLicenseWatcher.Core' Or '$(MSBuildProjectName)' == 'SwLicenseWatcher.Admin'">false</UseRuntimeAsync>
+  </PropertyGroup>
+
+  <!--
+    TargetFramework, RuntimeIdentifier, and a project-level UseRuntimeAsync
+    override are set in the project body, which is evaluated after this file.
+    Apply the compiler feature once those values are known.
+  -->
+  <Target Name="EnableNet11RuntimeAsync" BeforeTargets="CoreCompile">
+    <PropertyGroup Condition="'$(UseRuntimeAsync)' != 'false' And $(TargetFramework.StartsWith('net11')) And !$(RuntimeIdentifier.Contains('-wasm'))">
+      <Features Condition="'$(Features)' == ''">runtime-async=on</Features>
+      <Features Condition="'$(Features)' != '' And !$(Features.Contains('runtime-async='))">$(Features);runtime-async=on</Features>
+    </PropertyGroup>
+  </Target>
+</Project>
