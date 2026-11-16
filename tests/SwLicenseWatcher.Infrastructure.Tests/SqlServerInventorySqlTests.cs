@@ -435,6 +435,14 @@ public class SqlServerInventorySqlTests
             "ORDER BY [last_heartbeat_utc] DESC, COALESCE(NULLIF([assigned_host_name], N''), [host_name]), [device_code]",
             context.BuildListDevicesSql(AdminListSort.LastHeartbeatUtc, sortDescending: true),
             StringComparison.Ordinal);
+        var agentVersion = context.BuildListDevicesSql(AdminListSort.AgentVersion, sortDescending: false);
+        Assert.Contains("CROSS APPLY", agentVersion, StringComparison.Ordinal);
+        Assert.Contains("ISNULL(TRY_CONVERT(bigint, sv_major.sv_major), 0) ASC", agentVersion, StringComparison.Ordinal);
+        Assert.Contains("ISNULL(TRY_CONVERT(bigint, sv_patch.sv_patch), 0) ASC", agentVersion, StringComparison.Ordinal);
+        Assert.Contains("ISNULL(TRY_CONVERT(bigint, sv_revision.sv_revision), 0) ASC", agentVersion, StringComparison.Ordinal);
+        Assert.Contains("THEN 1 ELSE 0 END DESC", agentVersion, StringComparison.Ordinal);
+        Assert.Contains("[agent_version] ASC", agentVersion, StringComparison.Ordinal);
+        Assert.DoesNotContain("ORDER BY [agent_version]", agentVersion, StringComparison.Ordinal);
         Assert.Contains(
             "ORDER BY COUNT(DISTINCT s.[pc_id]) DESC, s.[display_name], s.[display_version], s.[classification]",
             context.BuildListSoftwareSql(AdminListSort.DeviceCount, sortDescending: true),

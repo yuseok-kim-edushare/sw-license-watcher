@@ -6,6 +6,24 @@ namespace SwLicenseWatcher.Infrastructure.Tests;
 public class RelationalDialectSqlTests
 {
     [Fact]
+    public void Agent_version_sort_compares_semantic_numbers_on_each_engine()
+    {
+        var mySql = Context(MySqlDialect.Instance).BuildListDevicesSql(AdminListSort.AgentVersion, sortDescending: true);
+        Assert.Contains("CROSS JOIN LATERAL", mySql, StringComparison.Ordinal);
+        Assert.Contains("CAST(CASE WHEN sv_patch.sv_patch REGEXP '^[0-9]+$' THEN sv_patch.sv_patch ELSE '0' END AS UNSIGNED) DESC", mySql, StringComparison.Ordinal);
+        Assert.Contains("THEN 1 ELSE 0 END ASC", mySql, StringComparison.Ordinal);
+        Assert.Contains("`agent_version` DESC", mySql, StringComparison.Ordinal);
+        Assert.DoesNotContain("ORDER BY `agent_version`", mySql, StringComparison.Ordinal);
+
+        var postgreSql = Context(PostgreSqlDialect.Instance).BuildListDevicesSql(AdminListSort.AgentVersion, sortDescending: false);
+        Assert.Contains("CROSS JOIN LATERAL", postgreSql, StringComparison.Ordinal);
+        Assert.Contains("CASE WHEN sv_minor.sv_minor ~ '^[0-9]+$' THEN sv_minor.sv_minor::bigint ELSE 0 END ASC", postgreSql, StringComparison.Ordinal);
+        Assert.Contains("substring(", postgreSql, StringComparison.Ordinal);
+        Assert.Contains("THEN 1 ELSE 0 END DESC", postgreSql, StringComparison.Ordinal);
+        Assert.DoesNotContain("ORDER BY \"agent_version\"", postgreSql, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void MySql_list_uses_limit_and_unqualified_tables()
     {
         var sql = Context(MySqlDialect.Instance).BuildListPoliciesSql();

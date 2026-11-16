@@ -64,7 +64,11 @@ public sealed partial class RelationalDataContext
     internal string BuildListDevicesSql(string? sort = null, bool sortDescending = false)
     {
         var table = options.PcTable;
-        var orderBy = DeviceOrderBy(sort, sortDescending);
+        var fallback = $"{DisplayHostNameSql()}, {Name(table.DeviceCodeColumn)}";
+        var versionSort = string.Equals(sort, AdminListSort.AgentVersion, StringComparison.Ordinal)
+            ? SemanticVersionOrder.For(dialect.Provider, Name(table.AgentVersionColumn), sortDescending, fallback)
+            : (SemanticVersionSort?)null;
+        var orderBy = versionSort?.OrderBy ?? DeviceOrderBy(sort, sortDescending, fallback);
         return $"""
             SELECT
                 COUNT(*) OVER() AS total_count,
@@ -76,6 +80,7 @@ public sealed partial class RelationalDataContext
                 {Name(table.InstalledAtUtcColumn)}, {Name(table.SupersededAtUtcColumn)},
                 {Name(table.PrimaryKeyColumn)}
             FROM {Name(options.SchemaName, table.TableName)}
+            {versionSort?.FromSuffix}
             WHERE (@search IS NULL OR {HostNameSearchSql()})
               AND (@staleCutoff IS NULL
                 OR {Name(table.LastHeartbeatUtcColumn)} IS NULL
@@ -85,17 +90,15 @@ public sealed partial class RelationalDataContext
             """;
     }
 
-    private string DeviceOrderBy(string? sort, bool descending)
+    private string DeviceOrderBy(string? sort, bool descending, string fallback)
     {
         var table = options.PcTable;
-        var fallback = $"{DisplayHostNameSql()}, {Name(table.DeviceCodeColumn)}";
         var expression = sort switch
         {
             AdminListSort.DeviceCode => DisplayDeviceCodeSql(),
             AdminListSort.HostName => DisplayHostNameSql(),
             AdminListSort.DomainName => Name(table.DomainNameColumn),
             AdminListSort.OperatingSystem => Name(table.OperatingSystemColumn),
-            AdminListSort.AgentVersion => Name(table.AgentVersionColumn),
             AdminListSort.LastHeartbeatUtc => Name(table.LastHeartbeatUtcColumn),
             AdminListSort.LastInventoryUtc => Name(table.LastInventoryUtcColumn),
             AdminListSort.InstalledAtUtc => Name(table.InstalledAtUtcColumn),
