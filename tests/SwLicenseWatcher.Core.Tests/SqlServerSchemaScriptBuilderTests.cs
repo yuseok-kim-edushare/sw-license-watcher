@@ -25,6 +25,7 @@ public class SqlServerSchemaScriptBuilderTests
         Assert.Contains("HASHBYTES('SHA2_256'", sql);
         Assert.Contains("CREATE TABLE [inventory].[pc_installed_sw]", sql);
         Assert.Contains("[display_name] NVARCHAR(256) NOT NULL", sql);
+        Assert.Contains("ALTER TABLE [inventory].[pc_installed_sw] ADD [installed_at_utc] DATETIMEOFFSET NULL;", sql);
         Assert.Contains("[discovery_source] NVARCHAR(64) NOT NULL", sql);
         Assert.Contains("[classification] NVARCHAR(32) NOT NULL", sql);
         Assert.Contains("CONSTRAINT [FK_pc_installed_sw_pc_entity] FOREIGN KEY ([pc_id]) REFERENCES [inventory].[pc_entity]([pc_id])", sql);

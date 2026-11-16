@@ -66,6 +66,7 @@ public sealed class SqlServerSchemaScriptBuilder : ISchemaScriptBuilder
         sql.AppendLine($"    [{Escape(installedSoftware.DiscoverySourceColumn)}] NVARCHAR(64) NOT NULL,");
         sql.AppendLine($"    [{Escape(installedSoftware.ClassificationColumn)}] NVARCHAR(32) NOT NULL,");
         sql.AppendLine($"    [{Escape(installedSoftware.CollectedAtUtcColumn)}] DATETIMEOFFSET NOT NULL,");
+        sql.AppendLine($"    [{Escape(installedSoftware.InstalledAtUtcColumn)}] DATETIMEOFFSET NULL,");
         sql.AppendLine($"    CONSTRAINT [{Escape(BuildIdentifier("FK", installedSoftware.TableName, pc.TableName))}] FOREIGN KEY ([{Escape(installedSoftware.PcForeignKeyColumn)}]) REFERENCES [{schema}].[{Escape(pc.TableName)}]([{Escape(pc.PrimaryKeyColumn)}])");
         sql.AppendLine(");");
         sql.AppendLine("END");
@@ -173,6 +174,7 @@ public sealed class SqlServerSchemaScriptBuilder : ISchemaScriptBuilder
         AppendColumnIfMissing(sql, schema, pc.TableName, pc.DeviceKeySha256Column, "CHAR(64) NULL");
         AppendColumnIfMissing(sql, schema, pc.TableName, pc.InstalledAtUtcColumn, "DATETIMEOFFSET NULL");
         AppendColumnIfMissing(sql, schema, pc.TableName, pc.SupersededAtUtcColumn, "DATETIMEOFFSET NULL");
+        AppendColumnIfMissing(sql, schema, installedSoftware.TableName, installedSoftware.InstalledAtUtcColumn, "DATETIMEOFFSET NULL");
         AppendColumnIfMissing(
             sql,
             schema,
@@ -312,6 +314,7 @@ public static class SqlIdentifierValidator
 
     public static void Validate(SqlServerStorageOptions options, int maxLength)
     {
+        options.ApplyUnspecifiedColumnDefaults();
         var identifiers = new[]
         {
             options.SchemaName,
@@ -328,7 +331,7 @@ public static class SqlIdentifierValidator
             options.InstalledSoftwareTable.DisplayVersionColumn, options.InstalledSoftwareTable.PublisherColumn,
             options.InstalledSoftwareTable.InstallLocationColumn, options.InstalledSoftwareTable.DiscoveryScopeColumn,
             options.InstalledSoftwareTable.DiscoverySourceColumn, options.InstalledSoftwareTable.ClassificationColumn,
-            options.InstalledSoftwareTable.CollectedAtUtcColumn,
+            options.InstalledSoftwareTable.CollectedAtUtcColumn, options.InstalledSoftwareTable.InstalledAtUtcColumn,
             options.SoftwarePolicyTable.TableName, options.SoftwarePolicyTable.PrimaryKeyColumn,
             options.SoftwarePolicyTable.ClassificationColumn, options.SoftwarePolicyTable.ProductNameColumn,
             options.SoftwarePolicyTable.PublisherColumn, options.SoftwarePolicyTable.VersionPatternColumn,

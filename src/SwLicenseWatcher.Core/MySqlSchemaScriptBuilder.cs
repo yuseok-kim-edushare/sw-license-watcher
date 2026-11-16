@@ -41,6 +41,7 @@ public sealed class MySqlSchemaScriptBuilder : ISchemaScriptBuilder
         AddColumn(statements, pc.TableName, pc.DeviceKeySha256Column, "CHAR(64) NULL");
         AddColumn(statements, pc.TableName, pc.InstalledAtUtcColumn, "DATETIME(6) NULL");
         AddColumn(statements, pc.TableName, pc.SupersededAtUtcColumn, "DATETIME(6) NULL");
+        AddColumn(statements, installedSoftware.TableName, installedSoftware.InstalledAtUtcColumn, "DATETIME(6) NULL");
         DropIndexIfExists(statements, pc.TableName, Ident("UX", pc.TableName, pc.DeviceCodeColumn));
         AddColumn(
             statements,
@@ -104,6 +105,7 @@ public sealed class MySqlSchemaScriptBuilder : ISchemaScriptBuilder
             {Q(software.DiscoverySourceColumn)} VARCHAR(64) NOT NULL,
             {Q(software.ClassificationColumn)} VARCHAR(32) NOT NULL,
             {Q(software.CollectedAtUtcColumn)} DATETIME(6) NOT NULL,
+            {Q(software.InstalledAtUtcColumn)} DATETIME(6) NULL,
             CONSTRAINT {Q(Ident("FK", software.TableName, pc.TableName))} FOREIGN KEY ({Q(software.PcForeignKeyColumn)}) REFERENCES {Q(pc.TableName)} ({Q(pc.PrimaryKeyColumn)})
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
         """;

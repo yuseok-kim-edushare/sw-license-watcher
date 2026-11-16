@@ -105,7 +105,7 @@ public sealed partial class RelationalDataContext
         var sql = $"""
             SELECT {Name(software.DisplayNameColumn)}, {Name(software.DisplayVersionColumn)}, {Name(software.PublisherColumn)},
                    {Name(software.InstallLocationColumn)}, {Name(software.DiscoveryScopeColumn)}, {Name(software.DiscoverySourceColumn)},
-                   {Name(software.ClassificationColumn)}
+                   {Name(software.ClassificationColumn)}, {Name(software.InstalledAtUtcColumn)}
             FROM {Name(options.SchemaName, software.TableName)}
             WHERE {Name(software.PcForeignKeyColumn)} = @pcId
               AND (@classification IS NULL OR {Name(software.ClassificationColumn)} = @classification)
@@ -124,7 +124,8 @@ public sealed partial class RelationalDataContext
                 ReadNullableString(reader, software.InstallLocationColumn),
                 reader.GetString(reader.GetOrdinal(software.DiscoveryScopeColumn)),
                 reader.GetString(reader.GetOrdinal(software.DiscoverySourceColumn)),
-                ReadClassification(reader, software.ClassificationColumn)));
+                ReadClassification(reader, software.ClassificationColumn),
+                InstalledAtUtc: ReadNullableDateTimeOffset(reader, software.InstalledAtUtcColumn)));
         }
 
         return entries;

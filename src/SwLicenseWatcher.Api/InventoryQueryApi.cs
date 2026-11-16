@@ -321,7 +321,7 @@ internal static class InventoryQueryApi
             : detail.InstalledSoftware.Select(entry => DeviceSoftwareRow(detail, entry));
         return InventoryCsv.File(
             $"device-{InventoryCsv.SafeFileName(detail.DeviceCode)}.csv",
-            ["DeviceCode", "HostName", "AssignedHostName", "AdminNotes", "DomainName", "OperatingSystem", "AgentVersion", "LastHeartbeatUtc", "LastInventoryUtc", "InstalledAtUtc", "SupersededAtUtc", "Name", "Version", "Publisher", "InstallLocation", "DiscoveryScope", "DiscoverySource", "Classification", "LicenseSource", "LicenseSourceOverride", "PcId"],
+            ["DeviceCode", "HostName", "AssignedHostName", "AdminNotes", "DomainName", "OperatingSystem", "AgentVersion", "LastHeartbeatUtc", "LastInventoryUtc", "InstalledAtUtc", "SupersededAtUtc", "Name", "Version", "Publisher", "InstallLocation", "DiscoveryScope", "DiscoverySource", "SoftwareInstalledAtUtc", "Classification", "LicenseSource", "LicenseSourceOverride", "PcId"],
             rows);
     }
 
@@ -365,6 +365,7 @@ internal static class InventoryQueryApi
         entry?.InstallLocation,
         entry?.DiscoveryScope,
         entry?.DiscoverySource,
+        InventoryCsv.Format(entry?.InstalledAtUtc),
         entry?.Classification,
         entry?.LicenseSource,
         entry?.LicenseSourceOverride,

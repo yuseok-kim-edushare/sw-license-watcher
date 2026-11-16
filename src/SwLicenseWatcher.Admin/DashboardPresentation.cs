@@ -1,3 +1,4 @@
+using System.Globalization;
 using SwLicenseWatcher.Core;
 
 namespace SwLicenseWatcher.Admin;
@@ -26,6 +27,21 @@ internal static class DashboardPresentation
 
     internal static string FormatTime(DateTimeOffset? value) =>
         value is { } time ? time.ToLocalTime().ToString("g") : "-";
+
+    internal static string FormatInstallDate(DateTimeOffset? value)
+    {
+        if (value is not { } time)
+        {
+            return "-";
+        }
+
+        if (time.TimeOfDay == TimeSpan.Zero)
+        {
+            return time.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+        }
+
+        return FormatTime(time);
+    }
 
     internal static string LicenseLabel(string? value)
     {

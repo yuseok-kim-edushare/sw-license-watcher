@@ -199,5 +199,6 @@ internal sealed class ActiveStorageOptionsConfigurator(
     {
         var sectionName = StorageProviders.SectionName(StorageProviders.Parse(provider.Value.Provider));
         configuration.GetSection("Storage:" + sectionName).Bind(options);
+        options.ApplyUnspecifiedColumnDefaults();
     }
 }

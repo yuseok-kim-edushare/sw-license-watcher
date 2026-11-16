@@ -37,6 +37,37 @@ public class StorageProviderBindingTests
         Assert.Equal("Host=pg", options.ConnectionString);
         Assert.Equal("assets", options.SchemaName);
         Assert.Equal("asset_pc", options.PcTable.TableName);
+        Assert.Equal("device_code", options.PcTable.DeviceCodeColumn);
+        Assert.Equal("installed_at_utc", options.PcTable.InstalledAtUtcColumn);
+        Assert.Equal("pc_installed_sw", options.InstalledSoftwareTable.TableName);
+        Assert.Equal("installed_at_utc", options.InstalledSoftwareTable.InstalledAtUtcColumn);
+        Assert.Equal("pc_user_message", options.UserMessageTable.TableName);
+    }
+
+    [Fact]
+    public void Blank_or_omitted_column_names_use_the_built_in_defaults()
+    {
+        var options = Bind(new Dictionary<string, string?>
+        {
+            ["Storage:SqlServer:ConnectionString"] = "Server=sql",
+            ["Storage:SqlServer:PcTable:TableName"] = "company_pc",
+            ["Storage:SqlServer:PcTable:HostNameColumn"] = "",
+            ["Storage:SqlServer:PcTable:InstalledAtUtcColumn"] = " ",
+            ["Storage:SqlServer:InstalledSoftwareTable:DisplayNameColumn"] = " sw_name ",
+            ["Storage:SqlServer:SoftwarePolicyTable:TableName"] = "company_sw_policy"
+        });
+
+        Assert.Equal("company_pc", options.PcTable.TableName);
+        Assert.Equal("host_name", options.PcTable.HostNameColumn);
+        Assert.Equal("device_code", options.PcTable.DeviceCodeColumn);
+        Assert.Equal("installed_at_utc", options.PcTable.InstalledAtUtcColumn);
+        Assert.Equal("sw_name", options.InstalledSoftwareTable.DisplayNameColumn);
+        Assert.Equal("display_version", options.InstalledSoftwareTable.DisplayVersionColumn);
+        Assert.Equal("installed_at_utc", options.InstalledSoftwareTable.InstalledAtUtcColumn);
+        Assert.Equal("company_sw_policy", options.SoftwarePolicyTable.TableName);
+        Assert.Equal("product_name", options.SoftwarePolicyTable.ProductNameColumn);
+        Assert.Equal("pc_user_message", options.UserMessageTable.TableName);
+        Assert.Equal("title", options.UserMessageTable.TitleColumn);
     }
 
     [Fact]

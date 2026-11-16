@@ -95,7 +95,7 @@ public sealed partial class RelationalDataContext
                 p.{Name(pc.OperatingSystemColumn)}, p.{Name(pc.AgentVersionColumn)},
                 p.{Name(pc.LastHeartbeatUtcColumn)}, p.{Name(pc.LastInventoryUtcColumn)},
                 s.{Name(software.DisplayVersionColumn)}, s.{Name(software.PublisherColumn)},
-                s.{Name(software.ClassificationColumn)},
+                s.{Name(software.ClassificationColumn)}, s.{Name(software.InstalledAtUtcColumn)},
                 l.{Name(license.LicenseSourceColumn)} AS license_source_override,
                 p.{Name(pc.AssignedHostNameColumn)}, p.{Name(pc.AssignedDeviceCodeColumn)},
                 p.{Name(pc.PrimaryKeyColumn)}
@@ -144,7 +144,8 @@ public sealed partial class RelationalDataContext
                 LicenseSource: null,
                 LicenseSourceOverride: overrideSource,
                 AssignedHostName: ReadNullableString(reader, pc.AssignedHostNameColumn),
-                PcId: reader.GetInt64(reader.GetOrdinal(pc.PrimaryKeyColumn))));
+                PcId: reader.GetInt64(reader.GetOrdinal(pc.PrimaryKeyColumn)),
+                InstalledAtUtc: ReadNullableDateTimeOffset(reader, software.InstalledAtUtcColumn)));
         }
 
         await reader.CloseAsync();

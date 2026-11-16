@@ -25,7 +25,9 @@ public sealed record InstalledSoftwareEntry(
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     string? LicenseSource = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    string? LicenseSourceOverride = null);
+    string? LicenseSourceOverride = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    DateTimeOffset? InstalledAtUtc = null);
 
 public sealed record InventoryIngestionRequest(
     PcIdentity Pc,

@@ -23,9 +23,10 @@ public abstract class RelationalInventoryTests
         var token = TestContext.Current.CancellationToken;
         var deviceCode = Unique("PC");
         var collected = new DateTimeOffset(2026, 9, 11, 4, 0, 0, TimeSpan.Zero);
+        var installedAt = new DateTimeOffset(2024, 3, 15, 0, 0, 0, TimeSpan.Zero);
 
         var first = await Context.SaveSnapshotAsync(
-            Snapshot(deviceCode, collected, Software("Notepad++", "8.6")),
+            Snapshot(deviceCode, collected, Software("Notepad++", "8.6", installedAt)),
             token);
         Assert.True(first.Applied);
         Assert.Empty(first.PreviousSoftware);
@@ -42,7 +43,10 @@ public abstract class RelationalInventoryTests
         Assert.Equal(summary.PcId, detail.PcId);
         var installed = Assert.Single(detail.InstalledSoftware);
         Assert.Equal("Notepad++", installed.Name);
+        Assert.Equal(installedAt, installed.InstalledAtUtc);
         Assert.Equal(SoftwarePolicyClassificationNames.Unclassified, installed.Classification);
+        var softwareDevices = await Context.ListSoftwareDevicesAsync("Notepad++", 0, 10, classification: null, token);
+        Assert.Equal(installedAt, Assert.Single(softwareDevices.Items).InstalledAtUtc);
 
         var aggregates = await Context.ListSoftwareAsync(0, 10, "Notepad", classification: null, token);
         Assert.Contains(aggregates.Items, item => item.Name == "Notepad++" && item.DeviceCount >= 1);
@@ -59,7 +63,9 @@ public abstract class RelationalInventoryTests
         Assert.Equal("Notepad++", Assert.Single(newer.PreviousSoftware).Name);
 
         var replaced = await Context.GetDeviceAsync(deviceCode, classification: null, token);
-        Assert.Equal("7-Zip", Assert.Single(replaced!.InstalledSoftware).Name);
+        var replacedSoftware = Assert.Single(replaced!.InstalledSoftware);
+        Assert.Equal("7-Zip", replacedSoftware.Name);
+        Assert.Null(replacedSoftware.InstalledAtUtc);
     }
 
     [Fact]
@@ -601,8 +607,8 @@ public abstract class RelationalInventoryTests
             software,
             collectedAt);
 
-    protected static InstalledSoftwareEntry Software(string name, string? version) =>
-        new(name, version, "Publisher", @"C:\Program Files\" + name, "HKLM Uninstall", "UninstallRegistry");
+    protected static InstalledSoftwareEntry Software(string name, string? version, DateTimeOffset? installedAtUtc = null) =>
+        new(name, version, "Publisher", @"C:\Program Files\" + name, "HKLM Uninstall", "UninstallRegistry", InstalledAtUtc: installedAtUtc);
 
     private static SoftwarePolicyWriteRequest Blacklist(string productName) =>
         new(productName, Publisher: null, VersionPattern: null, SoftwarePolicyClassification.Blacklist, Notes: null);

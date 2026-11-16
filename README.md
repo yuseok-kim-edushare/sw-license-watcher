@@ -109,7 +109,7 @@ SHA256SUMS.txt                                위 ZIP의 SHA-256
 
 ## 커스터마이징 포인트
 
-서버 테이블/컬럼 매핑은 `/src/SwLicenseWatcher.Api/appsettings.json`의 활성 섹션에서 바꿉니다. `Storage:Provider`가 비어 있거나 `SqlServer`이면 `Storage:SqlServer`입니다. `MySql`(MariaDB도 이 값)은 `Storage:MySql`, `PostgreSql`은 `Storage:PostgreSql`이며 섹션 모양은 같습니다. MySQL/MariaDB는 연결 문자열의 database에 테이블을 만들고 `SchemaName`은 쓰지 않습니다. 시각은 UTC로 저장합니다. 최소 버전은 MySQL 8.0, MariaDB 10.11, PostgreSQL 14입니다. MySQL/MariaDB와 PostgreSQL 스키마는 API가 적용합니다. [Apply-DbSchema.ps1](deploy/scripts/Apply-DbSchema.ps1)는 SQL Server 전용입니다.
+서버 테이블/컬럼 매핑은 `/src/SwLicenseWatcher.Api/appsettings.json`의 활성 섹션에서 바꿉니다. 테이블 이름이나 컬럼 이름을 비우거나 적지 않으면 코드의 기본 이름을 씁니다. `Storage:Provider`가 비어 있거나 `SqlServer`이면 `Storage:SqlServer`입니다. `MySql`(MariaDB도 이 값)은 `Storage:MySql`, `PostgreSql`은 `Storage:PostgreSql`이며 섹션 모양은 같습니다. MySQL/MariaDB는 연결 문자열의 database에 테이블을 만들고 `SchemaName`은 쓰지 않습니다. 시각은 UTC로 저장합니다. 최소 버전은 MySQL 8.0, MariaDB 10.11, PostgreSQL 14입니다. MySQL/MariaDB와 PostgreSQL 스키마는 API가 적용합니다. [Apply-DbSchema.ps1](deploy/scripts/Apply-DbSchema.ps1)는 SQL Server 전용입니다.
 
 예:
 

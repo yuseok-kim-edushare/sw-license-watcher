@@ -93,7 +93,8 @@ public sealed record SoftwareDevice(
     string? LicenseSource = null,
     string? LicenseSourceOverride = null,
     string? AssignedHostName = null,
-    long PcId = 0);
+    long PcId = 0,
+    DateTimeOffset? InstalledAtUtc = null);
 
 public sealed record SoftwareDeviceListResponse(
     string Name,

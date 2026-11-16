@@ -36,8 +36,9 @@ public sealed partial class RelationalDataContext
                 INSERT INTO {Name(options.SchemaName, software.TableName)}
                 ({Name(software.PcForeignKeyColumn)}, {Name(software.DisplayNameColumn)}, {Name(software.DisplayVersionColumn)},
                  {Name(software.PublisherColumn)}, {Name(software.InstallLocationColumn)}, {Name(software.DiscoveryScopeColumn)},
-                 {Name(software.DiscoverySourceColumn)}, {Name(software.ClassificationColumn)}, {Name(software.CollectedAtUtcColumn)})
-                VALUES (@pcId, @name, @version, @publisher, @location, @scope, @source, @classification, @collectedAt)
+                 {Name(software.DiscoverySourceColumn)}, {Name(software.ClassificationColumn)}, {Name(software.CollectedAtUtcColumn)},
+                 {Name(software.InstalledAtUtcColumn)})
+                VALUES (@pcId, @name, @version, @publisher, @location, @scope, @source, @classification, @collectedAt, @installedAt)
                 """;
             await ExecuteAsync(connection, transaction, sql,
             [
@@ -45,7 +46,8 @@ public sealed partial class RelationalDataContext
                 ("@publisher", DbValue(Truncate(entry.Publisher?.Trim(), 256))), ("@location", DbValue(Truncate(entry.InstallLocation, 512))),
                 ("@scope", Truncate(entry.DiscoveryScope, 256)), ("@source", Truncate(entry.DiscoverySource, 64)),
                 ("@classification", Truncate(match.StoredClassification, 32)!),
-                ("@collectedAt", snapshot.CollectedAtUtc)
+                ("@collectedAt", snapshot.CollectedAtUtc),
+                ("@installedAt", DbValue(entry.InstalledAtUtc))
             ], cancellationToken);
         }
 

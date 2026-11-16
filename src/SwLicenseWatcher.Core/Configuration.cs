@@ -422,6 +422,8 @@ public sealed class InstalledSoftwareTableOptions
     public string ClassificationColumn { get; set; } = "classification";
 
     public string CollectedAtUtcColumn { get; set; } = "collected_at_utc";
+
+    public string InstalledAtUtcColumn { get; set; } = "installed_at_utc";
 }
 
 public sealed class SoftwarePolicyTableOptions

@@ -42,6 +42,7 @@ public sealed class PostgreSqlSchemaScriptBuilder : ISchemaScriptBuilder
         AddColumn(statements, schema, pc.TableName, pc.DeviceKeySha256Column, "char(64)");
         AddColumn(statements, schema, pc.TableName, pc.InstalledAtUtcColumn, "timestamptz");
         AddColumn(statements, schema, pc.TableName, pc.SupersededAtUtcColumn, "timestamptz");
+        AddColumn(statements, schema, installedSoftware.TableName, installedSoftware.InstalledAtUtcColumn, "timestamptz");
         statements.Add($"ALTER TABLE {schema}.{Q(pc.TableName)} DROP CONSTRAINT IF EXISTS {Q(Ident("UX", pc.TableName, pc.DeviceCodeColumn))}");
         statements.Add(
             $"ALTER TABLE {schema}.{Q(uninstall.TableName)} ADD COLUMN IF NOT EXISTS {Q(uninstall.OriginColumn)} varchar(16) NOT NULL DEFAULT '{UninstallGrant.OriginAgent}'");
@@ -97,6 +98,7 @@ public sealed class PostgreSqlSchemaScriptBuilder : ISchemaScriptBuilder
             {Q(software.DiscoverySourceColumn)} varchar(64) NOT NULL,
             {Q(software.ClassificationColumn)} varchar(32) NOT NULL,
             {Q(software.CollectedAtUtcColumn)} timestamptz NOT NULL,
+            {Q(software.InstalledAtUtcColumn)} timestamptz NULL,
             CONSTRAINT {Q(Ident("FK", software.TableName, pc.TableName))} FOREIGN KEY ({Q(software.PcForeignKeyColumn)}) REFERENCES {schema}.{Q(pc.TableName)} ({Q(pc.PrimaryKeyColumn)})
         )
         """;
